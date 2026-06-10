@@ -1,5 +1,10 @@
 # WinterMP — Multiplayer for My Winter Car
 
+
+This thing is completely AI slopped with Fable 5 & Composer.
+Probably horrible!
+
+
 Full co-op conversion of [My Winter Car](https://store.steampowered.com/app/4164420/My_Winter_Car/):
 one player hosts with their savefile, friends join through the **Steam friends
 list** — shared money, shared world, everything synced.
