@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    Copy this file to Directory.Build.props.user (same folder) and adjust the path.
+    When MwcGamePath points at a valid My Winter Car install, building
+    WinterMP.Core / WinterMP.Tools automatically deploys the plugin DLLs into
+    <game>\BepInEx\plugins\WinterMP\.
+  -->
+  <PropertyGroup>
+    <MwcGamePath>C:\Program Files (x86)\Steam\steamapps\common\My Winter Car</MwcGamePath>
+  </PropertyGroup>
+</Project>

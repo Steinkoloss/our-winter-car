@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net35: consumed by the in-game plugins (My Winter Car runs Unity 5.0 with the
+      legacy Mono .NET 3.5 profile — mscorlib 3.0.40818).
+      netstandard2.0: consumed by tests and tooling on modern .NET.
+    -->
+    <TargetFrameworks>net35;netstandard2.0</TargetFrameworks>
+    <RootNamespace>WinterMP.Net</RootNamespace>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>Engine-independent network protocol for WinterMP: serialization, messages, transport abstraction.</Description>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net35'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

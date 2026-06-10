@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WinterMP.Core/WinterMP.Core.csproj" />
+    <Project Path="src/WinterMP.Launcher/WinterMP.Launcher.csproj" />
+    <Project Path="src/WinterMP.Net.Tests/WinterMP.Net.Tests.csproj" />
+    <Project Path="src/WinterMP.Net/WinterMP.Net.csproj" />
+    <Project Path="src/WinterMP.Tools/WinterMP.Tools.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- My Winter Car = Unity 5.0, legacy Mono (.NET 3.5 profile). -->
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>WinterMP.Tools</AssemblyName>
+    <RootNamespace>WinterMP.Tools</RootNamespace>
+    <Nullable>enable</Nullable>
+    <Description>WinterMP dev tools plugin: FSM/object catalog dumper for sync catalog generation.</Description>
+    <BepInExPluginGuid>com.ourwintercar.wintermp.tools</BepInExPluginGuid>
+    <BepInExPluginName>WinterMP Tools</BepInExPluginName>
+    <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Core" Version="5.*" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>$(MwcManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="EnsureGameAssemblies" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(MwcManaged)\UnityEngine.dll')"
+           Text="MwcGamePath is not set or invalid ('$(MwcGamePath)'). Copy Directory.Build.props.user.example to Directory.Build.props.user and point it at your My Winter Car install." />
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WinterMP.Net\WinterMP.Net.csproj" />
+  </ItemGroup>
+
+  <Target Name="DeployToGame" AfterTargets="Build"
+          Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
+    <Copy SourceFiles="$(TargetDir)WinterMP.Tools.dll"
+          DestinationFolder="$(MwcGamePath)\BepInEx\plugins\WinterMP" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="WinterMP.Tools deployed to $(MwcGamePath)\BepInEx\plugins\WinterMP" />
+  </Target>
+
+</Project>

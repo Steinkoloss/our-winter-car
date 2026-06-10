@@ -1,0 +1,227 @@
+#if STEAMWORKS
+using System;
+using Steamworks;
+using WinterMP.Net.Transport;
+
+namespace WinterMP.Core.Steam
+{
+    /// <summary>
+    /// EXPERIMENTAL (M1) — lobby lifecycle on the classic Steamworks API: create/join
+    /// friends-only lobbies, wire overlay invites ("Join Game" in the friends list) via
+    /// rich presence, and hand a transport back to the session manager.
+    /// </summary>
+    internal static class SteamLobbyManager
+    {
+        private const string LobbyKeyHostId = "wmp_host";
+        private const string LobbyKeyModVersion = "wmp_version";
+        private const int DefaultMaxPlayers = 8;
+
+        private static Callback<LobbyCreated_t>? _lobbyCreated;
+        private static Callback<LobbyEnter_t>? _lobbyEntered;
+        private static Callback<GameLobbyJoinRequested_t>? _joinRequested;
+        private static Callback<LobbyChatUpdate_t>? _lobbyChatUpdate;
+
+        private static Action<ITransport>? _onReady;
+        private static Action<string>? _onFailure;
+        private static CSteamID _currentLobby;
+        private static bool _isOwner;
+        private static SteamP2PTransport? _activeTransport;
+
+        public static void HostLobby(Action<ITransport> onReady, Action<string> onFailure)
+        {
+            if (!SteamBootstrap.EnsureInitialized())
+            {
+                onFailure("Steam is not available.");
+                return;
+            }
+
+            _onReady = onReady;
+            _onFailure = onFailure;
+            _isOwner = true;
+            RegisterCallbacks();
+
+            WinterMPPlugin.Log.LogInfo("Creating friends-only Steam lobby...");
+            SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, DefaultMaxPlayers);
+        }
+
+        public static void JoinLobby(ulong lobbyId, Action<ITransport> onReady, Action<string> onFailure)
+        {
+            if (!SteamBootstrap.EnsureInitialized())
+            {
+                onFailure("Steam is not available.");
+                return;
+            }
+
+            _onReady = onReady;
+            _onFailure = onFailure;
+            _isOwner = false;
+            RegisterCallbacks();
+
+            WinterMPPlugin.Log.LogInfo($"Joining Steam lobby {lobbyId}...");
+            SteamMatchmaking.JoinLobby(new CSteamID(lobbyId));
+        }
+
+        public static bool IsLobbyMember(CSteamID steamId)
+        {
+            if (!_currentLobby.IsValid()) return false;
+
+            try
+            {
+                int count = SteamMatchmaking.GetNumLobbyMembers(_currentLobby);
+                for (int i = 0; i < count; i++)
+                {
+                    if (SteamMatchmaking.GetLobbyMemberByIndex(_currentLobby, i) == steamId)
+                        return true;
+                }
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogWarning($"IsLobbyMember failed: {e.Message}");
+            }
+
+            return false;
+        }
+
+        private static void RegisterCallbacks()
+        {
+            try
+            {
+                if (_lobbyCreated == null) _lobbyCreated = Callback<LobbyCreated_t>.Create(OnLobbyCreated);
+                if (_lobbyEntered == null) _lobbyEntered = Callback<LobbyEnter_t>.Create(OnLobbyEntered);
+                if (_joinRequested == null) _joinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnJoinRequested);
+                if (_lobbyChatUpdate == null) _lobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError($"Steam callback registration failed: {e}");
+            }
+        }
+
+        private static void OnLobbyCreated(LobbyCreated_t data)
+        {
+            if (data.m_eResult != EResult.k_EResultOK)
+            {
+                Fail($"Lobby creation failed: {data.m_eResult}");
+                return;
+            }
+
+            _currentLobby = new CSteamID(data.m_ulSteamIDLobby);
+            SteamMatchmaking.SetLobbyData(_currentLobby, LobbyKeyHostId, SteamBootstrap.LocalSteamId.ToString());
+            SteamMatchmaking.SetLobbyData(_currentLobby, LobbyKeyModVersion, MyPluginInfo.PLUGIN_VERSION);
+
+            // Makes "Join Game" appear on us in friends lists; Steam launches the game
+            // with "+connect_lobby <id>", which LaunchOptions handles at boot.
+            try
+            {
+                SteamFriends.SetRichPresence("connect", $"+connect_lobby {data.m_ulSteamIDLobby}");
+                SteamFriends.SetRichPresence("status", "Hosting WinterMP");
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogWarning($"Rich presence failed (invites via overlay still work): {e.Message}");
+            }
+
+            WinterMPPlugin.Log.LogInfo($"Lobby created: {data.m_ulSteamIDLobby}");
+
+            try
+            {
+                _activeTransport = SteamP2PTransport.CreateHost();
+                _onReady?.Invoke(_activeTransport);
+            }
+            catch (Exception e)
+            {
+                Fail($"Failed to start host transport: {e.Message}");
+            }
+        }
+
+        private static void OnLobbyEntered(LobbyEnter_t data)
+        {
+            if (_isOwner) return; // the host also receives LobbyEnter for its own lobby
+
+            if (data.m_EChatRoomEnterResponse != (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+            {
+                Fail($"Could not enter lobby (response {data.m_EChatRoomEnterResponse}).");
+                return;
+            }
+
+            _currentLobby = new CSteamID(data.m_ulSteamIDLobby);
+            string hostIdRaw = SteamMatchmaking.GetLobbyData(_currentLobby, LobbyKeyHostId);
+            ulong hostId;
+            if (!ulong.TryParse(hostIdRaw, out hostId) || hostId == 0)
+            {
+                Fail("Lobby has no WinterMP host data — is the host running WinterMP?");
+                return;
+            }
+
+            WinterMPPlugin.Log.LogInfo($"Entered lobby {data.m_ulSteamIDLobby}; connecting to host {hostId}.");
+
+            try
+            {
+                _activeTransport = SteamP2PTransport.CreateClient(new CSteamID(hostId));
+                _onReady?.Invoke(_activeTransport);
+            }
+            catch (Exception e)
+            {
+                Fail($"Failed to start client transport: {e.Message}");
+            }
+        }
+
+        /// <summary>Overlay invite accepted while the game is already running.</summary>
+        private static void OnJoinRequested(GameLobbyJoinRequested_t data)
+        {
+            WinterMPPlugin.Log.LogInfo($"Steam overlay join request for lobby {data.m_steamIDLobby.m_SteamID}.");
+            var session = Session.SessionManager.Instance;
+            if (session != null && session.State == Session.SessionState.Idle)
+                session.StartJoin(data.m_steamIDLobby.m_SteamID);
+            else
+                WinterMPPlugin.Log.LogWarning("Ignored overlay join request: a session is already active.");
+        }
+
+        private static void OnLobbyChatUpdate(LobbyChatUpdate_t data)
+        {
+            const uint leftOrDropped =
+                (uint)EChatMemberStateChange.k_EChatMemberStateChangeLeft
+                | (uint)EChatMemberStateChange.k_EChatMemberStateChangeDisconnected
+                | (uint)EChatMemberStateChange.k_EChatMemberStateChangeKicked
+                | (uint)EChatMemberStateChange.k_EChatMemberStateChangeBanned;
+
+            if ((data.m_rgfChatMemberStateChange & leftOrDropped) != 0)
+                _activeTransport?.NotifyPeerLeft(data.m_ulSteamIDUserChanged, "Left the Steam lobby.");
+        }
+
+        public static void LeaveLobby()
+        {
+            _activeTransport = null;
+
+            if (_currentLobby.IsValid())
+            {
+                try
+                {
+                    SteamMatchmaking.LeaveLobby(_currentLobby);
+                }
+                catch (Exception e)
+                {
+                    WinterMPPlugin.Log.LogWarning($"LeaveLobby failed: {e.Message}");
+                }
+
+                _currentLobby = default(CSteamID);
+            }
+
+            try
+            {
+                SteamFriends.ClearRichPresence();
+            }
+            catch
+            {
+                // best effort
+            }
+        }
+
+        private static void Fail(string error)
+        {
+            WinterMPPlugin.Log.LogError($"Steam lobby: {error}");
+            _onFailure?.Invoke(error);
+        }
+    }
+}
+#endif

@@ -1,0 +1,207 @@
+# Catalog analysis: GAME (8641 FSMs, 1956 rigidbodies)
+
+## FSM template frequency (top 40)
+- Data: 978
+- Use: 715
+- Screw: 631
+- Button: 367
+- Generate: 219
+- Spawn: 215
+- Logic: 159
+- FSM: 137
+- Buy: 118
+- Text: 104
+- Information: 104
+- PlayerTrigger: 97
+- Raycast: 96
+- Look: 87
+- Movement: 86
+- Animate: 85
+- Move: 82
+- CarHit: 78
+- HitDetection: 75
+- LOD: 74
+- Assemble: 68
+- Fetch: 61
+- Paint: 58
+- Speak: 53
+- Force: 52
+- Throttle: 51
+- Randomize: 51
+- Hitbox: 51
+- Assembly: 50
+- Animation: 50
+- Steering: 50
+- World Piece Randomizer: 49
+- CheckDownIn: 49
+- CheckUpIn: 49
+- CheckRightIn: 49
+- CheckLeftIn: 49
+- Score: 48
+- Knob: 47
+- Activate: 47
+- Trigger: 46
+
+## Root objects by FSM count (top 30)
+- COMPUTER: 1191 FSMs, 0 rigidbodies
+- Sheets: 807 FSMs, 1 rigidbodies
+- RACES: 744 FSMs, 597 rigidbodies
+- JOBS: 579 FSMs, 301 rigidbodies
+- CORRIS: 512 FSMs, 16 rigidbodies
+- Systems: 511 FSMs, 3 rigidbodies
+- PERAPORTTI: 440 FSMs, 51 rigidbodies
+- CARPARTS: 387 FSMs, 14 rigidbodies
+- TRAFFIC: 282 FSMs, 89 rigidbodies
+- YARD: 218 FSMs, 19 rigidbodies
+- NPC_CARS: 163 FSMs, 77 rigidbodies
+- SORBET(190-200psi): 141 FSMs, 18 rigidbodies
+- HOMENEW: 131 FSMs, 9 rigidbodies
+- GIFU(750: 130 FSMs, 37 rigidbodies
+- EQUIPMENTS: 128 FSMs, 47 rigidbodies
+- Spawner: 101 FSMs, 0 rigidbodies
+- HUMANS: 91 FSMs, 92 rigidbodies
+- REPAIRSHOP: 81 FSMs, 9 rigidbodies
+- STORE_AREA: 81 FSMs, 73 rigidbodies
+- PLAYER: 78 FSMs, 12 rigidbodies
+- PERAJARVI: 77 FSMs, 20 rigidbodies
+- GUI: 74 FSMs, 0 rigidbodies
+- KEKMET(350-400psi): 69 FSMs, 10 rigidbodies
+- BACHGLOTZ(1905kg): 68 FSMs, 9 rigidbodies
+- MAP: 53 FSMs, 7 rigidbodies
+- FleaMarket: 49 FSMs, 0 rigidbodies
+- JONNEZ ES(Clone): 46 FSMs, 4 rigidbodies
+- COTTAGE: 42 FSMs, 3 rigidbodies
+- FleaMarketProducts: 37 FSMs, 20 rigidbodies
+- INSPECTION: 32 FSMs, 6 rigidbodies
+
+## Door-like FSMs (path or fsmName contains door/Door)
+- Use @ .../Handle x49   e.g. HOMENEW/LOD/DoorWC/Pivot/Handle
+- Scrape @ .../coll x8   e.g. SORBET(190-200psi)/Doors/DoorFront(leftx)/FrontL/WindowPivot/GlassPivot/coll
+- Use @ .../DoorHandle x7   e.g. JOBS/FACTORY/OpeningTimes/LOD1/Doors/DoorWC/Pivot/DoorHandle
+- Cooling @ .../Handle x7   e.g. YARD/Building/MIDDLEROOM/DoorRear/Pivot/Handle
+- Knob @ .../opener x4   e.g. BACHGLOTZ(1905kg)/DriverDoors/door(leftx)/doors/opener
+- Use @ .../Mesh x4   e.g. CABIN/Shed/Doors/DoorRight/Mesh
+- Use @ .../doorl x2   e.g. KEKMET(350-400psi)/DriverDoors/doorl
+- Use @ .../Coll x2   e.g. YARD/Building/Garage/GarageDoors/Left/Door/Coll
+- Player @ .../TriggerRearDoor x2   e.g. COPS/TriggerRearDoor
+- Player @ .../TriggerPSKDoor x2   e.g. COPS/TriggerPSKDoor
+- Player @ .../TriggerFrontDoor x2   e.g. COPS/TriggerFrontDoor
+- Trigger @ .../OpenInside x2   e.g. STORE_AREA/Stuff/LOD/DoorBarRear/OpenInside
+- Use @ .../doorr x2   e.g. KEKMET(350-400psi)/DriverDoors/doorr
+- Function @ .../Distance x2   e.g. PERAPORTTI/Building/LOD300/Staffdoors/Door2/Distance
+- Animate @ .../Pivot x1   e.g. STORE_AREA/Stuff/LOD/DoorTeimo/Pivot
+- Function @ .../DoorOuter x1   e.g. PERAPORTTI/Building/LOD300/Maindoors/DoorOuter
+- Spawn @ .../DoorLeft407 x1   e.g. CARPARTS/PARTSYSTEM/SPAWNERS_VIN/DoorLeft407
+- Function @ .../DoorInner x1   e.g. PERAPORTTI/Building/LOD300/Maindoors/DoorInner
+- Cooling @ .../GarageDoors x1   e.g. YARD/Building/Garage/GarageDoors
+- Data @ .../VINP_DoorLeft x1   e.g. CORRIS/Assemblies/VINP_DoorLeft
+- Spawn @ .../DoorRight408 x1   e.g. CARPARTS/PARTSYSTEM/SPAWNERS_VIN/DoorRight408
+- Trigger @ .../TriggerIn x1   e.g. STORE_AREA/Stuff/LOD/DoorBarRear/TriggerIn
+- Door @ .../Route x1   e.g. NPC_CARS/BusSpawnPerajarvi/BUS/Route
+- Data @ .../VINP_DoorRight x1   e.g. CORRIS/Assemblies/VINP_DoorRight
+- UseOld @ .../UncleDoorHandle x1   e.g. YARD/UNCLE/Building/DoorFront/Pivot/UncleDoorHandle
+
+## Global FSM event vocabulary (top 40)
+- FINISHED: 7108
+- SAVEGAME: 1231
+- BACK: 1183
+- STOP: 1083
+- PROCEED: 900
+- LOOP: 870
+- OFF: 761
+- TIGHTEN: 679
+- UNTIGHTEN: 679
+- REPAIRMODE_OFF: 603
+- REPAIRMODE_ON: 603
+- USE: 577
+- INSTALL: 450
+- ON: 450
+- CLICK: 392
+- EXISTS: 353
+- GARBAGE: 342
+- SPAWNITEM: 317
+- CLOSE: 297
+- 2: 281
+- 1: 271
+- NOTEXISTS: 251
+- CHECK: 246
+- back: 245
+- OPEN: 242
+- UNINSTALL: 241
+- 3: 240
+- ASSEMBLING: 228
+- 4: 228
+- BOLTING: 225
+- ASSEMBLE: 223
+- REMOVE: 223
+- RESET: 218
+- GLOBALEVENT: 216
+- BREAKOFF: 196
+- CrossedLine: 196
+- TRIGGER ENTER: 186
+- SAVE: 158
+- SCREW: 155
+- 5: 144
+
+## netId uniqueness
+- FSM netIds: 7796 unique / 8641 total, 302 colliding ids
+- Rigidbody netIds: 1656 unique / 1956 total, 65 colliding ids
+- sample collisions:
+  - 4090959143: 5 entries
+    - cigarettes(itemx)::Use
+    - cigarettes(itemx)::Use
+    - cigarettes(itemx)::Use
+  - 461163162: 4 entries
+    - potato chips(itemx)::Use
+    - potato chips(itemx)::Use
+    - potato chips(itemx)::Use
+  - 105758046: 6 entries
+    - sausages(itemx)::Use
+    - sausages(itemx)::Use
+    - sausages(itemx)::Use
+  - 1605545038: 2 entries
+    - beer case(itemx)::Use
+    - beer case(itemx)::Use
+  - 4027114321: 2 entries
+    - Steering Rack 26(VINXX)/tierod_right/BoltPM::Screw
+    - Steering Rack 26(VINXX)/tierod_right/BoltPM::Screw
+  - 3169431098: 2 entries
+    - Steering Rack 26(VINXX)/tierod_left/BoltPM::Screw
+    - Steering Rack 26(VINXX)/tierod_left/BoltPM::Screw
+  - 2497409041: 4 entries
+    - Steering Rack 26(VINXX)/Bolts/BoltPM::Screw
+    - Steering Rack 26(VINXX)/Bolts/BoltPM::Screw
+    - Steering Rack 26(VINXX)/Bolts/BoltPM::Screw
+  - 3478845996: 2 entries
+    - Main Bearing(VINXX)/Bolts/BoltPM::Screw
+    - Main Bearing(VINXX)/Bolts/BoltPM::Screw
+  - 1053396602: 3 entries
+    - Front Link Right(VINXX)/Bolts/BoltPM::Screw
+    - Front Link Right(VINXX)/Bolts/BoltPM::Screw
+    - Front Link Right(VINXX)/Bolts/BoltPM::Screw
+  - 3603482838: 6 entries
+    - Manual Gearbox 4 spd(VINXX)/Bolts/BoltPM::Screw
+    - Manual Gearbox 4 spd(VINXX)/Bolts/BoltPM::Screw
+    - Manual Gearbox 4 spd(VINXX)/Bolts/BoltPM::Screw
+
+## Rigidbody-heavy roots (top 20, dynamic bodies only)
+- RACES: 538 dynamic bodies
+- JOBS: 269 dynamic bodies
+- HUMANS: 82 dynamic bodies
+- NPC_CARS: 76 dynamic bodies
+- TRAFFIC: 75 dynamic bodies
+- STORE_AREA: 65 dynamic bodies
+- EQUIPMENTS: 45 dynamic bodies
+- GIFU(750: 37 dynamic bodies
+- PERAPORTTI: 36 dynamic bodies
+- DANCEHALL: 18 dynamic bodies
+- SORBET(190-200psi): 16 dynamic bodies
+- CORRIS: 14 dynamic bodies
+- SOCCER: 14 dynamic bodies
+- CARPARTS: 13 dynamic bodies
+- AnimalsMoose: 11 dynamic bodies
+- FleaMarketProducts: 10 dynamic bodies
+- KEKMET(350-400psi): 9 dynamic bodies
+- BACHGLOTZ(1905kg): 9 dynamic bodies
+- sausages(itemx): 6 dynamic bodies
+- MAP: 6 dynamic bodies

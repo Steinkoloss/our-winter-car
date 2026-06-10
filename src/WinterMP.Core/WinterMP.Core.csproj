@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- My Winter Car = Unity 5.0, legacy Mono (.NET 3.5 profile, mscorlib 3.0.40818). -->
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>WinterMP.Core</AssemblyName>
+    <RootNamespace>WinterMP.Core</RootNamespace>
+    <Nullable>enable</Nullable>
+    <Description>WinterMP core plugin: multiplayer conversion for My Winter Car (BepInEx 5).</Description>
+    <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
+    <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>
+    <BepInExPluginName>WinterMP</BepInExPluginName>
+    <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Core" Version="5.*" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Game assemblies (Unity 5.0 monolithic UnityEngine + the game's embedded Steamworks.NET). -->
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>$(MwcManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- PlayMaker 1.7.7.6 — the game's FSM engine; the world-sync layer hooks it directly. -->
+    <Reference Include="PlayMaker">
+      <HintPath>$(MwcManaged)\PlayMaker.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass" Condition="Exists('$(MwcManaged)\Assembly-CSharp-firstpass.dll')">
+      <HintPath>$(MwcManaged)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    The game embeds Steamworks.NET (classic API + CSteamworks.dll) inside
+    Assembly-CSharp-firstpass.dll — referencing it gives us the same Steam callback
+    state as the game itself. When present, the Steam transport compiles in.
+  -->
+  <PropertyGroup Condition="Exists('$(MwcManaged)\Assembly-CSharp-firstpass.dll')">
+    <DefineConstants>$(DefineConstants);STEAMWORKS</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="EnsureGameAssemblies" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(MwcManaged)\UnityEngine.dll')"
+           Text="MwcGamePath is not set or invalid ('$(MwcGamePath)'). Copy Directory.Build.props.user.example to Directory.Build.props.user and point it at your My Winter Car install." />
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WinterMP.Net\WinterMP.Net.csproj" />
+  </ItemGroup>
+
+  <!-- Auto-deploy into the game when MwcGamePath is configured (Directory.Build.props.user). -->
+  <Target Name="DeployToGame" AfterTargets="Build"
+          Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
+    <ItemGroup>
+      <DeployFiles Include="$(TargetDir)WinterMP.Core.dll;$(TargetDir)WinterMP.Net.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeployFiles)" Condition="Exists('%(DeployFiles.Identity)')"
+          DestinationFolder="$(MwcGamePath)\BepInEx\plugins\WinterMP" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="WinterMP deployed to $(MwcGamePath)\BepInEx\plugins\WinterMP" />
+  </Target>
+
+</Project>

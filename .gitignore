@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+TestResults/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Per-machine build configuration
+Directory.Build.props.user
+
+# Vendored binaries (drop-ins, see libs/README.md)
+libs/*.dll
+
+# Runtime artifacts
+dumps/
+backups/
+*.log
