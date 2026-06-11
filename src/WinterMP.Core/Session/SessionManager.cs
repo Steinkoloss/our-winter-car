@@ -518,6 +518,18 @@ namespace WinterMP.Core.Session
                             except: peer);
                     break;
 
+                case VehicleState vehicleState:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVehicleState(vehicleState);
+                    if (IsHost)
+                        Broadcast(vehicleState, Channel.UnreliableSequenced, except: peer);
+                    break;
+
+                case VehicleClimate vehicleClimate:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVehicleClimate(vehicleClimate);
+                    if (IsHost)
+                        Broadcast(vehicleClimate, Channel.UnreliableSequenced, except: peer);
+                    break;
+
                 case TimeSync timeSync when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteTimeSync(timeSync);
                     break;

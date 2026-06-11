@@ -6,7 +6,11 @@ namespace WinterMP.Net
         // v2: world sync messages 40-42 (doors, bolt events, item transforms).
         // v3: time/weather sync (43) and join snapshot messages (120-122).
         // v4: passenger seats (23).
-        public const ushort Version = 4;
+        // v5: vehicle engine state (60).
+        // v6: VehicleState gains speedTenthsKmh; ignition uses electricity FSM replay.
+        // v7: vehicle climate stream (61) — frost + heater knobs.
+        // v8: VehicleState gains fuelLevel + blinker flags.
+        public const ushort Version = 8;
     }
 
     /// <summary>

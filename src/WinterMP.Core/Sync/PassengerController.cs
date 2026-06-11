@@ -43,6 +43,9 @@ namespace WinterMP.Core.Sync
 
         public bool IsLocalSeated => _seated;
 
+        public bool IsLocalSeatedInVehicle(uint vehicleId) =>
+            _seated && _seatedVehicleId == vehicleId;
+
         private struct SeatRef
         {
             public uint VehicleId;

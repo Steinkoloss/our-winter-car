@@ -1,6 +1,6 @@
 # WinterMP wire protocol
 
-Protocol version: **4** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+Protocol version: **8** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
 Any breaking change to framing, message layout or semantics bumps the version;
 hosts refuse mismatched clients during handshake.
 
@@ -59,12 +59,14 @@ transforms to other guests and is authoritative for all world state.
 | 21 | PlayerDespawn | 0 | playerId, reason |
 | 22 | PlayerTransform | 1 | playerId, seq, pos, rot, moveState |
 | 23 | PassengerState | 0 | playerId, vehicleId, seatIndex (0 front passenger, 1 rear left, 2 rear right, 255 none); re-broadcast every ~8 s while seated; same-seat races resolved by lowest player id |
-| 40 | FsmStateEnter | 0 | netId + state name; receiver replays via injected MP_* global transition (doors) |
+| 40 | FsmStateEnter | 0 | netId + state name; receiver replays via injected MP_* global transition (doors, ignitions, vehicle controls, engine run/stall on SORBET/CORRIS Starter FSMs) |
 | 41 | FsmRawEvent | 0 | netId + event name; receiver whitelists (TIGHTEN/UNTIGHTEN on bolts) |
 | 42 | ItemTransform | 1 (final: 0) | itemId, ownerPlayerId, seq, flags, pos, rot — items *and* vehicles |
 | 43 | TimeSync | 0 | host -> guests: hour (1-24), minutes, forecast temps, snowing, forecast index |
+| 60 | VehicleState | 1 | vehicleId, ownerPlayerId, seq, flags (bit 0 engine on, bit 1 ACC/electrics on, bit 2 blinker left, bit 3 blinker right), rpm, speedTenthsKmh, fuelLevel (0-255) — ~4 Hz from whoever is driving *or* left the engine/ACC running locally; receivers replay Electricity ON/OFF FSM, push rpm/speed/fuel into gauge variables (CORRIS angle gauges included), apply blinker stalk/events, and synthesize engine audio (pitch from RPM), stopping after 2 s without packets |
+| 61 | VehicleClimate | 1 | vehicleId, ownerPlayerId, seq, frost (0-255), flags (bit 0 window heater on, bit 1 glass defrosting), heaterTemp, heaterBlower, heaterDirection (each 0-255) — ~2 Hz from driver, passenger, or anyone near a parked car; receivers replay window-heater On/Off FSM, pulse GlassFrosting DEFROST + CarTemp Defrost, push frost into GlassFrosting/Freezing cutoffs every LateUpdate; included once per vehicle in join snapshot |
 | 120 | WorldSnapshotRequest | 0 | guest -> host once its first world scan completes; carries the guest's id hash (diagnostic only) |
-| 121 | WorldDoorSnapshot | 0 | host -> guest: (netId, stateName) pairs for doors the host saw change; chunked (≤60/message) |
+| 121 | WorldDoorSnapshot | 0 | host -> guest: (netId, stateName) pairs for doors/ignitions/controls/starters the host saw change; chunked (≤60/message) |
 | 122 | WorldItemSnapshot | 0 | host -> guest: (itemId, pos, rot) for every item/vehicle; chunked (≤40/message); unknown ids are parked until scanned |
 
 `ItemTransform.flags`: bit 0 = **final** (at-rest pose, sent reliable; receiver
@@ -81,7 +83,7 @@ message (host's weather wins). Day-of-week is not yet synced.
 ### Reserved ranges
 
 - 44–59 world events (consumption/destruction, switches) — M3
-- 60–79 vehicles (engine state, attachment) — M4/M5
+- 61–79 vehicles (attachment, fuel/damage) — M4/M5
 - 80–99 economy (wallet transactions, shop intents) — M5
 - 100–119 NPCs/jobs — M6
 - 123–139 snapshot/bulk transfer control (save data) — M3+

@@ -54,6 +54,68 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
+        public void VehicleState_RoundTrips()
+        {
+            var original = new VehicleState
+            {
+                VehicleId = 0x44556677,
+                OwnerPlayerId = 1,
+                Sequence = 1234,
+                Flags = VehicleState.FlagEngineOn | VehicleState.FlagAccOn
+                    | VehicleState.FlagBlinkerLeft,
+                Rpm = 3450,
+                SpeedTenthsKmh = 452,
+                FuelLevel = 192,
+            };
+
+            var decoded = Assert.IsType<VehicleState>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.VehicleId, decoded.VehicleId);
+            Assert.Equal(original.OwnerPlayerId, decoded.OwnerPlayerId);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.True(decoded.EngineOn);
+            Assert.True(decoded.AccOn);
+            Assert.True(decoded.BlinkerLeft);
+            Assert.False(decoded.BlinkerRight);
+            Assert.Equal(original.Rpm, decoded.Rpm);
+            Assert.Equal(original.SpeedTenthsKmh, decoded.SpeedTenthsKmh);
+            Assert.Equal(original.FuelLevel, decoded.FuelLevel);
+        }
+
+        [Fact]
+        public void VehicleState_Default_EngineOff()
+        {
+            var decoded = Assert.IsType<VehicleState>(PacketCodec.Decode(PacketCodec.Encode(new VehicleState())));
+            Assert.False(decoded.EngineOn);
+        }
+
+        [Fact]
+        public void VehicleClimate_RoundTrips()
+        {
+            var original = new VehicleClimate
+            {
+                VehicleId = 0xAABBCCDD,
+                OwnerPlayerId = 2,
+                Sequence = 9001,
+                Frost = 200,
+                Flags = VehicleClimate.FlagWindowHeater | VehicleClimate.FlagGlassDefrosting,
+                HeaterTemp = 180,
+                HeaterBlower = 64,
+                HeaterDirection = 128,
+            };
+
+            var decoded = Assert.IsType<VehicleClimate>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.VehicleId, decoded.VehicleId);
+            Assert.Equal(original.OwnerPlayerId, decoded.OwnerPlayerId);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.Equal(original.Frost, decoded.Frost);
+            Assert.True(decoded.WindowHeaterOn);
+            Assert.True(decoded.GlassDefrosting);
+            Assert.Equal(original.HeaterTemp, decoded.HeaterTemp);
+            Assert.Equal(original.HeaterBlower, decoded.HeaterBlower);
+            Assert.Equal(original.HeaterDirection, decoded.HeaterDirection);
+        }
+
+        [Fact]
         public void TimeSync_RoundTrips()
         {
             var original = new TimeSync

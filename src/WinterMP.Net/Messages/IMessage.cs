@@ -28,13 +28,17 @@ namespace WinterMP.Net.Messages
         ItemTransform = 42,
         TimeSync = 43,
 
+        // 60-79: vehicles — M4
+        VehicleState = 60,
+        VehicleClimate = 61,
+
         // 120-139: snapshots/bulk — M3 join snapshot
         WorldSnapshotRequest = 120,
         WorldDoorSnapshot = 121,
         WorldItemSnapshot = 122,
 
-        // 60+: reserved for future subsystems:
-        //   60-79 vehicles
+        // Reserved ranges for future subsystems:
+        //   61-79 vehicles (attachment, fuel/damage)
         //   80-99 economy
         //   100-119 NPCs
     }

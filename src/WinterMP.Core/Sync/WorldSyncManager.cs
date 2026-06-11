@@ -73,6 +73,31 @@ namespace WinterMP.Core.Sync
         private const float PlayerSearchIntervalSeconds = 2f;
         private const string PlayerObjectName = "PLAYER";
 
+        /// <summary>Engine state stream rate (audio only — coarse is fine).</summary>
+        private const float VehicleStateRateHz = 4f;
+        /// <summary>Frost + heater knobs — slow enough to save bandwidth, fast enough to feel live.</summary>
+        private const float VehicleClimateRateHz = 2f;
+        private const float HeaterTempMax = 30f;
+        private const float HeaterBlowerMax = 4f;
+        private const float HeaterDirectionMax = 4f;
+        private const float ClimateProbeIntervalSeconds = 3f;
+        /// <summary>Keep pushing frost/defrost visuals after the last climate packet.</summary>
+        private const float ClimateHoldSeconds = 3f;
+        private const float DefrostPulseSeconds = 0.5f;
+        /// <summary>Remote engine audio stops when no state arrived for this long.</summary>
+        private const float EngineAudioHoldSeconds = 2f;
+        private const float EnginePitchBase = 0.55f;
+        private const float EnginePitchPerRpm = 1f / 6500f;
+        private const float EnginePitchMin = 0.65f;
+        private const float EnginePitchMax = 1.65f;
+        private const float EngineAudioVolume = 0.8f;
+        private const float SystemsProbeIntervalSeconds = 3f;
+        /// <summary>FuelLine.Revs above this counts as engine running (idle ~800).</summary>
+        private const float EngineRunningRevs = 250f;
+        private const float TachMaxRpm = 7000f;
+        private const float SpeedoMaxKmh = 140f;
+        private const float FuelTankDefaultLiters = 30f;
+
         /// <summary>Host broadcasts the clock/weather this often (drift is slow).</summary>
         private const float TimeSyncIntervalSeconds = 30f;
         /// <summary>Snapshot poses for not-yet-scanned items stay parked this long.</summary>
@@ -102,6 +127,30 @@ namespace WinterMP.Core.Sync
         {
             public PlayMakerFSM Fsm = null!;
             public string Path = string.Empty;
+        }
+
+        private sealed class SyncedIgnition
+        {
+            public PlayMakerFSM Fsm = null!;
+            public string Path = string.Empty;
+            public string[] SyncedStates = null!;
+            public string? LastSyncedState;
+        }
+
+        private sealed class SyncedControl
+        {
+            public PlayMakerFSM Fsm = null!;
+            public string Path = string.Empty;
+            public string[] SyncedStates = null!;
+            public string? LastSyncedState;
+        }
+
+        private sealed class SyncedStarter
+        {
+            public PlayMakerFSM Fsm = null!;
+            public string Path = string.Empty;
+            public string[] SyncedStates = null!;
+            public string? LastSyncedState;
         }
 
         private sealed class SyncedItem
@@ -135,6 +184,78 @@ namespace WinterMP.Core.Sync
             public Collider? SeatCollider;
             public bool SeatBlocked;
 
+            // Vehicles only: engine / ignition sync (M4).
+            public bool SystemsReady;
+            public float NextSystemsProbeAt;
+            public GameObject? AudioEngine;
+            public HutongGames.PlayMaker.FsmFloat? EngineRevsVar;
+            public HutongGames.PlayMaker.FsmFloat? GaugeSpeedVar;
+            public HutongGames.PlayMaker.FsmFloat? GaugeSpeedAngleVar;
+            public HutongGames.PlayMaker.FsmFloat? GaugeRpmVar;
+            public HutongGames.PlayMaker.FsmFloat? GaugeTachRevsVar;
+            public HutongGames.PlayMaker.FsmFloat? GaugeTachRotationVar;
+            public HutongGames.PlayMaker.FsmFloat? GaugeFuelLevelVar;
+            public HutongGames.PlayMaker.FsmFloat? GaugeFuelAngleVar;
+            public HutongGames.PlayMaker.FsmFloat? FuelTankLevelVar;
+            public HutongGames.PlayMaker.FsmFloat? FuelTankCapacityVar;
+            public PlayMakerFSM? TurnSignalStalkFsm;
+            public PlayMakerFSM? TurnSignalsFsm;
+            public HutongGames.PlayMaker.FsmBool? BlinkerLeftVar;
+            public HutongGames.PlayMaker.FsmBool? BlinkerRightVar;
+            public GameObject? GaugeTachNeedle;
+            public PlayMakerFSM? ElectricityPowerFsm;
+            public PlayMakerFSM? GaugeTachDataFsm;
+            public ushort OutVehicleStateSequence;
+            public float NextVehicleStateAt;
+            public ushort LastVehicleStateSequence;
+            public bool RemoteEngineOn;
+            public bool RemoteAccOn;
+            public bool RemoteElectricsApplied;
+            public float RemoteRpm;
+            public float RemoteSpeedKmh;
+            public byte RemoteFuelLevel;
+            public bool RemoteBlinkerLeft;
+            public bool RemoteBlinkerRight;
+            public float RemoteEngineUntil = -999f;
+            public AudioSource? RemoteEngineAudio;
+            public bool RemoteEngineAudioSearched;
+            public bool LoggedEngineSend;
+
+            // Vehicles only: frost + heater (M4).
+            public bool ClimateReady;
+            public PlayMakerFSM? GlassFrostingFsm;
+            public PlayMakerFSM? FreezingFsm;
+            public PlayMakerFSM? CarTempDataFsm;
+            public HutongGames.PlayMaker.FsmFloat? FrostVar;
+            public HutongGames.PlayMaker.FsmColor? FrostColorVar;
+            public HutongGames.PlayMaker.FsmFloat? CutoffWindshieldVar;
+            public HutongGames.PlayMaker.FsmFloat? CutoffSideLeftVar;
+            public HutongGames.PlayMaker.FsmFloat? CutoffSideRightVar;
+            public HutongGames.PlayMaker.FsmFloat? CutoffDoorLeftVar;
+            public HutongGames.PlayMaker.FsmFloat? CutoffDoorRightVar;
+            public HutongGames.PlayMaker.FsmFloat? CutoffRearVar;
+            public PlayMakerFSM? HeaterUnitFsm;
+            public PlayMakerFSM? WindowHeaterButtonFsm;
+            public HutongGames.PlayMaker.FsmFloat? HeaterSettingTemp;
+            public HutongGames.PlayMaker.FsmFloat? HeaterSettingBlower;
+            public HutongGames.PlayMaker.FsmFloat? HeaterSettingDirection;
+            public HutongGames.PlayMaker.FsmBool? GlassDefrostingVar;
+            public HutongGames.PlayMaker.FsmFloat? KnobTempSetting;
+            public HutongGames.PlayMaker.FsmFloat? KnobBlowerSetting;
+            public HutongGames.PlayMaker.FsmFloat? KnobDirectionSetting;
+            public HutongGames.PlayMaker.FsmBool? WindowHeaterOnVar;
+            public ushort OutClimateSequence;
+            public float NextClimateAt;
+            public ushort LastClimateSequence;
+            public byte RemoteFrost;
+            public bool RemoteWindowHeater;
+            public bool RemoteGlassDefrosting;
+            public float RemoteClimateUntil = -999f;
+            public float NextClimateProbeAt;
+            public float NextDefrostPulseAt;
+            public bool LoggedClimateSend;
+            public bool LoggedClimateApply;
+
             public float ClaimRadius => IsVehicle ? VehicleClaimRadius : ItemClaimRadius;
             public float SendRateHz => IsVehicle ? VehicleSendRateHz : ItemSendRateHz;
             public float StillSeconds => IsVehicle ? VehicleStillSeconds : ItemStillSeconds;
@@ -163,6 +284,9 @@ namespace WinterMP.Core.Sync
 
         private readonly Dictionary<uint, SyncedDoor> _doors = new Dictionary<uint, SyncedDoor>();
         private readonly Dictionary<uint, SyncedBolt> _bolts = new Dictionary<uint, SyncedBolt>();
+        private readonly Dictionary<uint, SyncedIgnition> _ignitions = new Dictionary<uint, SyncedIgnition>();
+        private readonly Dictionary<uint, SyncedControl> _controls = new Dictionary<uint, SyncedControl>();
+        private readonly Dictionary<uint, SyncedStarter> _starters = new Dictionary<uint, SyncedStarter>();
         private readonly Dictionary<uint, SyncedItem> _items = new Dictionary<uint, SyncedItem>();
         private readonly Dictionary<PlayMakerFSM, bool> _hookedFsms = new Dictionary<PlayMakerFSM, bool>();
         private readonly Dictionary<Rigidbody, bool> _trackedBodies = new Dictionary<Rigidbody, bool>();
@@ -264,9 +388,28 @@ namespace WinterMP.Core.Sync
             }
 
             UpdateItems(session);
+            UpdateVehicleStates(session!);
+            UpdateVehicleClimate(session!);
 
             if (_selfTest)
                 RunDoorTest();
+        }
+
+        /// <summary>
+        /// Re-apply frost/defrost presentation after PlayMaker runs so the remote
+        /// car's local frost sim cannot overwrite streamed values every frame.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (!_wasSessionActive) return;
+
+            float now = Time.unscaledTime;
+            foreach (var item in _items.Values)
+            {
+                if (!item.IsVehicle || item.LocallyOwned || item.Body == null) continue;
+                if (now >= item.RemoteClimateUntil) continue;
+                UpdateRemoteClimatePresentation(item, now);
+            }
         }
 
         private void WatchLevelChanges()
@@ -287,6 +430,9 @@ namespace WinterMP.Core.Sync
             // Scene swap destroyed every hooked FSM and tracked body.
             _doors.Clear();
             _bolts.Clear();
+            _ignitions.Clear();
+            _controls.Clear();
+            _starters.Clear();
             _items.Clear();
             _hookedFsms.Clear();
             _trackedBodies.Clear();
@@ -305,7 +451,7 @@ namespace WinterMP.Core.Sync
 
         private void ScanWorld()
         {
-            int newDoors = 0, newBolts = 0, newItems = 0;
+            int newDoors = 0, newBolts = 0, newIgnitions = 0, newControls = 0, newStarters = 0, newItems = 0;
 
             try
             {
@@ -324,6 +470,16 @@ namespace WinterMP.Core.Sync
                         {
                             string[]? states = ClassifyDoor(fsm);
                             if (states != null && RegisterDoor(fsm, states)) newDoors++;
+                            else
+                            {
+                                states = ClassifyIgnition(fsm);
+                                if (states != null && RegisterIgnition(fsm, states)) newIgnitions++;
+                                else
+                                {
+                                    states = ClassifyVehicleControl(fsm);
+                                    if (states != null && RegisterControl(fsm, states)) newControls++;
+                                }
+                            }
                         }
                         else if (fsmName == "Screw")
                         {
@@ -331,6 +487,16 @@ namespace WinterMP.Core.Sync
                                 && RegisterBolt(fsm))
                             {
                                 newBolts++;
+                            }
+                        }
+                        else
+                        {
+                            string[]? states = ClassifyStarter(fsm);
+                            if (states != null && RegisterStarter(fsm, states)) newStarters++;
+                            else
+                            {
+                                states = ClassifyVehicleControl(fsm);
+                                if (states != null && RegisterControl(fsm, states)) newControls++;
                             }
                         }
                     }
@@ -348,12 +514,12 @@ namespace WinterMP.Core.Sync
                 WinterMPPlugin.Log.LogError($"WorldSync: world scan failed: {e}");
             }
 
-            if (newDoors > 0 || newBolts > 0 || newItems > 0)
+            if (newDoors > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newItems > 0)
             {
                 RecomputeIdHash();
                 WinterMPPlugin.Log.LogInfo(
-                    $"WorldSync: +{newDoors} doors, +{newBolts} bolts, +{newItems} items — " +
-                    $"now {_doors.Count}/{_bolts.Count}/{_items.Count} (id hash {IdHash:X8}).");
+                    $"WorldSync: +{newDoors} doors, +{newBolts} bolts, +{newIgnitions} ignitions, +{newControls} controls, +{newItems} items — " +
+                    $"now {_doors.Count}/{_bolts.Count}/{_ignitions.Count}/{_controls.Count}/{_starters.Count}/{_items.Count} (id hash {IdHash:X8}).");
             }
 
             // Self-test: announce the catalog once via chat so both instances' id
@@ -374,6 +540,120 @@ namespace WinterMP.Core.Sync
             if (FsmHook.HasState(fsm, "Open") && FsmHook.HasState(fsm, "Close") && FsmHook.HasState(fsm, "Set rotation"))
                 return new[] { "Open", "Close" };
             return null;
+        }
+
+        private static string[]? ClassifyIgnition(PlayMakerFSM fsm)
+        {
+            // SORBET/GIFU/KEKMET/CORRIS ignition switches share this PlayMaker shape:
+            // ACC on powers the dashboard, Motor starting kicks the starter/audio,
+            // and Motor OFF shuts it back down. Replaying those states runs the
+            // game's own electricity/engine actions, unlike toggling GameObjects.
+            if (fsm.gameObject.name.IndexOf("IGNITION", StringComparison.OrdinalIgnoreCase) < 0)
+                return null;
+            if (FsmHook.HasState(fsm, "ACC on")
+                && FsmHook.HasState(fsm, "Motor starting")
+                && FsmHook.HasState(fsm, "Motor OFF"))
+            {
+                return new[] { "ACC on", "Motor starting", "Motor OFF" };
+            }
+
+            return null;
+        }
+
+        private static string[]? ClassifyVehicleControl(PlayMakerFSM fsm)
+        {
+            string path = ScenePath.Of(fsm.transform);
+            bool sorbet = path.StartsWith("SORBET(190-200psi)/", StringComparison.Ordinal);
+            bool corris = path.StartsWith("CORRIS/", StringComparison.Ordinal);
+            if (!sorbet && !corris) return null;
+
+            string name = fsm.gameObject.name;
+            string fsmName = fsm.FsmName;
+
+            // SORBET dashboard controls.
+            if (sorbet && fsmName == "Use")
+            {
+                if (name == "ButtonLightModes" && HasAllStates(fsm, "Drive", "Park", "Off 2", "Hi Beam On", "Hi Beam Off"))
+                    return new[] { "Drive", "Park", "Off 2", "Hi Beam On", "Hi Beam Off" };
+                if (name == "ButtonWipers" && HasAllStates(fsm, "Fast", "Slow", "Off"))
+                    return new[] { "Fast", "Slow", "Off" };
+                if (name == "ButtonHazard" && HasAllStates(fsm, "On", "Off"))
+                    return new[] { "On", "Off" };
+                if ((name == "TriggerLeft" || name == "TriggerRight") && HasAllStates(fsm, "Up", "Down"))
+                    return new[] { "Up", "Down" };
+                if (name == "LeverPivot" && path.IndexOf("/Functions/HandBrake/", StringComparison.Ordinal) >= 0
+                    && HasAllStates(fsm, "INCREASE", "DECREASE"))
+                {
+                    return new[] { "INCREASE", "DECREASE" };
+                }
+                if (name == "ButtonWindowHeater" && HasAllStates(fsm, "On", "Off"))
+                    return new[] { "On", "Off" };
+                if (name == "TurnSignalsX" && HasAllStates(fsm, "On", "On 2", "Check player"))
+                    return new[] { "On", "On 2", "Check player" };
+            }
+
+            if (corris && fsmName == "Use")
+            {
+                if (name == "ButtonWindowHeater" && HasAllStates(fsm, "On", "Off"))
+                    return new[] { "On", "Off" };
+                if (name == "TurnSignalsX" && HasAllStates(fsm, "On", "On 2", "Check player"))
+                    return new[] { "On", "On 2", "Check player" };
+            }
+
+            // Handbrake dash light follows the Brake FSM, not the lever Use FSM.
+            if (fsmName == "Brake" && path.IndexOf("/HandBrake/", StringComparison.Ordinal) >= 0
+                && HasAllStates(fsm, "Brake ON", "Brake OFF"))
+            {
+                return new[] { "Brake ON", "Brake OFF" };
+            }
+
+            // CORRIS controls live under the powered systems object and appear once
+            // ignition has activated PowerON.
+            if (corris)
+            {
+                if (fsmName == "LightModes" && HasAllStates(fsm, "Driving", "Park", "Off", "Hi Beam"))
+                    return new[] { "Driving", "Park", "Off", "Hi Beam" };
+                if (fsmName == "WiperModes" && HasAllStates(fsm, "Fast", "Slow", "Off"))
+                    return new[] { "Fast", "Slow", "Off" };
+            }
+
+            return null;
+        }
+
+        private static string[]? ClassifyStarter(PlayMakerFSM fsm)
+        {
+            // STARTERxSorbet / STARTERxCorris :: Starter drives the actual engine
+            // run/stall cycle (Running <-> Stall engine). Replaying those states
+            // stops/starts the engine sim and audio on every machine.
+            string path = ScenePath.Of(fsm.transform);
+            string fsmName = fsm.FsmName;
+
+            if (fsmName == "Starter"
+                && (path.StartsWith("SORBET(190-200psi)/Simulation/STARTER", StringComparison.Ordinal)
+                    || path.StartsWith("CORRIS/Simulation/STARTER", StringComparison.Ordinal)))
+            {
+                if (HasAllStates(fsm, "Running", "Stall engine"))
+                    return new[] { "Running", "Stall engine", "Start engine", "Crank up" };
+            }
+
+            // CORRIS push-starts bypass the key; Engine on/off mirrors run/stall.
+            if (fsmName == "Pushstart" && path.StartsWith("CORRIS/Simulation/STARTER", StringComparison.Ordinal))
+            {
+                if (HasAllStates(fsm, "Engine on", "Engine off"))
+                    return new[] { "Engine on", "Engine off" };
+            }
+
+            return null;
+        }
+
+        private static bool HasAllStates(PlayMakerFSM fsm, params string[] states)
+        {
+            foreach (string state in states)
+            {
+                if (!FsmHook.HasState(fsm, state)) return false;
+            }
+
+            return true;
         }
 
         private bool RegisterDoor(PlayMakerFSM fsm, string[] syncedStates)
@@ -418,6 +698,78 @@ namespace WinterMP.Core.Sync
 
             _bolts[id] = new SyncedBolt { Fsm = fsm, Path = path };
             _hookedFsms[fsm] = true;
+            return true;
+        }
+
+        private bool RegisterIgnition(PlayMakerFSM fsm, string[] syncedStates)
+        {
+            string path = ScenePath.Of(fsm.transform);
+            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (_ignitions.ContainsKey(id) || _starters.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: ignition id collision, not syncing '{path}'.");
+                _hookedFsms[fsm] = true;
+                return false;
+            }
+
+            foreach (string state in syncedStates)
+            {
+                if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
+                string captured = state;
+                if (!FsmHook.OnStateEnter(fsm, state, () => OnIgnitionStateEntered(id, captured))) return false;
+            }
+
+            _ignitions[id] = new SyncedIgnition { Fsm = fsm, Path = path, SyncedStates = syncedStates };
+            _hookedFsms[fsm] = true;
+            WinterMPPlugin.Log.LogInfo($"WorldSync: ignition registered: '{path}'.");
+            return true;
+        }
+
+        private bool RegisterControl(PlayMakerFSM fsm, string[] syncedStates)
+        {
+            string path = ScenePath.Of(fsm.transform);
+            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (_controls.ContainsKey(id) || _starters.ContainsKey(id) || _ignitions.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: control id collision, not syncing '{path}'.");
+                _hookedFsms[fsm] = true;
+                return false;
+            }
+
+            foreach (string state in syncedStates)
+            {
+                if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
+                string captured = state;
+                if (!FsmHook.OnStateEnter(fsm, state, () => OnControlStateEntered(id, captured))) return false;
+            }
+
+            _controls[id] = new SyncedControl { Fsm = fsm, Path = path, SyncedStates = syncedStates };
+            _hookedFsms[fsm] = true;
+            WinterMPPlugin.Log.LogInfo($"WorldSync: control registered: '{path}'.");
+            return true;
+        }
+
+        private bool RegisterStarter(PlayMakerFSM fsm, string[] syncedStates)
+        {
+            string path = ScenePath.Of(fsm.transform);
+            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (_starters.ContainsKey(id) || _controls.ContainsKey(id) || _ignitions.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: starter id collision, not syncing '{path}'.");
+                _hookedFsms[fsm] = true;
+                return false;
+            }
+
+            foreach (string state in syncedStates)
+            {
+                if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
+                string captured = state;
+                if (!FsmHook.OnStateEnter(fsm, state, () => OnStarterStateEntered(id, captured))) return false;
+            }
+
+            _starters[id] = new SyncedStarter { Fsm = fsm, Path = path, SyncedStates = syncedStates };
+            _hookedFsms[fsm] = true;
+            WinterMPPlugin.Log.LogInfo($"WorldSync: starter registered: '{path}'.");
             return true;
         }
 
@@ -536,9 +888,12 @@ namespace WinterMP.Core.Sync
 
         private void RecomputeIdHash()
         {
-            var ids = new List<uint>(_doors.Count + _bolts.Count + _items.Count);
+            var ids = new List<uint>(_doors.Count + _bolts.Count + _ignitions.Count + _controls.Count + _starters.Count + _items.Count);
             foreach (uint id in _doors.Keys) ids.Add(id);
             foreach (uint id in _bolts.Keys) ids.Add(id);
+            foreach (uint id in _ignitions.Keys) ids.Add(id);
+            foreach (uint id in _controls.Keys) ids.Add(id);
+            foreach (uint id in _starters.Keys) ids.Add(id);
             foreach (uint id in _items.Keys) ids.Add(id);
             ids.Sort();
 
@@ -576,6 +931,48 @@ namespace WinterMP.Core.Sync
             session.SendWorldMessage(new FsmRawEvent { NetId = netId, EventName = eventName }, Channel.ReliableOrdered);
         }
 
+        private void OnIgnitionStateEntered(uint netId, string stateName)
+        {
+            if (_applyingRemote) return;
+
+            if (_ignitions.TryGetValue(netId, out var ignition))
+                ignition.LastSyncedState = stateName;
+
+            var session = SessionManager.Instance;
+            if (session == null || session.PlayerCount == 0) return;
+
+            WinterMPPlugin.Log.LogInfo($"WorldSync: ignition {netId:X8} -> '{stateName}' (local).");
+            session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
+        }
+
+        private void OnControlStateEntered(uint netId, string stateName)
+        {
+            if (_applyingRemote) return;
+
+            if (_controls.TryGetValue(netId, out var control))
+                control.LastSyncedState = stateName;
+
+            var session = SessionManager.Instance;
+            if (session == null || session.PlayerCount == 0) return;
+
+            WinterMPPlugin.Log.LogInfo($"WorldSync: control {netId:X8} -> '{stateName}' (local).");
+            session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
+        }
+
+        private void OnStarterStateEntered(uint netId, string stateName)
+        {
+            if (_applyingRemote) return;
+
+            if (_starters.TryGetValue(netId, out var starter))
+                starter.LastSyncedState = stateName;
+
+            var session = SessionManager.Instance;
+            if (session == null || session.PlayerCount == 0) return;
+
+            WinterMPPlugin.Log.LogInfo($"WorldSync: starter {netId:X8} -> '{stateName}' (local).");
+            session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
+        }
+
         // ------------------------------------------------------------------ network -> world
 
         public void OnRemoteStateEnter(FsmStateEnter message)
@@ -598,31 +995,110 @@ namespace WinterMP.Core.Sync
 
         private bool TryApplyStateEnter(uint netId, string stateName)
         {
-            if (!_doors.TryGetValue(netId, out var door) || door.Fsm == null) return false;
-            if (Array.IndexOf(door.SyncedStates, stateName) < 0)
+            if (_doors.TryGetValue(netId, out var door) && door.Fsm != null)
             {
-                WinterMPPlugin.Log.LogWarning($"WorldSync: '{stateName}' is not a synced state of {door.Path}; dropped.");
-                return true; // don't queue — it would never become valid
+                if (Array.IndexOf(door.SyncedStates, stateName) < 0)
+                {
+                    WinterMPPlugin.Log.LogWarning($"WorldSync: '{stateName}' is not a synced state of {door.Path}; dropped.");
+                    return true; // don't queue — it would never become valid
+                }
+
+                if (!door.Fsm.gameObject.activeInHierarchy || !door.Fsm.enabled) return false;
+
+                WinterMPPlugin.Log.LogInfo($"WorldSync: door {netId:X8} -> '{stateName}' (remote).");
+                _applyingRemote = true;
+                try
+                {
+                    FsmHook.FireRemoteEntry(door.Fsm, stateName);
+                    door.LastSyncedState = stateName;
+                }
+                finally
+                {
+                    _applyingRemote = false;
+                }
+
+                if (_selfTest)
+                    SessionManager.Instance?.SendChat($"[ws] applied '{stateName}' on {netId:X8}");
+
+                return true;
             }
 
-            if (!door.Fsm.gameObject.activeInHierarchy || !door.Fsm.enabled) return false;
-
-            WinterMPPlugin.Log.LogInfo($"WorldSync: door {netId:X8} -> '{stateName}' (remote).");
-            _applyingRemote = true;
-            try
+            if (_ignitions.TryGetValue(netId, out var ignition) && ignition.Fsm != null)
             {
-                FsmHook.FireRemoteEntry(door.Fsm, stateName);
-                door.LastSyncedState = stateName;
+                if (Array.IndexOf(ignition.SyncedStates, stateName) < 0)
+                {
+                    WinterMPPlugin.Log.LogWarning($"WorldSync: '{stateName}' is not a synced ignition state of {ignition.Path}; dropped.");
+                    return true;
+                }
+
+                if (!ignition.Fsm.gameObject.activeInHierarchy || !ignition.Fsm.enabled) return false;
+
+                WinterMPPlugin.Log.LogInfo($"WorldSync: ignition {netId:X8} -> '{stateName}' (remote).");
+                _applyingRemote = true;
+                try
+                {
+                    FsmHook.FireRemoteEntry(ignition.Fsm, stateName);
+                    ignition.LastSyncedState = stateName;
+                }
+                finally
+                {
+                    _applyingRemote = false;
+                }
+
+                return true;
             }
-            finally
+
+            if (_controls.TryGetValue(netId, out var control) && control.Fsm != null)
             {
-                _applyingRemote = false;
+                if (Array.IndexOf(control.SyncedStates, stateName) < 0)
+                {
+                    WinterMPPlugin.Log.LogWarning($"WorldSync: '{stateName}' is not a synced control state of {control.Path}; dropped.");
+                    return true;
+                }
+
+                if (!control.Fsm.gameObject.activeInHierarchy || !control.Fsm.enabled) return false;
+
+                WinterMPPlugin.Log.LogInfo($"WorldSync: control {netId:X8} -> '{stateName}' (remote).");
+                _applyingRemote = true;
+                try
+                {
+                    FsmHook.FireRemoteEntry(control.Fsm, stateName);
+                    control.LastSyncedState = stateName;
+                }
+                finally
+                {
+                    _applyingRemote = false;
+                }
+
+                return true;
             }
 
-            if (_selfTest)
-                SessionManager.Instance?.SendChat($"[ws] applied '{stateName}' on {netId:X8}");
+            if (_starters.TryGetValue(netId, out var starter) && starter.Fsm != null)
+            {
+                if (Array.IndexOf(starter.SyncedStates, stateName) < 0)
+                {
+                    WinterMPPlugin.Log.LogWarning($"WorldSync: '{stateName}' is not a synced starter state of {starter.Path}; dropped.");
+                    return true;
+                }
 
-            return true;
+                if (!starter.Fsm.gameObject.activeInHierarchy || !starter.Fsm.enabled) return false;
+
+                WinterMPPlugin.Log.LogInfo($"WorldSync: starter {netId:X8} -> '{stateName}' (remote).");
+                _applyingRemote = true;
+                try
+                {
+                    FsmHook.FireRemoteEntry(starter.Fsm, stateName);
+                    starter.LastSyncedState = stateName;
+                }
+                finally
+                {
+                    _applyingRemote = false;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         private bool TryApplyRawEvent(uint netId, string eventName)
@@ -701,6 +1177,45 @@ namespace WinterMP.Core.Sync
                 }
             }
 
+            foreach (var pair in _ignitions)
+            {
+                var ignition = pair.Value;
+                if (ignition.LastSyncedState == null) continue;
+
+                doors.Entries.Add(new WorldDoorSnapshot.Entry { NetId = pair.Key, StateName = ignition.LastSyncedState });
+                if (doors.Entries.Count >= DoorSnapshotChunk)
+                {
+                    yield return doors;
+                    doors = new WorldDoorSnapshot();
+                }
+            }
+
+            foreach (var pair in _controls)
+            {
+                var control = pair.Value;
+                if (control.LastSyncedState == null) continue;
+
+                doors.Entries.Add(new WorldDoorSnapshot.Entry { NetId = pair.Key, StateName = control.LastSyncedState });
+                if (doors.Entries.Count >= DoorSnapshotChunk)
+                {
+                    yield return doors;
+                    doors = new WorldDoorSnapshot();
+                }
+            }
+
+            foreach (var pair in _starters)
+            {
+                var starter = pair.Value;
+                if (starter.LastSyncedState == null) continue;
+
+                doors.Entries.Add(new WorldDoorSnapshot.Entry { NetId = pair.Key, StateName = starter.LastSyncedState });
+                if (doors.Entries.Count >= DoorSnapshotChunk)
+                {
+                    yield return doors;
+                    doors = new WorldDoorSnapshot();
+                }
+            }
+
             if (doors.Entries.Count > 0)
                 yield return doors;
 
@@ -725,6 +1240,14 @@ namespace WinterMP.Core.Sync
 
             if (items.Entries.Count > 0)
                 yield return items;
+
+            foreach (var pair in _items)
+            {
+                if (!pair.Value.IsVehicle) continue;
+                var climate = TryBuildVehicleClimate(pair.Value);
+                if (climate != null)
+                    yield return climate;
+            }
         }
 
         /// <summary>Host side: current clock/weather, or null while still in the menu.</summary>
@@ -915,6 +1438,9 @@ namespace WinterMP.Core.Sync
                 bool seatedDriver = item.IsVehicle && IsLocalPlayerDriving(body);
                 bool remoteDriven = now - item.LastRemoteAt < RemoteHoldSeconds;
 
+                if (item.IsVehicle)
+                    UpdateRemoteEngineAudio(item, now);
+
                 // Entering the driver's seat out-claims proximity owners, pushers,
                 // and the previous driver (protocol: driver beats non-driver; among
                 // drivers the lowest player id wins).
@@ -972,6 +1498,7 @@ namespace WinterMP.Core.Sync
                         SendItem(session, item, body, false);
                         item.NextSendAt = now + 1f / item.SendRateHz;
                     }
+
                 }
                 else if (moving && CanClaim(item, position))
                 {
@@ -1016,6 +1543,9 @@ namespace WinterMP.Core.Sync
                 item.LastRemoteAt = -999f;
                 SetSeatBlocked(item, false);
             }
+
+            // Our real engine takes over from the synthesized remote audio.
+            item.RemoteEngineUntil = -999f;
 
             item.LocallyOwned = true;
             item.LastMovedAt = now;
@@ -1166,6 +1696,800 @@ namespace WinterMP.Core.Sync
             session.SendWorldMessage(message, final ? Channel.ReliableOrdered : Channel.UnreliableSequenced);
         }
 
+        // ------------------------------------------------------------------ engine & ignition
+
+        /// <summary>
+        /// Stream ignition/engine state for vehicles we are driving *or* whose engine
+        /// is running locally (parked idling — pose ownership may already be released).
+        /// </summary>
+        private void UpdateVehicleStates(SessionManager session)
+        {
+            if (session.PlayerCount == 0) return;
+
+            float now = Time.unscaledTime;
+            foreach (var item in _items.Values)
+            {
+                if (!item.IsVehicle || item.Body == null) continue;
+                if (!item.LocallyOwned && !HasLocalIgnitionActivity(item)) continue;
+                SendVehicleState(session, item, now);
+            }
+        }
+
+        private static bool HasLocalIgnitionActivity(SyncedItem item)
+        {
+            EnsureVehicleSystemsProbe(item);
+            if (!item.SystemsReady) return false;
+            return ReadAccOn(item) || ReadEngineRevs(item) > EngineRunningRevs;
+        }
+
+        private void SendVehicleState(SessionManager session, SyncedItem item, float now)
+        {
+            if (now < item.NextVehicleStateAt) return;
+            item.NextVehicleStateAt = now + 1f / VehicleStateRateHz;
+
+            EnsureVehicleSystemsProbe(item);
+            if (!item.SystemsReady) return;
+
+            float revs = ReadBestRpm(item);
+            bool engineOn = revs > EngineRunningRevs;
+            bool accOn = ReadAccOn(item) || engineOn;
+            float speedKmh = item.GaugeSpeedVar != null ? item.GaugeSpeedVar.Value : 0f;
+
+            byte flags = 0;
+            if (engineOn) flags |= VehicleState.FlagEngineOn;
+            if (accOn) flags |= VehicleState.FlagAccOn;
+            if (ReadBlinkerLeft(item)) flags |= VehicleState.FlagBlinkerLeft;
+            if (ReadBlinkerRight(item)) flags |= VehicleState.FlagBlinkerRight;
+
+            if (!item.LoggedEngineSend && (engineOn || accOn))
+            {
+                item.LoggedEngineSend = true;
+                WinterMPPlugin.Log.LogInfo(
+                    $"WorldSync: streaming '{item.Path}' ignition — engine={engineOn} ACC={accOn} revs={revs:0} speed={speedKmh:0.0} km/h.");
+            }
+
+            session.SendWorldMessage(new VehicleState
+            {
+                VehicleId = item.Id,
+                OwnerPlayerId = session.LocalPlayerId,
+                Sequence = ++item.OutVehicleStateSequence,
+                Flags = flags,
+                Rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue),
+                SpeedTenthsKmh = (ushort)Mathf.Clamp(speedKmh * 10f, 0f, ushort.MaxValue),
+                FuelLevel = ReadFuelLevelByte(item),
+            }, Channel.UnreliableSequenced);
+        }
+
+        private static float ReadEngineRevs(SyncedItem item)
+        {
+            return item.EngineRevsVar != null ? item.EngineRevsVar.Value : 0f;
+        }
+
+        private static float ReadBestRpm(SyncedItem item)
+        {
+            // The dashboard's RPM float is closest to what the driver sees; fall
+            // back to engine sim variables when the gauge object is inactive.
+            if (item.GaugeRpmVar != null && item.GaugeRpmVar.Value > 1f)
+                return item.GaugeRpmVar.Value;
+            return ReadEngineRevs(item);
+        }
+
+        private static bool ReadAccOn(SyncedItem item)
+        {
+            if (item.ElectricityPowerFsm == null) return false;
+
+            var acc = item.ElectricityPowerFsm.FsmVariables.FindFsmBool("ACC");
+            if (acc != null && acc.Value) return true;
+
+            try
+            {
+                if (item.ElectricityPowerFsm.Fsm.ActiveStateName == "ON") return true;
+            }
+            catch
+            {
+                // FSM not initialized yet.
+            }
+
+            return false;
+        }
+
+        public void OnRemoteVehicleState(VehicleState message)
+        {
+            if (!_items.TryGetValue(message.VehicleId, out var item) || item.Body == null || !item.IsVehicle)
+                return;
+
+            ushort diff = (ushort)(message.Sequence - item.LastVehicleStateSequence);
+            if (diff == 0 || diff > short.MaxValue) return;
+            item.LastVehicleStateSequence = message.Sequence;
+
+            bool electricsOn = message.AccOn || message.EngineOn;
+            bool electricsChanged = electricsOn != item.RemoteElectricsApplied;
+            item.RemoteEngineOn = message.EngineOn;
+            item.RemoteAccOn = message.AccOn;
+            item.RemoteRpm = message.Rpm;
+            item.RemoteSpeedKmh = message.SpeedTenthsKmh * 0.1f;
+            item.RemoteFuelLevel = message.FuelLevel;
+            item.RemoteEngineUntil = Time.unscaledTime + EngineAudioHoldSeconds;
+
+            bool blinkersChanged = message.BlinkerLeft != item.RemoteBlinkerLeft
+                || message.BlinkerRight != item.RemoteBlinkerRight;
+            item.RemoteBlinkerLeft = message.BlinkerLeft;
+            item.RemoteBlinkerRight = message.BlinkerRight;
+
+            if (!item.LocallyOwned && electricsChanged)
+                ApplyRemoteElectricity(item, electricsOn);
+
+            if (!item.LocallyOwned && blinkersChanged)
+                ApplyRemoteBlinkers(item, message.BlinkerLeft, message.BlinkerRight);
+        }
+
+        /// <summary>
+        /// Replay the Electricity :: Power FSM into ON/OFF on the remote copy so
+        /// dash lights, gauge power and child simulators wake the same way as
+        /// locally — SetActive on PowerON alone does not run the state's actions.
+        /// </summary>
+        private static void ApplyRemoteElectricity(SyncedItem item, bool on)
+        {
+            EnsureVehicleSystemsProbe(item);
+            item.RemoteElectricsApplied = on;
+
+            if (item.ElectricityPowerFsm == null)
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: no Electricity FSM on '{item.Path}' — remote ignition skipped.");
+                return;
+            }
+
+            string state = on ? "ON" : "OFF";
+            if (!FsmHook.EnsureRemoteEntry(item.ElectricityPowerFsm, state))
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: Electricity '{state}' missing on '{item.Path}'.");
+                return;
+            }
+
+            WinterMPPlugin.Log.LogInfo($"WorldSync: remote electricity '{item.Path}' -> {state}.");
+            FsmHook.FireRemoteEntry(item.ElectricityPowerFsm, state);
+        }
+
+        private static void ApplyRemoteGauges(SyncedItem item)
+        {
+            if (item.GaugeSpeedVar != null)
+                item.GaugeSpeedVar.Value = item.RemoteSpeedKmh;
+            if (item.GaugeSpeedAngleVar != null)
+                item.GaugeSpeedAngleVar.Value = SpeedAngleForKmh(item.RemoteSpeedKmh);
+
+            if (item.GaugeRpmVar != null)
+                item.GaugeRpmVar.Value = item.RemoteRpm;
+
+            if (item.GaugeTachRevsVar != null)
+                item.GaugeTachRevsVar.Value = item.RemoteRpm;
+            if (item.GaugeTachRotationVar != null)
+                item.GaugeTachRotationVar.Value = TachRotationForRpm(item.RemoteRpm);
+
+            if (item.GaugeTachNeedle != null)
+            {
+                var euler = item.GaugeTachNeedle.transform.localEulerAngles;
+                euler.z = TachRotationForRpm(item.RemoteRpm);
+                item.GaugeTachNeedle.transform.localEulerAngles = euler;
+            }
+
+            float fuel01 = item.RemoteFuelLevel / 255f;
+            if (item.GaugeFuelLevelVar != null)
+                item.GaugeFuelLevelVar.Value = fuel01;
+
+            if (item.GaugeFuelAngleVar != null)
+                item.GaugeFuelAngleVar.Value = FuelAngleForLevel(fuel01);
+        }
+
+        private static void ApplyRemoteBlinkers(SyncedItem item, bool left, bool right)
+        {
+            EnsureVehicleSystemsProbe(item);
+
+            if (item.TurnSignalStalkFsm != null)
+            {
+                string state = right ? "On" : left ? "On 2" : "Check player";
+                if (!FsmHook.EnsureRemoteEntry(item.TurnSignalStalkFsm, state)) return;
+                FsmHook.FireRemoteEntry(item.TurnSignalStalkFsm, state);
+                return;
+            }
+
+            if (item.TurnSignalsFsm == null) return;
+
+            if (item.BlinkerLeftVar != null) item.BlinkerLeftVar.Value = left;
+            if (item.BlinkerRightVar != null) item.BlinkerRightVar.Value = right;
+
+            try
+            {
+                if (left && !right)
+                    item.TurnSignalsFsm.SendEvent("LEFT");
+                else if (right && !left)
+                    item.TurnSignalsFsm.SendEvent("RIGHT");
+                else
+                    item.TurnSignalsFsm.SendEvent("OFF");
+            }
+            catch
+            {
+                // FSM not ready yet.
+            }
+        }
+
+        private static bool ReadBlinkerLeft(SyncedItem item)
+        {
+            if (item.BlinkerLeftVar != null) return item.BlinkerLeftVar.Value;
+            if (item.TurnSignalStalkFsm == null) return false;
+
+            try { return item.TurnSignalStalkFsm.Fsm.ActiveStateName == "On 2"; }
+            catch { return false; }
+        }
+
+        private static bool ReadBlinkerRight(SyncedItem item)
+        {
+            if (item.BlinkerRightVar != null) return item.BlinkerRightVar.Value;
+            if (item.TurnSignalStalkFsm == null) return false;
+
+            try { return item.TurnSignalStalkFsm.Fsm.ActiveStateName == "On"; }
+            catch { return false; }
+        }
+
+        private static byte ReadFuelLevelByte(SyncedItem item)
+        {
+            if (item.GaugeFuelLevelVar != null)
+            {
+                float level = item.GaugeFuelLevelVar.Value;
+                if (level <= 1.01f)
+                    return (byte)Mathf.Clamp(Mathf.RoundToInt(level * 255f), 0, 255);
+            }
+
+            if (item.FuelTankLevelVar != null)
+            {
+                float capacity = item.FuelTankCapacityVar?.Value ?? FuelTankDefaultLiters;
+                if (capacity > 0f)
+                {
+                    return (byte)Mathf.Clamp(
+                        Mathf.RoundToInt(item.FuelTankLevelVar.Value / capacity * 255f), 0, 255);
+                }
+            }
+
+            return 0;
+        }
+
+        private static float TachRotationForRpm(float rpm)
+        {
+            // Approximate visible sweep for the SORBET gauge. This is deliberately
+            // conservative: status lights/ignition are authoritative; the tach is
+            // presentation, and over-rotation looks much worse than under-rotation.
+            return Mathf.Lerp(0f, -235f, Mathf.Clamp01(rpm / TachMaxRpm));
+        }
+
+        private static float SpeedAngleForKmh(float kmh) =>
+            Mathf.Lerp(0f, -220f, Mathf.Clamp01(kmh / SpeedoMaxKmh));
+
+        private static float FuelAngleForLevel(float level01) =>
+            Mathf.Lerp(0f, -90f, 1f - Mathf.Clamp01(level01));
+
+        private static void UpdateRemoteEngineAudio(SyncedItem item, float now)
+        {
+            if (!item.LocallyOwned && now >= item.RemoteEngineUntil
+                && (item.RemoteEngineOn || item.RemoteAccOn || item.RemoteElectricsApplied))
+            {
+                item.RemoteEngineOn = false;
+                item.RemoteAccOn = false;
+                if (item.RemoteElectricsApplied)
+                    ApplyRemoteElectricity(item, false);
+            }
+
+            if (!item.LocallyOwned && item.RemoteElectricsApplied)
+                ApplyRemoteGauges(item);
+
+            bool shouldPlay = !item.LocallyOwned && item.RemoteEngineOn && now < item.RemoteEngineUntil;
+            if (!shouldPlay)
+            {
+                if (item.RemoteEngineAudio != null && item.RemoteEngineAudio.isPlaying)
+                    item.RemoteEngineAudio.Stop();
+                return;
+            }
+
+            var source = EnsureRemoteEngineAudio(item);
+            if (source == null) return;
+
+            float targetPitch = Mathf.Clamp(
+                EnginePitchBase + item.RemoteRpm * EnginePitchPerRpm,
+                EnginePitchMin,
+                EnginePitchMax);
+            source.pitch = Mathf.Lerp(source.pitch, targetPitch, 1f - Mathf.Exp(-6f * Time.deltaTime));
+            if (!source.isPlaying)
+                source.Play();
+        }
+
+        private static void EnsureVehicleSystemsProbe(SyncedItem item)
+        {
+            if (item.Body == null) return;
+
+            if (item.SystemsReady)
+            {
+                EnsureClimateProbe(item);
+                return;
+            }
+
+            if (Time.unscaledTime < item.NextSystemsProbeAt) return;
+            item.NextSystemsProbeAt = Time.unscaledTime + SystemsProbeIntervalSeconds;
+
+            foreach (var fsm in item.Body.GetComponentsInChildren<PlayMakerFSM>(true))
+            {
+                if (item.ElectricityPowerFsm == null
+                    && fsm.FsmName == "Power"
+                    && fsm.gameObject.name == "Electricity")
+                {
+                    item.ElectricityPowerFsm = fsm;
+                }
+
+                if (item.EngineRevsVar == null)
+                {
+                    var revs = fsm.FsmVariables.FindFsmFloat("Revs");
+                    if (revs != null && (fsm.FsmName == "FuelLine" || fsm.FsmName == "RotateEngine"))
+                        item.EngineRevsVar = revs;
+                }
+
+                string path = ScenePath.Of(fsm.transform);
+                if (item.GaugeSpeedVar == null && fsm.FsmName == "Speedo")
+                {
+                    var speed = fsm.FsmVariables.FindFsmFloat("Speed");
+                    if (speed != null)
+                    {
+                        item.GaugeSpeedVar = speed;
+                        item.GaugeSpeedAngleVar = fsm.FsmVariables.FindFsmFloat("Angle");
+                        item.GaugeRpmVar = fsm.FsmVariables.FindFsmFloat("RPM")
+                            ?? fsm.FsmVariables.FindFsmFloat("Revs");
+                    }
+                }
+
+                if (item.GaugeFuelLevelVar == null && fsm.FsmName == "Fuel")
+                {
+                    var level = fsm.FsmVariables.FindFsmFloat("Level");
+                    if (level != null)
+                    {
+                        item.GaugeFuelLevelVar = level;
+                        item.GaugeFuelAngleVar = fsm.FsmVariables.FindFsmFloat("Angle");
+                    }
+                }
+
+                if (item.FuelTankLevelVar == null && fsm.FsmName == "Data")
+                {
+                    var tankLevel = fsm.FsmVariables.FindFsmFloat("FuelLevel");
+                    var capacity = fsm.FsmVariables.FindFsmFloat("MaxCapacity");
+                    if (tankLevel != null && capacity != null)
+                    {
+                        item.FuelTankLevelVar = tankLevel;
+                        item.FuelTankCapacityVar = capacity;
+                    }
+                }
+
+                if (item.TurnSignalStalkFsm == null && fsm.FsmName == "Usage"
+                    && fsm.gameObject.name == "TurnSignalsX")
+                {
+                    item.TurnSignalStalkFsm = fsm;
+                }
+
+                if (item.TurnSignalsFsm == null && fsm.FsmName == "TurnSignals"
+                    && path.IndexOf("/PowerON/Systems", StringComparison.Ordinal) >= 0)
+                {
+                    item.TurnSignalsFsm = fsm;
+                    item.BlinkerLeftVar = fsm.FsmVariables.FindFsmBool("BlinkerLeft");
+                    item.BlinkerRightVar = fsm.FsmVariables.FindFsmBool("BlinkerRight");
+                }
+
+                if (item.GaugeTachDataFsm == null && fsm.FsmName == "Tach"
+                    && (fsm.FsmVariables.FindFsmFloat("Revs") != null
+                        || fsm.FsmVariables.FindFsmFloat("Rotation") != null
+                        || fsm.FsmVariables.FindFsmFloat("Angle") != null))
+                {
+                    item.GaugeTachDataFsm = fsm;
+                    item.GaugeTachRevsVar = fsm.FsmVariables.FindFsmFloat("Revs");
+                    item.GaugeTachRotationVar = fsm.FsmVariables.FindFsmFloat("Rotation")
+                        ?? fsm.FsmVariables.FindFsmFloat("Angle");
+                    item.GaugeTachNeedle = fsm.FsmVariables.GetFsmGameObject("Needle")?.Value;
+                }
+            }
+
+            foreach (var transform in item.Body.GetComponentsInChildren<Transform>(true))
+            {
+                if (item.AudioEngine != null) break;
+                if (transform.name != "AudioEngine") continue;
+                item.AudioEngine = transform.gameObject;
+            }
+
+            // Electricity + revs are the minimum; audio/gauges are nice-to-have.
+            if (item.ElectricityPowerFsm != null && item.EngineRevsVar != null)
+            {
+                item.SystemsReady = true;
+                WinterMPPlugin.Log.LogInfo($"WorldSync: vehicle systems ready on '{item.Path}'.");
+            }
+
+            EnsureClimateProbe(item);
+        }
+
+        private static void EnsureClimateProbe(SyncedItem item)
+        {
+            if (item.ClimateReady || item.Body == null) return;
+            if (Time.unscaledTime < item.NextClimateProbeAt) return;
+            item.NextClimateProbeAt = Time.unscaledTime + ClimateProbeIntervalSeconds;
+
+            foreach (var fsm in item.Body.GetComponentsInChildren<PlayMakerFSM>(true))
+            {
+                string path = ScenePath.Of(fsm.transform);
+                bool sorbet = path.IndexOf("SORBET(190-200psi)/", StringComparison.Ordinal) >= 0;
+                bool corris = path.IndexOf("CORRIS/", StringComparison.Ordinal) >= 0;
+                if (!sorbet && !corris) continue;
+
+                bool carTempRoot = path.IndexOf("/Simulation/CarTempSorbet", StringComparison.Ordinal) >= 0
+                    || path.IndexOf("/Simulation/CarTempCorris", StringComparison.Ordinal) >= 0;
+
+                if (item.GlassFrostingFsm == null && fsm.FsmName == "GlassFrosting" && carTempRoot)
+                {
+                    item.GlassFrostingFsm = fsm;
+                    item.FrostVar = fsm.FsmVariables.FindFsmFloat("Frost");
+                    item.FrostColorVar = fsm.FsmVariables.FindFsmColor("Color");
+                }
+
+                if (item.FreezingFsm == null && fsm.FsmName == "Freezing" && carTempRoot)
+                {
+                    item.FreezingFsm = fsm;
+                    item.CutoffWindshieldVar = fsm.FsmVariables.FindFsmFloat("CutoffWindshield");
+                    item.CutoffSideLeftVar = fsm.FsmVariables.FindFsmFloat("CutoffSideLeft");
+                    item.CutoffSideRightVar = fsm.FsmVariables.FindFsmFloat("CutoffSideRight");
+                    item.CutoffDoorLeftVar = fsm.FsmVariables.FindFsmFloat("CutoffDoorleft");
+                    item.CutoffDoorRightVar = fsm.FsmVariables.FindFsmFloat("CutoffDoorright");
+                    item.CutoffRearVar = fsm.FsmVariables.FindFsmFloat("CutoffRear");
+                }
+
+                if (item.CarTempDataFsm == null && fsm.FsmName == "Data" && carTempRoot
+                    && fsm.FsmVariables.FindFsmFloat("InteriorTemp") != null)
+                {
+                    item.CarTempDataFsm = fsm;
+                }
+
+                if (item.HeaterUnitFsm == null && fsm.FsmName == "Function"
+                    && path.IndexOf("/HeaterUnit", StringComparison.Ordinal) >= 0)
+                {
+                    item.HeaterUnitFsm = fsm;
+                    item.HeaterSettingTemp = fsm.FsmVariables.FindFsmFloat("SettingTemp");
+                    item.HeaterSettingBlower = fsm.FsmVariables.FindFsmFloat("SettingBlower");
+                    item.HeaterSettingDirection = fsm.FsmVariables.FindFsmFloat("SettingDirection");
+                    item.GlassDefrostingVar = fsm.FsmVariables.FindFsmBool("GlassDefrosting");
+                }
+
+                if (fsm.FsmName != "Use") continue;
+
+                string name = fsm.gameObject.name;
+                if (name == "ButtonHeaterTemp")
+                    item.KnobTempSetting = fsm.FsmVariables.FindFsmFloat("Setting");
+                else if (name == "ButtonHeaterBlower")
+                    item.KnobBlowerSetting = fsm.FsmVariables.FindFsmFloat("Setting");
+                else if (name == "ButtonHeaterDirection")
+                    item.KnobDirectionSetting = fsm.FsmVariables.FindFsmFloat("Setting");
+                else if (name == "ButtonWindowHeater")
+                {
+                    item.WindowHeaterButtonFsm = fsm;
+                    item.WindowHeaterOnVar = fsm.FsmVariables.FindFsmBool("ButtonOn");
+                }
+            }
+
+            if (item.GlassFrostingFsm != null && item.FrostVar != null)
+            {
+                item.ClimateReady = true;
+                WinterMPPlugin.Log.LogInfo($"WorldSync: climate ready on '{item.Path}'.");
+            }
+        }
+
+        private void UpdateVehicleClimate(SessionManager session)
+        {
+            if (session.PlayerCount == 0) return;
+
+            float now = Time.unscaledTime;
+            foreach (var item in _items.Values)
+            {
+                if (!item.IsVehicle || item.Body == null) continue;
+                EnsureClimateProbe(item);
+                if (!ShouldStreamVehicleClimate(item, now)) continue;
+                SendVehicleClimate(session, item, now);
+            }
+        }
+
+        private bool ShouldStreamVehicleClimate(SyncedItem item, float now)
+        {
+            if (item.LocallyOwned || HasLocalIgnitionActivity(item)) return true;
+
+            var passenger = PassengerController.Instance;
+            if (passenger != null && passenger.IsLocalSeatedInVehicle(item.Id))
+                return true;
+
+            // Parked frost still matters to anyone standing near the car.
+            if (now - item.LastRemoteAt < RemoteHoldSeconds) return false;
+            if (_localPlayer == null || item.Body == null) return false;
+
+            float distSq = (_localPlayer.position - item.Body.transform.position).sqrMagnitude;
+            return distSq <= item.ClaimRadius * item.ClaimRadius;
+        }
+
+        private VehicleClimate? TryBuildVehicleClimate(SyncedItem item)
+        {
+            EnsureClimateProbe(item);
+            if (!item.ClimateReady) return null;
+
+            byte flags = 0;
+            if (ReadWindowHeaterOn(item)) flags |= VehicleClimate.FlagWindowHeater;
+            if (ReadGlassDefrosting(item)) flags |= VehicleClimate.FlagGlassDefrosting;
+
+            return new VehicleClimate
+            {
+                VehicleId = item.Id,
+                OwnerPlayerId = SessionManager.Instance?.LocalPlayerId ?? 0,
+                Frost = QuantizeFrost(ReadFrost(item)),
+                Flags = flags,
+                HeaterTemp = QuantizeHeater(ReadHeaterTemp(item), HeaterTempMax),
+                HeaterBlower = QuantizeHeater(ReadHeaterBlower(item), HeaterBlowerMax),
+                HeaterDirection = QuantizeHeater(ReadHeaterDirection(item), HeaterDirectionMax),
+            };
+        }
+
+        private void SendVehicleClimate(SessionManager session, SyncedItem item, float now)
+        {
+            if (now < item.NextClimateAt) return;
+            item.NextClimateAt = now + 1f / VehicleClimateRateHz;
+
+            var message = TryBuildVehicleClimate(item);
+            if (message == null) return;
+
+            message.Sequence = ++item.OutClimateSequence;
+            message.OwnerPlayerId = session.LocalPlayerId;
+
+            if (!item.LoggedClimateSend)
+            {
+                item.LoggedClimateSend = true;
+                WinterMPPlugin.Log.LogInfo(
+                    $"WorldSync: streaming '{item.Path}' climate — frost={message.Frost} " +
+                    $"heater={message.HeaterTemp}/{message.HeaterBlower}/{message.HeaterDirection} " +
+                    $"flags=0x{message.Flags:X2}.");
+            }
+
+            session.SendWorldMessage(message, Channel.UnreliableSequenced);
+        }
+
+        public void OnRemoteVehicleClimate(VehicleClimate message)
+        {
+            if (!_items.TryGetValue(message.VehicleId, out var item) || item.Body == null || !item.IsVehicle)
+                return;
+            if (item.LocallyOwned) return;
+
+            ushort diff = (ushort)(message.Sequence - item.LastClimateSequence);
+            if (diff == 0 || diff > short.MaxValue) return;
+            item.LastClimateSequence = message.Sequence;
+            item.RemoteClimateUntil = Time.unscaledTime + ClimateHoldSeconds;
+
+            ApplyRemoteClimate(item, message);
+        }
+
+        private static void ApplyRemoteClimate(SyncedItem item, VehicleClimate message)
+        {
+            EnsureClimateProbe(item);
+            if (!item.ClimateReady) return;
+
+            bool windowHeater = message.WindowHeaterOn;
+            bool glassDefrosting = message.GlassDefrosting;
+            bool defrostActive = windowHeater || glassDefrosting;
+            bool wasDefrost = item.RemoteWindowHeater || item.RemoteGlassDefrosting;
+            bool windowHeaterChanged = windowHeater != item.RemoteWindowHeater;
+
+            item.RemoteFrost = message.Frost;
+            item.RemoteWindowHeater = windowHeater;
+            item.RemoteGlassDefrosting = glassDefrosting;
+
+            float temp = DequantizeHeater(message.HeaterTemp, HeaterTempMax);
+            float blower = DequantizeHeater(message.HeaterBlower, HeaterBlowerMax);
+            float direction = DequantizeHeater(message.HeaterDirection, HeaterDirectionMax);
+
+            WriteHeaterValue(item.HeaterSettingTemp, item.KnobTempSetting, temp);
+            WriteHeaterValue(item.HeaterSettingBlower, item.KnobBlowerSetting, blower);
+            WriteHeaterValue(item.HeaterSettingDirection, item.KnobDirectionSetting, direction);
+
+            if (windowHeaterChanged || !item.LoggedClimateApply)
+                ApplyRemoteWindowHeater(item, windowHeater);
+
+            if (defrostActive && !wasDefrost)
+                PulseRemoteDefrost(item, true);
+            else if (!defrostActive && wasDefrost)
+                PulseRemoteDefrost(item, false);
+
+            ApplyRemoteFrostLevel(item, DequantizeFrost(message.Frost));
+
+            if (!item.LoggedClimateApply)
+            {
+                item.LoggedClimateApply = true;
+                WinterMPPlugin.Log.LogInfo(
+                    $"WorldSync: remote climate on '{item.Path}' — frost={message.Frost} " +
+                    $"windowHeater={windowHeater} defrost={glassDefrosting}.");
+            }
+        }
+
+        private static void UpdateRemoteClimatePresentation(SyncedItem item, float now)
+        {
+            EnsureClimateProbe(item);
+            if (!item.ClimateReady) return;
+
+            ApplyRemoteFrostLevel(item, DequantizeFrost(item.RemoteFrost));
+
+            bool defrostActive = item.RemoteWindowHeater || item.RemoteGlassDefrosting;
+            if (item.GlassDefrostingVar != null)
+                item.GlassDefrostingVar.Value = defrostActive;
+
+            if (!defrostActive || now < item.NextDefrostPulseAt) return;
+            item.NextDefrostPulseAt = now + DefrostPulseSeconds;
+            PulseRemoteDefrost(item, true);
+        }
+
+        private static void ApplyRemoteFrostLevel(SyncedItem item, float frost)
+        {
+            if (item.FrostVar != null)
+                item.FrostVar.Value = frost;
+
+            if (item.FrostColorVar != null)
+            {
+                var color = item.FrostColorVar.Value;
+                color.a = frost;
+                item.FrostColorVar.Value = color;
+            }
+
+            WriteCutoff(item.CutoffWindshieldVar, frost);
+            WriteCutoff(item.CutoffSideLeftVar, frost);
+            WriteCutoff(item.CutoffSideRightVar, frost);
+            WriteCutoff(item.CutoffDoorLeftVar, frost);
+            WriteCutoff(item.CutoffDoorRightVar, frost);
+            WriteCutoff(item.CutoffRearVar, frost);
+        }
+
+        private static void WriteCutoff(HutongGames.PlayMaker.FsmFloat? var, float frost)
+        {
+            if (var != null) var.Value = frost;
+        }
+
+        private static void ApplyRemoteWindowHeater(SyncedItem item, bool on)
+        {
+            if (item.WindowHeaterOnVar != null)
+                item.WindowHeaterOnVar.Value = on;
+
+            if (item.WindowHeaterButtonFsm == null) return;
+
+            string state = on ? "On" : "Off";
+            if (!FsmHook.EnsureRemoteEntry(item.WindowHeaterButtonFsm, state))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: window heater '{state}' missing on '{item.Path}'.");
+                return;
+            }
+
+            FsmHook.FireRemoteEntry(item.WindowHeaterButtonFsm, state);
+        }
+
+        private static void PulseRemoteDefrost(SyncedItem item, bool on)
+        {
+            if (item.GlassDefrostingVar != null)
+                item.GlassDefrostingVar.Value = on;
+
+            if (!on)
+            {
+                if (item.GlassFrostingFsm != null)
+                {
+                    try { item.GlassFrostingFsm.SendEvent("FINISHED"); }
+                    catch { /* FSM not ready yet */ }
+                }
+
+                return;
+            }
+
+            if (item.GlassFrostingFsm != null)
+            {
+                try { item.GlassFrostingFsm.SendEvent("DEFROST"); }
+                catch { /* FSM not ready yet */ }
+            }
+
+            if (item.CarTempDataFsm != null
+                && FsmHook.EnsureRemoteEntry(item.CarTempDataFsm, "Defrost"))
+            {
+                FsmHook.FireRemoteEntry(item.CarTempDataFsm, "Defrost");
+            }
+        }
+
+        private static float ReadFrost(SyncedItem item)
+        {
+            float frost = item.FrostVar != null ? item.FrostVar.Value : 0f;
+            if (item.CutoffWindshieldVar != null)
+                frost = Mathf.Max(frost, item.CutoffWindshieldVar.Value);
+            return frost;
+        }
+
+        private static float ReadHeaterTemp(SyncedItem item) =>
+            item.HeaterSettingTemp?.Value ?? item.KnobTempSetting?.Value ?? 0f;
+
+        private static float ReadHeaterBlower(SyncedItem item) =>
+            item.HeaterSettingBlower?.Value ?? item.KnobBlowerSetting?.Value ?? 0f;
+
+        private static float ReadHeaterDirection(SyncedItem item) =>
+            item.HeaterSettingDirection?.Value ?? item.KnobDirectionSetting?.Value ?? 0f;
+
+        private static bool ReadWindowHeaterOn(SyncedItem item) =>
+            item.WindowHeaterOnVar != null && item.WindowHeaterOnVar.Value;
+
+        private static bool ReadGlassDefrosting(SyncedItem item)
+        {
+            if (ReadWindowHeaterOn(item)) return true;
+            return item.GlassDefrostingVar != null && item.GlassDefrostingVar.Value;
+        }
+
+        private static byte QuantizeFrost(float frost) =>
+            (byte)Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(frost) * 255f), 0, 255);
+
+        private static float DequantizeFrost(byte wire) => wire / 255f;
+
+        private static byte QuantizeHeater(float value, float max)
+        {
+            if (max <= 0f) return 0;
+            return (byte)Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp(value, 0f, max) / max * 255f), 0, 255);
+        }
+
+        private static float DequantizeHeater(byte wire, float max) => wire / 255f * max;
+
+        private static void WriteHeaterValue(
+            HutongGames.PlayMaker.FsmFloat? primary,
+            HutongGames.PlayMaker.FsmFloat? knob,
+            float value)
+        {
+            if (primary != null) primary.Value = value;
+            if (knob != null) knob.Value = value;
+        }
+
+        private static AudioSource? EnsureRemoteEngineAudio(SyncedItem item)
+        {
+            if (item.RemoteEngineAudio != null) return item.RemoteEngineAudio;
+            if (item.RemoteEngineAudioSearched || item.Body == null) return null;
+            item.RemoteEngineAudioSearched = true;
+
+            EnsureVehicleSystemsProbe(item);
+            if (item.AudioEngine == null) return null;
+
+            // Template: prefer the "High" loop, else any clip under AudioEngine.
+            AudioSource? template = null;
+            foreach (var source in item.AudioEngine.GetComponentsInChildren<AudioSource>(true))
+            {
+                if (source.clip == null) continue;
+                if (template == null) template = source;
+                if (source.gameObject.name.IndexOf("High", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    template = source;
+                    break;
+                }
+            }
+
+            if (template == null) return null;
+
+            // A fresh GameObject, not Instantiate: cloning the game's audio object
+            // would clone its FSMs — i.e. run a second engine simulation.
+            var holder = new GameObject("WinterMP_EngineAudio");
+            holder.transform.parent = item.AudioEngine.transform.parent;
+            holder.transform.position = item.AudioEngine.transform.position;
+            var audio = holder.AddComponent<AudioSource>();
+            audio.clip = template.clip;
+            audio.loop = true;
+            audio.playOnAwake = false;
+            audio.spatialBlend = template.spatialBlend;
+            audio.minDistance = template.minDistance;
+            audio.maxDistance = template.maxDistance;
+            audio.rolloffMode = template.rolloffMode;
+            audio.dopplerLevel = template.dopplerLevel;
+            audio.volume = EngineAudioVolume;
+            item.RemoteEngineAudio = audio;
+            WinterMPPlugin.Log.LogInfo($"WorldSync: remote engine audio for '{item.Path}' (clip '{template.clip.name}').");
+            return audio;
+        }
+
         private void FindLocalPlayer()
         {
             if (_localPlayer != null || Time.unscaledTime < _nextPlayerSearchAt) return;
@@ -1187,6 +2511,13 @@ namespace WinterMP.Core.Sync
                 item.RemoteIsDriver = false;
                 item.LocallyOwned = false;
                 item.LastRemoteAt = -999f;
+                item.RemoteEngineUntil = -999f;
+                item.RemoteClimateUntil = -999f;
+                item.RemoteEngineOn = false;
+                item.RemoteAccOn = false;
+                item.RemoteElectricsApplied = false;
+                if (item.RemoteEngineAudio != null && item.RemoteEngineAudio.isPlaying)
+                    item.RemoteEngineAudio.Stop();
                 SetSeatBlocked(item, false);
             }
 
