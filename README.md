@@ -1,5 +1,6 @@
 # WinterMP — Multiplayer for My Winter Car
 
+**[Download WinterMP-Setup.exe (latest release)](https://github.com/Steinkoloss/our-winter-car/releases/latest)**
 
 This thing is completely AI slopped with Fable 5 & Composer.
 Probably horrible!
@@ -9,10 +10,9 @@ Full co-op conversion of [My Winter Car](https://store.steampowered.com/app/4164
 one player hosts with their savefile, friends join through the **Steam friends
 list** — shared money, shared world, everything synced.
 
-> **Status: early scaffold (pre-M1).** Protocol, session layer, tooling and
-> launcher skeletons are in place; Steam transport is experimental and the
-> world-sync subsystems are not implemented yet. See [PLAN.md](PLAN.md) for the
-> full design and roadmap.
+> **Status: alpha.** Steam lobby host/join works; world sync covers doors, bolts,
+> parts, shop, items, vehicles, climate, wallet, and time. See [PLAN.md](PLAN.md)
+> for the roadmap. Players: [docs/PLAYERS.md](docs/PLAYERS.md).
 
 ## Layout
 
@@ -27,6 +27,7 @@ list** — shared money, shared world, everything synced.
 | `catalog/` | Generated per-game-build sync catalogs (FSM descriptors) |
 | `protocol/` | Wire protocol specification |
 | `docs/BUILDING.md` | Build, deploy and dev-loop instructions |
+| `docs/PLAYERS.md` | Install, host, join, backups — player guide |
 | `libs/` | Drop-in for `Steamworks.NET.dll` (enables the Steam transport) |
 
 ## Quick start (developers)
@@ -39,12 +40,13 @@ dotnet test           # protocol unit tests
 See [docs/BUILDING.md](docs/BUILDING.md) for game deployment and the in-game
 dev loop (F8 loopback session, F9 catalog dump).
 
-## How it will work for players
+## Players
 
-- **Host:** open the launcher → *HOST GAME*. Save is backed up automatically,
-  a friends-only Steam lobby opens.
-- **Friends:** click **Join Game** on the host in the Steam friends list.
-  That's the whole flow — no IPs, no ports, no lobby codes.
+Build the launcher with `.\tools\build-launcher.ps1` or grab a release zip.
+Full instructions: [docs/PLAYERS.md](docs/PLAYERS.md).
+
+- **Host:** launcher → **HOST GAME** (save backed up, Steam friends-only lobby).
+- **Friends:** Steam **Join Game** on the host — no IPs or lobby codes.
 
 ## License
 
