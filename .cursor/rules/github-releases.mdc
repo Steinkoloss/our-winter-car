@@ -1,0 +1,18 @@
+---
+description: Publish GitHub releases when shipping version bumps or release commits
+alwaysApply: true
+---
+
+# GitHub releases
+
+When the user asks to commit, push, ship, or cut a build/release:
+
+1. Bump version in `src/WinterMP.Core/WinterMP.Core.csproj`, `src/WinterMP.Launcher/WinterMP.Launcher.csproj`, `src/WinterMP.Launcher/Assets/wintermp-compat.json` (`modVersion` + `protocolVersion`), and `installer/WinterMP.iss` when the change is user-facing.
+2. Run `.\tools\build-installer.ps1` to produce `dist\OurWinterCar-Setup.exe` and `dist\OurWinterCar-payload.zip`.
+3. Commit and push source changes.
+4. Create or update the GitHub release with `gh release create` (or `gh release edit` if retagging the same version):
+   - Tag `v{version}` on the pushed commit
+   - Title `v{version} - Our Winter Car`
+   - Release notes: download link, what's new, quick start (match prior releases)
+   - Assets: `dist/OurWinterCar-Setup.exe`, `dist/OurWinterCar-payload.zip`
+5. Do not skip the release step when pushing build-worthy changes — code on `main` without a matching release leaves players on stale binaries.
