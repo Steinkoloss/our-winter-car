@@ -253,8 +253,13 @@ $notesFile = Join-Path $env:TEMP "our-winter-car-release-$version.md"
 Set-Content $notesFile $body -Encoding utf8
 
 Write-Step "Publishing GitHub release $tag"
-$existing = gh release view $tag 2>$null
-if ($LASTEXITCODE -eq 0) {
+$existingRelease = $null
+try {
+    $existingRelease = gh release view $tag 2>$null
+} catch {
+    $existingRelease = $null
+}
+if ($LASTEXITCODE -eq 0 -and $existingRelease) {
     Write-Host "Release $tag already exists - updating notes and assets."
     Invoke-Checked { gh release edit $tag --title $title --notes-file $notesFile } 'Release edit failed.'
     Invoke-Checked { gh release upload $tag $setup $payload $launcher --clobber } 'Release upload failed.'
