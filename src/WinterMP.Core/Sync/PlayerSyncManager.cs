@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net.Messages;
 
@@ -31,12 +33,31 @@ namespace WinterMP.Core.Sync
         private float _nextSendAt;
         private ushort _sequence;
         private string _lastLevel = string.Empty;
+        private bool _playerSyncDisabled;
 
         private void Update()
+        {
+            if (_playerSyncDisabled) return;
+
+            try
+            {
+                UpdatePlayerSync();
+            }
+            catch (Exception e)
+            {
+                _playerSyncDisabled = true;
+                WinterMPPlugin.Log.LogError($"PlayerSync disabled after unhandled error: {e}");
+                SyncEventLog.Record("fatal", $"PlayerSync: {e}");
+                SyncEventLog.DumpToFile();
+            }
+        }
+
+        private void UpdatePlayerSync()
         {
             var session = SessionManager.Instance;
             if (session == null || (session.State != SessionState.Hosting && session.State != SessionState.Connected))
             {
+                _playerSyncDisabled = false;
                 DestroyAllAvatars();
                 return;
             }

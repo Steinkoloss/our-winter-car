@@ -96,6 +96,20 @@ namespace WinterMP.Core.UI
                 GUILayout.Label($"  {player.Name} (id {player.PlayerId})  {ping}");
             }
 
+            var link = ConnectionQuality.Instance;
+            string relay = link.UsingRelay switch
+            {
+                true => "relay",
+                false => "direct",
+                _ => "—",
+            };
+            int loss = link.LossPercent;
+            string lossText = loss > 0 ? $"{loss}% loss" : "0% loss";
+            if (link.SendFailures > 0)
+                lossText += $", {link.SendFailures} send err";
+            string pause = link.ShouldPauseOwnershipTransfers ? " · <color=#FFCC88>claims paused</color>" : string.Empty;
+            GUILayout.Label($"Link: {link.TransportName} · {relay} · {lossText}{pause}", RichLabel());
+
             var world = Sync.WorldSyncManager.Instance;
             if (world != null && (world.DoorCount > 0 || world.BuyCount > 0 || world.ItemCount > 0))
             {
@@ -105,7 +119,12 @@ namespace WinterMP.Core.UI
                 GUILayout.Label(
                     $"World: {world.DoorCount} doors, {world.BuyCount} shops, {world.BoltCount} bolts, " +
                     $"{world.ItemCount} items [{world.IdHash:X8}]{catalog}");
+                if (world.IsDisabled)
+                    GUILayout.Label("<color=#FF8888>WorldSync DISABLED (see log)</color>", RichLabel());
             }
+
+            if (WinterMPPlugin.DevKeysEnabled.Value && session.State != SessionState.Idle)
+                GUILayout.Label("<color=#AAAAAA>F6 resync nearest · F7 dump sync log</color>", RichLabel());
 
             GUILayout.EndArea();
         }

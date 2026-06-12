@@ -279,6 +279,7 @@ namespace WinterMP.Core.Session
             {
                 IsHost = true;
                 LocalPlayerId = 0;
+                ConnectionQuality.Instance.TransportName = $"UDP :{port}";
                 AttachTransport(UdpTransport.CreateHost(port));
                 SetState(SessionState.Hosting, $"Hosting local test session on UDP port {port}");
             }
@@ -317,6 +318,7 @@ namespace WinterMP.Core.Session
         {
             if (State != SessionState.Idle) return;
 
+            ConnectionQuality.Instance.TransportName = "Loopback";
             var pair = LoopbackTransport.CreatePair();
             IsHost = true;
             LocalPlayerId = 0;
@@ -343,7 +345,27 @@ namespace WinterMP.Core.Session
             _pendingPings.Clear();
             _steamOpStartedAt = -1f;
             IsHost = false;
+            ConnectionQuality.Instance.Reset();
             SetState(SessionState.Idle, "Idle");
+        }
+
+        private void PollTransportQuality()
+        {
+#if STEAMWORKS
+            if (_transport is Steam.SteamP2PTransport steam)
+            {
+                if (!IsHost && _hostPeer.HasValue)
+                    steam.PollSessionQuality(_hostPeer.Value);
+                else if (IsHost)
+                {
+                    foreach (var peer in _playersByPeer.Keys)
+                    {
+                        steam.PollSessionQuality(peer);
+                        break;
+                    }
+                }
+            }
+#endif
         }
 
         private void AttachTransport(ITransport transport)
@@ -357,6 +379,7 @@ namespace WinterMP.Core.Session
 #if STEAMWORKS
         private void OnSteamTransportReady(ITransport transport)
         {
+            ConnectionQuality.Instance.TransportName = "Steam P2P";
             AttachTransport(transport);
             if (IsHost)
             {
@@ -395,6 +418,9 @@ namespace WinterMP.Core.Session
 
             _transport?.Update();
             _devClient?.Update();
+
+            ConnectionQuality.Instance.TickWindow(Time.unscaledTime);
+            PollTransportQuality();
 
             if (State == SessionState.Hosting || State == SessionState.Connected)
                 PingLoop();
@@ -636,6 +662,18 @@ namespace WinterMP.Core.Session
                     HandleSnapshotRequest(peer, snapshotRequest);
                     break;
 
+                case WorldStateChecksum checksum when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteStateChecksum(checksum);
+                    break;
+
+                case WorldResyncRequest resync when IsHost:
+                    HandleResyncRequest(peer, resync);
+                    break;
+
+                case WorldObjectStateRequest objectRequest when IsHost:
+                    HandleObjectStateRequest(peer, objectRequest);
+                    break;
+
                 case WorldDoorSnapshot doorSnapshot when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteDoorSnapshot(doorSnapshot);
                     break;
@@ -650,6 +688,10 @@ namespace WinterMP.Core.Session
 
                 case WorldPartSnapshot partSnapshot when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemotePartSnapshot(partSnapshot);
+                    break;
+
+                case WorldItemDespawnSnapshot despawnSnapshot when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteItemDespawnSnapshot(despawnSnapshot);
                     break;
 
                 case DisconnectMessage disconnect:
@@ -757,6 +799,45 @@ namespace WinterMP.Core.Session
             }
 
             WinterMPPlugin.Log.LogInfo($"Sent world snapshot to {peer} ({messages} messages).");
+        }
+
+        private void HandleResyncRequest(PeerId peer, WorldResyncRequest request)
+        {
+            var world = Sync.WorldSyncManager.Instance;
+            if (world == null) return;
+
+            int messages = 0;
+            foreach (var chunk in world.BuildResyncMessages(request.Flags))
+            {
+                SendTo(peer, chunk, Channel.ReliableOrdered);
+                messages++;
+            }
+
+            WinterMPPlugin.Log.LogInfo(
+                $"Soft resync to {peer} for checksum seq {request.ChecksumSequence} flags 0x{request.Flags:X2} ({messages} messages).");
+        }
+
+        private void HandleObjectStateRequest(PeerId peer, WorldObjectStateRequest request)
+        {
+            var world = Sync.WorldSyncManager.Instance;
+            if (world == null) return;
+
+            int messages = 0;
+            foreach (var message in world.BuildObjectStateMessages(request.NetId))
+            {
+                Channel channel = message switch
+                {
+                    ItemTransform t => t.IsFinal ? Channel.ReliableOrdered : Channel.UnreliableSequenced,
+                    VehicleState => Channel.ReliableOrdered,
+                    VehicleClimate => Channel.ReliableOrdered,
+                    _ => Channel.ReliableOrdered,
+                };
+                SendTo(peer, message, channel);
+                messages++;
+            }
+
+            if (messages > 0)
+                WinterMPPlugin.Log.LogInfo($"Object state for {request.NetId:X8} -> {peer} ({messages} messages).");
         }
 
         private void HandleHandshakeResponse(PeerId peer, HandshakeResponse response)

@@ -17,7 +17,8 @@
         <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12"
                    Text="Select a backup to restore. Your current save is backed up automatically before restore." />
 
-        <ListBox Grid.Row="1" x:Name="BackupList" DisplayMemberPath="Display" />
+        <ListBox Grid.Row="1" x:Name="BackupList" DisplayMemberPath="Display"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
             <Button Content="Open folder" Click="OpenFolder_Click" Margin="0,0,10,0" />

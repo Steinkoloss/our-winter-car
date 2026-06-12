@@ -17,7 +17,11 @@ namespace WinterMP.Net
         // v13: part assembly states (Stop/Install/Remove) + PartState + WorldPartSnapshot.
         // v14: host-authoritative shop purchases (PurchaseIntent).
         // v15: pickable food/consumables + ItemDespawn when eaten or destroyed.
-        public const ushort Version = 15;
+        // v16: drink despawn states + WorldItemDespawnSnapshot for mid-session joiners.
+        // v17: periodic world-state checksums + guest soft-resync requests.
+        // v18: checksums gain item + vehicle CRCs; soft resync covers item/vehicle groups.
+        // v19: per-object state requests + ownership-transfer pause on bad links (client-side).
+        public const ushort Version = 19;
     }
 
     /// <summary>

@@ -204,4 +204,30 @@ namespace WinterMP.Net.Messages
             }
         }
     }
+
+    /// <summary>
+    /// Host -> guest: item ids consumed/destroyed during this session so a mid-session
+    /// joiner does not resurrect food and drinks the host already ate.
+    /// </summary>
+    public sealed class WorldItemDespawnSnapshot : IMessage
+    {
+        public List<uint> ItemIds = new List<uint>();
+
+        public MessageId Id => MessageId.WorldItemDespawnSnapshot;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt16((ushort)ItemIds.Count);
+            foreach (uint itemId in ItemIds)
+                writer.WriteUInt32(itemId);
+        }
+
+        public void Read(NetReader reader)
+        {
+            int count = reader.ReadUInt16();
+            ItemIds = new List<uint>(count);
+            for (int i = 0; i < count; i++)
+                ItemIds.Add(reader.ReadUInt32());
+        }
+    }
 }

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Steamworks;
+using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Transport;
 
@@ -127,7 +128,21 @@ namespace WinterMP.Core.Steam
                 : EP2PSend.k_EP2PSendReliable;
 
             if (!SteamNetworking.SendP2PPacket(target, payload, (uint)payload.Length, sendType, (int)channel))
+            {
+                ConnectionQuality.Instance.NoteSendFailure();
                 WinterMPPlugin.Log.LogWarning($"SendP2PPacket to {peer} failed (channel {channel}).");
+            }
+        }
+
+        /// <summary>Sample relay vs direct path for the TAB overlay.</summary>
+        public void PollSessionQuality(PeerId peer)
+        {
+            if (!_peers.TryGetValue(peer.Value, out CSteamID steamId)) return;
+
+            P2PSessionState_t state;
+            if (!SteamNetworking.GetP2PSessionState(steamId, out state)) return;
+
+            ConnectionQuality.Instance.SetRelay(state.m_bUsingRelay != 0);
         }
 
         public void Update()

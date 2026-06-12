@@ -349,4 +349,77 @@ namespace WinterMP.Net.Messages
             DayOfWeek = reader.ReadByte();
         }
     }
+
+    /// <summary>
+    /// Host -> guests: lightweight checksum over wallet + synced world state (M7).
+    /// Guests compare locally and may request a targeted resync on mismatch.
+    /// </summary>
+    public sealed class WorldStateChecksum : IMessage
+    {
+        public uint WalletCrc;
+        public uint WorldCrc;
+        public uint ItemCrc;
+        public uint VehicleCrc;
+        public ushort Sequence;
+
+        public MessageId Id => MessageId.WorldStateChecksum;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(WalletCrc);
+            writer.WriteUInt32(WorldCrc);
+            writer.WriteUInt32(ItemCrc);
+            writer.WriteUInt32(VehicleCrc);
+            writer.WriteUInt16(Sequence);
+        }
+
+        public void Read(NetReader reader)
+        {
+            WalletCrc = reader.ReadUInt32();
+            WorldCrc = reader.ReadUInt32();
+            ItemCrc = reader.ReadUInt32();
+            VehicleCrc = reader.ReadUInt32();
+            Sequence = reader.ReadUInt16();
+        }
+    }
+
+    /// <summary>Guest -> host: request authoritative state for a single registered net id.</summary>
+    public sealed class WorldObjectStateRequest : IMessage
+    {
+        public uint NetId;
+
+        public MessageId Id => MessageId.WorldObjectStateRequest;
+
+        public void Write(NetWriter writer) => writer.WriteUInt32(NetId);
+
+        public void Read(NetReader reader) => NetId = reader.ReadUInt32();
+    }
+
+    /// <summary>Guest -> host: soft resync of one or more state groups after checksum mismatch.</summary>
+    public sealed class WorldResyncRequest : IMessage
+    {
+        public const byte FlagWallet = 1 << 0;
+        public const byte FlagFsmStates = 1 << 1;
+        public const byte FlagParts = 1 << 2;
+        public const byte FlagBolts = 1 << 3;
+        public const byte FlagItems = 1 << 4;
+        public const byte FlagVehicles = 1 << 5;
+
+        public byte Flags;
+        public ushort ChecksumSequence;
+
+        public MessageId Id => MessageId.WorldResyncRequest;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteByte(Flags);
+            writer.WriteUInt16(ChecksumSequence);
+        }
+
+        public void Read(NetReader reader)
+        {
+            Flags = reader.ReadByte();
+            ChecksumSequence = reader.ReadUInt16();
+        }
+    }
 }

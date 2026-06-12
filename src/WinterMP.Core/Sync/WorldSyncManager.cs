@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Catalog;
+using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
@@ -30,7 +31,6 @@ namespace WinterMP.Core.Sync
     ///          remote copies ease toward targets instead of teleporting. While a
     ///          remote driver holds a vehicle its seat trigger is blocked locally
     ///          and the driver's avatar rides along in the cabin. Engine state is
-    ///          NOT yet synced (M4): the remote copy just follows poses.
     /// Snapshot — a guest requests the world state once its first scan completes;
     ///          the host answers with every door it has seen change plus the
     ///          current pose of every item/vehicle, then keeps the clock and
@@ -104,6 +104,9 @@ namespace WinterMP.Core.Sync
 
         /// <summary>Host broadcasts the clock/weather this often (drift is slow).</summary>
         private const float TimeSyncIntervalSeconds = 30f;
+        private const float ChecksumIntervalSeconds = 20f;
+        private const float ResyncCooldownSeconds = 15f;
+        private const float ObjectRequestCooldownSeconds = 5f;
         private const float WalletSyncIntervalSeconds = 2f;
         /// <summary>Snapshot poses for not-yet-scanned items stay parked this long.</summary>
         private const float SnapshotPoseTtlSeconds = 300f;
@@ -111,6 +114,7 @@ namespace WinterMP.Core.Sync
         private const int BoltSnapshotChunk = 80;
         private const int PartSnapshotChunk = 80;
         private const int ItemSnapshotChunk = 40;
+        private const int DespawnSnapshotChunk = 80;
 
         public static WorldSyncManager? Instance { get; private set; }
 
@@ -393,6 +397,9 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<uint, PendingBoltState> _pendingBoltStates = new Dictionary<uint, PendingBoltState>();
         private readonly Dictionary<uint, PendingPartState> _pendingPartStates = new Dictionary<uint, PendingPartState>();
         private readonly List<PendingPurchaseIntent> _pendingPurchaseIntents = new List<PendingPurchaseIntent>();
+        private readonly Dictionary<uint, float> _nextObjectRequestAt = new Dictionary<uint, float>();
+        private readonly HashSet<uint> _sessionDespawnedItems = new HashSet<uint>();
+        private readonly HashSet<uint> _pendingDespawnedItems = new HashSet<uint>();
         private readonly TimeWeatherSync _timeWeather = new TimeWeatherSync();
         private readonly WalletSync _wallet = new WalletSync();
 
@@ -403,6 +410,9 @@ namespace WinterMP.Core.Sync
         private float _nextScanAt;
         private float _nextPendingAt;
         private float _nextTimeSyncAt;
+        private float _nextChecksumAt;
+        private float _nextResyncRequestAt;
+        private ushort _outChecksumSequence;
         private bool _snapshotRequested;
         private ushort _outPurchaseSequence;
         private Transform? _localPlayer;
@@ -421,6 +431,7 @@ namespace WinterMP.Core.Sync
         private float _firstDoorRegisteredAt = -1f;
         private int _doorTestStep;
         private bool _readyAnnounced;
+        private bool _worldSyncDisabled;
 
         public void Configure(LaunchOptions launch)
         {
@@ -441,6 +452,23 @@ namespace WinterMP.Core.Sync
         }
 
         private void Update()
+        {
+            if (_worldSyncDisabled) return;
+
+            try
+            {
+                UpdateWorldSync();
+            }
+            catch (Exception e)
+            {
+                _worldSyncDisabled = true;
+                WinterMPPlugin.Log.LogError($"WorldSync disabled after unhandled error: {e}");
+                SyncEventLog.Record("fatal", e.ToString());
+                SyncEventLog.DumpToFile();
+            }
+        }
+
+        private void UpdateWorldSync()
         {
             WatchLevelChanges();
 
@@ -495,6 +523,14 @@ namespace WinterMP.Core.Sync
                 var wallet = _wallet.BuildMessage();
                 if (wallet != null && _wallet.ShouldBroadcast(wallet, now))
                     session.SendWorldMessage(wallet, Channel.ReliableOrdered);
+
+                if (Time.unscaledTime >= _nextChecksumAt)
+                {
+                    _nextChecksumAt = Time.unscaledTime + ChecksumIntervalSeconds;
+                    var checksum = BuildStateChecksum();
+                    if (checksum != null)
+                        session.SendWorldMessage(checksum, Channel.ReliableOrdered);
+                }
             }
 
             UpdateItems(session);
@@ -503,6 +539,80 @@ namespace WinterMP.Core.Sync
 
             if (_selfTest)
                 RunDoorTest();
+
+            if (WinterMPPlugin.DevKeysEnabled.Value)
+                HandleDevKeys(session);
+        }
+
+        private void HandleDevKeys(SessionManager session)
+        {
+            if (Input.GetKeyDown(KeyCode.F6))
+                TryDevResyncNearest(session);
+            else if (Input.GetKeyDown(KeyCode.F7))
+            {
+                SyncEventLog.DumpToLog();
+                SyncEventLog.DumpToFile();
+            }
+        }
+
+        private void TryDevResyncNearest(SessionManager session)
+        {
+            uint? netId = FindNearestResyncTarget();
+            if (!netId.HasValue)
+            {
+                WinterMPPlugin.Log.LogWarning("WorldSync: F6 resync — nothing registered nearby.");
+                return;
+            }
+
+            SyncEventLog.Record("resync-req", $"{netId.Value:X8} (manual F6)");
+            if (session.IsHost)
+                session.SendChat($"[ws] nearest id {netId.Value:X8} (host has authority)");
+            else
+                RequestObjectState(netId.Value);
+        }
+
+        /// <summary>Nearest registered net id for manual / dev resync (items, then FSMs).</summary>
+        public uint? FindNearestResyncTarget(float maxDistance = 15f)
+        {
+            FindLocalPlayer();
+            if (_localPlayer == null) return null;
+
+            float maxSq = maxDistance * maxDistance;
+            uint bestId = 0;
+            float bestSq = maxSq;
+
+            foreach (var pair in _items)
+            {
+                var body = pair.Value.Body;
+                if (body == null) continue;
+
+                float sq = (_localPlayer.position - body.transform.position).sqrMagnitude;
+                if (sq < bestSq)
+                {
+                    bestSq = sq;
+                    bestId = pair.Key;
+                }
+            }
+
+            if (bestId != 0) return bestId;
+
+            void ConsiderFsm(uint id, PlayMakerFSM? fsm)
+            {
+                if (fsm == null) return;
+                float sq = (_localPlayer.position - fsm.transform.position).sqrMagnitude;
+                if (sq < bestSq)
+                {
+                    bestSq = sq;
+                    bestId = id;
+                }
+            }
+
+            foreach (var pair in _doors) ConsiderFsm(pair.Key, pair.Value.Fsm);
+            foreach (var pair in _controls) ConsiderFsm(pair.Key, pair.Value.Fsm);
+            foreach (var pair in _parts) ConsiderFsm(pair.Key, pair.Value.Fsm);
+            foreach (var pair in _bolts) ConsiderFsm(pair.Key, pair.Value.Fsm);
+
+            return bestId != 0 ? bestId : (uint?)null;
         }
 
         /// <summary>
@@ -511,8 +621,23 @@ namespace WinterMP.Core.Sync
         /// </summary>
         private void LateUpdate()
         {
-            if (!_wasSessionActive) return;
+            if (_worldSyncDisabled || !_wasSessionActive) return;
 
+            try
+            {
+                LateUpdateWorldSync();
+            }
+            catch (Exception e)
+            {
+                _worldSyncDisabled = true;
+                WinterMPPlugin.Log.LogError($"WorldSync disabled after LateUpdate error: {e}");
+                SyncEventLog.Record("fatal", $"LateUpdate: {e}");
+                SyncEventLog.DumpToFile();
+            }
+        }
+
+        private void LateUpdateWorldSync()
+        {
             float now = Time.unscaledTime;
             foreach (var item in _items.Values)
             {
@@ -553,10 +678,15 @@ namespace WinterMP.Core.Sync
             _pendingBoltStates.Clear();
             _pendingPartStates.Clear();
             _pendingPurchaseIntents.Clear();
+            _sessionDespawnedItems.Clear();
+            _pendingDespawnedItems.Clear();
             _outPurchaseSequence = 0;
             _timeWeather.Reset();
             _wallet.Reset();
             _snapshotRequested = false;
+            _outChecksumSequence = 0;
+            _nextChecksumAt = 0f;
+            _nextResyncRequestAt = 0f;
             IdHash = 0;
             _localPlayer = null;
             _nextPlayerSearchAt = 0f;
@@ -585,16 +715,23 @@ namespace WinterMP.Core.Sync
                         string fsmName = fsm.FsmName;
                         if (fsmName == "Use")
                         {
-                            string[]? states = ClassifyDoor(fsm);
+                            string[]? states = SyncCatalog.TryMatchDoor(fsm);
                             if (states != null && RegisterDoor(fsm, states)) newDoors++;
                             else
                             {
-                                states = ClassifyIgnition(fsm);
+                                states = SyncCatalog.TryMatchIgnition(fsm);
                                 if (states != null && RegisterIgnition(fsm, states)) newIgnitions++;
                                 else
                                 {
-                                    states = SyncCatalog.TryMatchControl(fsm);
+                                    states = SyncCatalog.TryMatchSwitch(fsm);
                                     if (states != null && RegisterControl(fsm, states)) newControls++;
+                                    else
+                                    {
+                                        states = SyncCatalog.TryMatchControl(fsm);
+                                        if (states != null && RegisterControl(fsm, states)) newControls++;
+                                        else if (ClassifyBuy(fsm, out var useBuyProfile) && RegisterBuy(fsm, useBuyProfile))
+                                            newBuys++;
+                                    }
                                 }
                             }
                         }
@@ -616,12 +753,22 @@ namespace WinterMP.Core.Sync
                             string[]? partStates = ClassifyPartAssembly(fsm);
                             if (partStates != null && RegisterPart(fsm, partStates))
                                 newParts++;
-                            else if (ClassifyCashRegister(fsm, out var registerProfile) && RegisterBuy(fsm, registerProfile))
+                            else if (ClassifyBuy(fsm, out var dataBuy) && RegisterBuy(fsm, dataBuy))
                                 newBuys++;
+                        }
+                        else if (fsmName == "Button")
+                        {
+                            if (ClassifyBuy(fsm, out var buttonBuy) && RegisterBuy(fsm, buttonBuy))
+                                newBuys++;
+                            else
+                            {
+                                string[]? states = SyncCatalog.TryMatchControl(fsm);
+                                if (states != null && RegisterControl(fsm, states)) newControls++;
+                            }
                         }
                         else
                         {
-                            string[]? states = ClassifyStarter(fsm);
+                            string[]? states = SyncCatalog.TryMatchStarter(fsm);
                             if (states != null && RegisterStarter(fsm, states)) newStarters++;
                             else
                             {
@@ -662,16 +809,6 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        /// <summary>House/vehicle door handles vs. the two garage doors (different state sets).</summary>
-        private static string[]? ClassifyDoor(PlayMakerFSM fsm)
-        {
-            if (FsmHook.HasState(fsm, "Open door") && FsmHook.HasState(fsm, "Close door"))
-                return new[] { "Open door", "Close door" };
-            if (FsmHook.HasState(fsm, "Open") && FsmHook.HasState(fsm, "Close") && FsmHook.HasState(fsm, "Set rotation"))
-                return new[] { "Open", "Close" };
-            return null;
-        }
-
         private static string[]? ClassifyPartAssembly(PlayMakerFSM fsm)
         {
             string path = ScenePath.Of(fsm.transform);
@@ -689,7 +826,37 @@ namespace WinterMP.Core.Sync
         private static bool ClassifyBuy(PlayMakerFSM fsm, out BuyProfile profile)
         {
             profile = default;
-            if (fsm.FsmName != "Buy") return false;
+            if (SyncCatalog.TryMatchBuy(fsm, out var catalog) && catalog != null)
+            {
+                profile.EntryGuards = ToBuyGuards(catalog.EntryGuards);
+                profile.ResultStates = catalog.ResultStates;
+                return true;
+            }
+
+            if (fsm.FsmName != "Buy")
+                return false;
+
+            return ClassifyShopBuy(fsm, out profile);
+        }
+
+        private static BuyEntryGuard[] ToBuyGuards(CatalogBuyGuard[] guards)
+        {
+            var result = new BuyEntryGuard[guards.Length];
+            for (int i = 0; i < guards.Length; i++)
+            {
+                result[i] = new BuyEntryGuard
+                {
+                    StateName = guards[i].StateName,
+                    TriggerEvent = guards[i].TriggerEvent,
+                };
+            }
+
+            return result;
+        }
+
+        private static bool ClassifyShopBuy(PlayMakerFSM fsm, out BuyProfile profile)
+        {
+            profile = default;
 
             var guards = new List<BuyEntryGuard>();
             if (FsmHook.HasState(fsm, "Check money")) guards.Add(new BuyEntryGuard { StateName = "Check money", TriggerEvent = "USE" });
@@ -698,10 +865,19 @@ namespace WinterMP.Core.Sync
             if (guards.Count == 0 && FsmHook.HasState(fsm, "Purchase") && FsmHook.HasState(fsm, "Wait button"))
                 guards.Add(new BuyEntryGuard { StateName = "Purchase", TriggerEvent = "USE" });
 
+            // Peräpörtti restaurant counter — PURCHASE/DEPURCHASE from Wait button, no Check money.
+            if (guards.Count == 0 && FsmHook.HasState(fsm, "Cashier") && FsmHook.HasState(fsm, "Wait button")
+                && !FsmHook.HasState(fsm, "Check money") && !FsmHook.HasState(fsm, "Purchase"))
+            {
+                guards.Add(new BuyEntryGuard { StateName = "Cashier", TriggerEvent = "PURCHASE" });
+                if (FsmHook.HasState(fsm, "State 1"))
+                    guards.Add(new BuyEntryGuard { StateName = "State 1", TriggerEvent = "DEPURCHASE" });
+            }
+
             if (guards.Count == 0) return false;
 
             var results = new List<string>();
-            foreach (string state in new[] { "Purchase", "Cashier", "Add", "Subtract" })
+            foreach (string state in new[] { "Purchase", "Cashier", "Add", "Subtract", "State 1", "Wait" })
             {
                 if (FsmHook.HasState(fsm, state)) results.Add(state);
             }
@@ -711,70 +887,6 @@ namespace WinterMP.Core.Sync
             profile.EntryGuards = guards.ToArray();
             profile.ResultStates = results.ToArray();
             return true;
-        }
-
-        private static bool ClassifyCashRegister(PlayMakerFSM fsm, out BuyProfile profile)
-        {
-            profile = default;
-            if (fsm.FsmName != "Data") return false;
-
-            string path = ScenePath.Of(fsm.transform);
-            if (path.IndexOf("CashRegister", StringComparison.Ordinal) < 0) return false;
-            if (!FsmHook.HasState(fsm, "Purchase")) return false;
-
-            var guards = new List<BuyEntryGuard>();
-            if (FsmHook.HasState(fsm, "Check money")) guards.Add(new BuyEntryGuard { StateName = "Check money", TriggerEvent = "USE" });
-            if (FsmHook.HasState(fsm, "Purchase event")) guards.Add(new BuyEntryGuard { StateName = "Purchase event", TriggerEvent = "PURCHASE" });
-
-            if (guards.Count == 0) return false;
-
-            profile.EntryGuards = guards.ToArray();
-            profile.ResultStates = new[] { "Purchase" };
-            return true;
-        }
-
-        private static string[]? ClassifyIgnition(PlayMakerFSM fsm)
-        {
-            // SORBET/GIFU/KEKMET/CORRIS ignition switches share this PlayMaker shape:
-            // ACC on powers the dashboard, Motor starting kicks the starter/audio,
-            // and Motor OFF shuts it back down. Replaying those states runs the
-            // game's own electricity/engine actions, unlike toggling GameObjects.
-            if (fsm.gameObject.name.IndexOf("IGNITION", StringComparison.OrdinalIgnoreCase) < 0)
-                return null;
-            if (FsmHook.HasState(fsm, "ACC on")
-                && FsmHook.HasState(fsm, "Motor starting")
-                && FsmHook.HasState(fsm, "Motor OFF"))
-            {
-                return new[] { "ACC on", "Motor starting", "Motor OFF" };
-            }
-
-            return null;
-        }
-
-        private static string[]? ClassifyStarter(PlayMakerFSM fsm)
-        {
-            // STARTERxSorbet / STARTERxCorris :: Starter drives the actual engine
-            // run/stall cycle (Running <-> Stall engine). Replaying those states
-            // stops/starts the engine sim and audio on every machine.
-            string path = ScenePath.Of(fsm.transform);
-            string fsmName = fsm.FsmName;
-
-            if (fsmName == "Starter"
-                && (path.StartsWith("SORBET(190-200psi)/Simulation/STARTER", StringComparison.Ordinal)
-                    || path.StartsWith("CORRIS/Simulation/STARTER", StringComparison.Ordinal)))
-            {
-                if (HasAllStates(fsm, "Running", "Stall engine"))
-                    return new[] { "Running", "Stall engine", "Start engine", "Crank up" };
-            }
-
-            // CORRIS push-starts bypass the key; Engine on/off mirrors run/stall.
-            if (fsmName == "Pushstart" && path.StartsWith("CORRIS/Simulation/STARTER", StringComparison.Ordinal))
-            {
-                if (HasAllStates(fsm, "Engine on", "Engine off"))
-                    return new[] { "Engine on", "Engine off" };
-            }
-
-            return null;
         }
 
         private static bool HasAllStates(PlayMakerFSM fsm, params string[] states)
@@ -1067,6 +1179,15 @@ namespace WinterMP.Core.Sync
                     item.Id = StableHash.Fnv1a32(idSource);
                     _trackedBodies[item.Body] = true;
 
+                    if (_pendingDespawnedItems.Contains(item.Id))
+                    {
+                        _pendingDespawnedItems.Remove(item.Id);
+                        Destroy(item.Body.gameObject);
+                        WinterMPPlugin.Log.LogInfo(
+                            $"WorldSync: item '{item.Path}' removed from snapshot despawn list.");
+                        continue;
+                    }
+
                     if (_items.ContainsKey(item.Id))
                     {
                         // Late-discovered clone of an existing group — its ordinal may
@@ -1128,9 +1249,30 @@ namespace WinterMP.Core.Sync
                 if (fsm.FsmName != "Use") continue;
                 if (FsmHook.HasState(fsm, "Destroy") || FsmHook.HasState(fsm, "Destroy self"))
                     return true;
+                if (FsmHook.HasState(fsm, "Check drink"))
+                    return true;
             }
 
             return false;
+        }
+
+        private static void CollectConsumableDespawnStates(PlayMakerFSM fsm, List<string> states)
+        {
+            foreach (string state in new[] { "Destroy", "Destroy self" })
+            {
+                if (FsmHook.HasState(fsm, state) && !states.Contains(state))
+                    states.Add(state);
+            }
+
+            if (!FsmHook.HasState(fsm, "Check drink")) return;
+
+            if (FsmHook.HasState(fsm, "State 2") && !states.Contains("State 2"))
+                states.Add("State 2");
+            if (FsmHook.HasState(fsm, "State 5") && !states.Contains("State 5"))
+                states.Add("State 5");
+            // Juice concentrate, milk cartons, empty beer cases, etc. — Save DESTROY -> State 6.
+            if (FsmHook.HasState(fsm, "State 6") && !states.Contains("State 6"))
+                states.Add("State 6");
         }
 
         private void TryRegisterConsumableHooks(SyncedItem item)
@@ -1141,11 +1283,14 @@ namespace WinterMP.Core.Sync
             {
                 if (fsm.FsmName != "Use" || _hookedFsms.ContainsKey(fsm)) continue;
 
+                var despawnStates = new List<string>();
+                CollectConsumableDespawnStates(fsm, despawnStates);
+                if (despawnStates.Count == 0) continue;
+
                 bool hooked = false;
-                foreach (string state in new[] { "Destroy", "Destroy self" })
+                uint itemId = item.Id;
+                foreach (string state in despawnStates)
                 {
-                    if (!FsmHook.HasState(fsm, state)) continue;
-                    uint itemId = item.Id;
                     string captured = state;
                     if (!FsmHook.OnStateEnter(fsm, state, () => OnItemConsumed(itemId, captured))) continue;
                     hooked = true;
@@ -1170,12 +1315,23 @@ namespace WinterMP.Core.Sync
             if (session == null || !SessionSyncActive(session)) return;
 
             item.DespawnSent = true;
+            TrackSessionDespawn(itemId);
             WinterMPPlugin.Log.LogInfo($"WorldSync: item {itemId:X8} despawn — {reason} (local).");
+            SyncEventLog.Record("despawn", $"{itemId:X8} {reason}");
             session.SendWorldMessage(new ItemDespawn { ItemId = itemId }, Channel.ReliableOrdered);
+        }
+
+        private void TrackSessionDespawn(uint itemId)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) return;
+            _sessionDespawnedItems.Add(itemId);
         }
 
         public void OnRemoteItemDespawn(ItemDespawn message)
         {
+            TrackSessionDespawn(message.ItemId);
+
             if (!_items.TryGetValue(message.ItemId, out var item)) return;
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: item {message.ItemId:X8} despawn (remote).");
@@ -1230,6 +1386,428 @@ namespace WinterMP.Core.Sync
             foreach (uint id in ids)
                 hash = StableHash.Combine(hash, id);
             IdHash = hash;
+        }
+
+        private uint ComputeWalletCrc()
+        {
+            if (!_wallet.TryGetMoney(out float money)) return 0;
+            int mk = Mathf.RoundToInt(money);
+            return StableHash.Combine(StableHash.OffsetBasis, (uint)mk);
+        }
+
+        private uint ComputeWorldCrc()
+        {
+            uint crc = StableHash.OffsetBasis;
+            MixFsmStates(ref crc, _doors);
+            MixFsmStates(ref crc, _ignitions);
+            MixFsmStates(ref crc, _controls);
+            MixFsmStates(ref crc, _starters);
+            MixFsmStates(ref crc, _buys);
+
+            var partIds = new List<uint>(_parts.Keys);
+            partIds.Sort();
+            foreach (uint id in partIds)
+            {
+                if (!_parts.TryGetValue(id, out var part)) continue;
+                ReadPartVars(part, out byte flags, out byte tightness, out byte wear);
+                crc = StableHash.Combine(crc, id);
+                crc = StableHash.Combine(crc, flags);
+                crc = StableHash.Combine(crc, tightness);
+                crc = StableHash.Combine(crc, wear);
+            }
+
+            var boltIds = new List<uint>(_bolts.Keys);
+            boltIds.Sort();
+            foreach (uint id in boltIds)
+            {
+                if (!_bolts.TryGetValue(id, out var bolt)) continue;
+                ReadBoltVars(bolt, out ushort tightness, out ushort screwInt);
+                crc = StableHash.Combine(crc, id);
+                crc = StableHash.Combine(crc, tightness);
+                crc = StableHash.Combine(crc, screwInt);
+            }
+
+            return crc;
+        }
+
+        private uint ComputeItemCrc()
+        {
+            uint crc = StableHash.OffsetBasis;
+            var ids = new List<uint>(_items.Keys);
+            ids.Sort();
+            foreach (uint id in ids)
+            {
+                if (!_items.TryGetValue(id, out var item) || item.Body == null || item.IsVehicle) continue;
+                if (item.LocallyOwned || item.RemoteOwner != NoOwner) continue;
+
+                var body = item.Body;
+                if (!body.IsSleeping() && body.velocity.sqrMagnitude > 0.04f) continue;
+
+                var pos = body.transform.position;
+                var rot = body.transform.rotation;
+                crc = StableHash.Combine(crc, id);
+                crc = StableHash.Combine(crc, (uint)Quantize(pos.x));
+                crc = StableHash.Combine(crc, (uint)Quantize(pos.y));
+                crc = StableHash.Combine(crc, (uint)Quantize(pos.z));
+                crc = StableHash.Combine(crc, (uint)Quantize(rot.x * 1000f));
+                crc = StableHash.Combine(crc, (uint)Quantize(rot.y * 1000f));
+                crc = StableHash.Combine(crc, (uint)Quantize(rot.z * 1000f));
+                crc = StableHash.Combine(crc, (uint)Quantize(rot.w * 1000f));
+            }
+
+            return crc;
+        }
+
+        private uint ComputeVehicleCrc()
+        {
+            uint crc = StableHash.OffsetBasis;
+            var ids = new List<uint>();
+            foreach (var pair in _items)
+            {
+                if (pair.Value.IsVehicle) ids.Add(pair.Key);
+            }
+
+            ids.Sort();
+            foreach (uint id in ids)
+            {
+                if (!_items.TryGetValue(id, out var item) || !TryReadVehicleChecksum(item, out byte flags,
+                        out ushort rpm, out byte fuel, out byte coolant, out byte frost, out byte fog, out byte cabinTemp))
+                {
+                    continue;
+                }
+
+                crc = StableHash.Combine(crc, id);
+                crc = StableHash.Combine(crc, flags);
+                crc = StableHash.Combine(crc, rpm);
+                crc = StableHash.Combine(crc, fuel);
+                crc = StableHash.Combine(crc, coolant);
+                crc = StableHash.Combine(crc, frost);
+                crc = StableHash.Combine(crc, fog);
+                crc = StableHash.Combine(crc, cabinTemp);
+            }
+
+            return crc;
+        }
+
+        private bool TryReadVehicleChecksum(SyncedItem item, out byte flags, out ushort rpm, out byte fuel,
+            out byte coolant, out byte frost, out byte fog, out byte cabinTemp)
+        {
+            flags = 0;
+            rpm = 0;
+            fuel = 0;
+            coolant = 0;
+            frost = 0;
+            fog = 0;
+            cabinTemp = 0;
+            if (!item.IsVehicle || item.Body == null) return false;
+
+            if (item.LocallyOwned || item.RemoteOwner == NoOwner)
+            {
+                EnsureVehicleSystemsProbe(item);
+                if (!item.SystemsReady) return false;
+
+                float revs = ReadBestRpm(item);
+                bool engineOn = revs > EngineRunningRevs;
+                bool accOn = ReadAccOn(item) || engineOn;
+                if (engineOn) flags |= VehicleState.FlagEngineOn;
+                if (accOn) flags |= VehicleState.FlagAccOn;
+                if (ReadBlinkerLeft(item)) flags |= VehicleState.FlagBlinkerLeft;
+                if (ReadBlinkerRight(item)) flags |= VehicleState.FlagBlinkerRight;
+                if (ReadHazardOn(item)) flags |= VehicleState.FlagHazard;
+                rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue);
+                fuel = ReadFuelLevelByte(item);
+                coolant = ReadCoolantTempByte(item);
+
+                EnsureClimateProbe(item);
+                if (item.ClimateReady)
+                {
+                    frost = QuantizeFrost(ReadFrost(item));
+                    fog = QuantizeFrost(ReadFog(item));
+                    cabinTemp = QuantizeHeater(ReadCabinTemp(item), CabinTempMaxC);
+                }
+
+                return true;
+            }
+
+            flags = 0;
+            if (item.RemoteEngineOn) flags |= VehicleState.FlagEngineOn;
+            if (item.RemoteAccOn) flags |= VehicleState.FlagAccOn;
+            if (item.RemoteBlinkerLeft) flags |= VehicleState.FlagBlinkerLeft;
+            if (item.RemoteBlinkerRight) flags |= VehicleState.FlagBlinkerRight;
+            if (item.RemoteHazard) flags |= VehicleState.FlagHazard;
+            rpm = (ushort)Mathf.Clamp(item.RemoteRpm, 0f, ushort.MaxValue);
+            fuel = item.RemoteFuelLevel;
+            coolant = item.RemoteCoolantTemp;
+            frost = item.RemoteFrost;
+            fog = item.RemoteFog;
+            cabinTemp = item.RemoteCabinTemp;
+            return true;
+        }
+
+        private static void MixFsmStates<T>(ref uint crc, Dictionary<uint, T> entries) where T : class
+        {
+            var ids = new List<uint>(entries.Keys);
+            ids.Sort();
+            foreach (uint id in ids)
+            {
+                if (!entries.TryGetValue(id, out var entry)) continue;
+                string? state = entry switch
+                {
+                    SyncedDoor d => d.LastSyncedState,
+                    SyncedIgnition i => i.LastSyncedState,
+                    SyncedControl c => c.LastSyncedState,
+                    SyncedStarter s => s.LastSyncedState,
+                    SyncedBuy b => b.LastSyncedState,
+                    _ => null,
+                };
+                if (state == null) continue;
+                crc = StableHash.Combine(crc, id);
+                crc = StableHash.Combine(crc, StableHash.Fnv1a32(state));
+            }
+        }
+
+        public WorldStateChecksum? BuildStateChecksum()
+        {
+            if (_doors.Count == 0) return null;
+
+            return new WorldStateChecksum
+            {
+                WalletCrc = ComputeWalletCrc(),
+                WorldCrc = ComputeWorldCrc(),
+                ItemCrc = ComputeItemCrc(),
+                VehicleCrc = ComputeVehicleCrc(),
+                Sequence = ++_outChecksumSequence,
+            };
+        }
+
+        public void OnRemoteStateChecksum(WorldStateChecksum message)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || session.IsHost || !_snapshotRequested || _doors.Count == 0) return;
+            if (Time.unscaledTime < _nextResyncRequestAt) return;
+
+            uint localWallet = ComputeWalletCrc();
+            uint localWorld = ComputeWorldCrc();
+            uint localItems = ComputeItemCrc();
+            uint localVehicles = ComputeVehicleCrc();
+            byte flags = 0;
+            if (localWallet != message.WalletCrc) flags |= WorldResyncRequest.FlagWallet;
+            if (localWorld != message.WorldCrc)
+            {
+                flags |= WorldResyncRequest.FlagFsmStates;
+                flags |= WorldResyncRequest.FlagParts;
+                flags |= WorldResyncRequest.FlagBolts;
+            }
+
+            if (localItems != message.ItemCrc) flags |= WorldResyncRequest.FlagItems;
+            if (localVehicles != message.VehicleCrc) flags |= WorldResyncRequest.FlagVehicles;
+
+            if (flags == 0) return;
+
+            WinterMPPlugin.Log.LogWarning(
+                $"WorldSync: checksum mismatch seq {message.Sequence} (wallet={(flags & WorldResyncRequest.FlagWallet) != 0}, " +
+                $"world={(flags & WorldResyncRequest.FlagFsmStates) != 0}, items={(flags & WorldResyncRequest.FlagItems) != 0}, " +
+                $"vehicles={(flags & WorldResyncRequest.FlagVehicles) != 0}) — requesting soft resync.");
+            SyncEventLog.Record("checksum", $"seq {message.Sequence} flags 0x{flags:X2}");
+            _nextResyncRequestAt = Time.unscaledTime + ResyncCooldownSeconds;
+            session.SendWorldMessage(new WorldResyncRequest
+            {
+                Flags = flags,
+                ChecksumSequence = message.Sequence,
+            }, Channel.ReliableOrdered);
+        }
+
+        /// <summary>Host: targeted snapshot chunks after a guest checksum mismatch.</summary>
+        public IEnumerable<IMessage> BuildResyncMessages(byte flags)
+        {
+            if ((flags & WorldResyncRequest.FlagWallet) != 0)
+            {
+                var wallet = BuildWalletState();
+                if (wallet != null) yield return wallet;
+            }
+
+            if ((flags & WorldResyncRequest.FlagFsmStates) != 0)
+            {
+                foreach (var chunk in BuildDoorSnapshotChunks())
+                    yield return chunk;
+            }
+
+            if ((flags & WorldResyncRequest.FlagParts) != 0)
+            {
+                foreach (var chunk in BuildPartSnapshotChunks())
+                    yield return chunk;
+            }
+
+            if ((flags & WorldResyncRequest.FlagBolts) != 0)
+            {
+                foreach (var chunk in BuildBoltSnapshotChunks())
+                    yield return chunk;
+            }
+
+            if ((flags & WorldResyncRequest.FlagItems) != 0)
+            {
+                foreach (var chunk in BuildItemSnapshotChunks())
+                    yield return chunk;
+            }
+
+            if ((flags & WorldResyncRequest.FlagVehicles) != 0)
+            {
+                foreach (var message in BuildVehicleResyncMessages())
+                    yield return message;
+            }
+        }
+
+        private IEnumerable<IMessage> BuildVehicleResyncMessages()
+        {
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) yield break;
+
+            foreach (var pair in _items)
+            {
+                if (!pair.Value.IsVehicle) continue;
+                foreach (var message in BuildVehicleStateMessages(pair.Value, session.LocalPlayerId))
+                    yield return message;
+            }
+        }
+
+        /// <summary>Guest -> host: ask for one object's authoritative state (self-healing).</summary>
+        public void RequestObjectState(uint netId)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || session.IsHost) return;
+
+            float now = Time.unscaledTime;
+            if (_nextObjectRequestAt.TryGetValue(netId, out float nextAt) && now < nextAt) return;
+
+            _nextObjectRequestAt[netId] = now + ObjectRequestCooldownSeconds;
+            WinterMPPlugin.Log.LogInfo($"WorldSync: requesting object state for {netId:X8}.");
+            SyncEventLog.Record("obj-req", netId.ToString("X8"));
+            session.SendWorldMessage(new WorldObjectStateRequest { NetId = netId }, Channel.ReliableOrdered);
+        }
+
+        /// <summary>Host: reply to a per-object state request with whatever we know.</summary>
+        public IEnumerable<IMessage> BuildObjectStateMessages(uint netId)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) yield break;
+
+            if (_items.TryGetValue(netId, out var item) && item.Body != null)
+            {
+                yield return new ItemTransform
+                {
+                    ItemId = netId,
+                    OwnerPlayerId = session.LocalPlayerId,
+                    Flags = ItemTransform.FlagFinal,
+                    Position = item.Body.transform.position.ToNet(),
+                    Rotation = item.Body.transform.rotation.ToNet(),
+                };
+
+                if (item.IsVehicle)
+                {
+                    foreach (var message in BuildVehicleStateMessages(item, session.LocalPlayerId))
+                        yield return message;
+                }
+
+                yield break;
+            }
+
+            string? fsmState = TryGetFsmSnapshotState(netId);
+            if (fsmState != null)
+            {
+                yield return new FsmStateEnter { NetId = netId, StateName = fsmState };
+                yield break;
+            }
+
+            if (_parts.TryGetValue(netId, out var part) && ShouldIncludePartSnapshot(part, out byte flags, out byte tightness, out byte wear))
+            {
+                yield return new PartState { NetId = netId, Flags = flags, Tightness = tightness, Wear = wear };
+                yield break;
+            }
+
+            if (_bolts.TryGetValue(netId, out var bolt))
+            {
+                ReadBoltVars(bolt, out ushort boltTightness, out ushort screwInt);
+                if (boltTightness != 0 || screwInt != 0)
+                    yield return new BoltState { NetId = netId, BoltTightness = boltTightness, ScrewInt = screwInt };
+            }
+        }
+
+        private IEnumerable<IMessage> BuildVehicleStateMessages(SyncedItem item, byte ownerPlayerId)
+        {
+            var state = TryBuildVehicleStateMessage(item, ownerPlayerId);
+            if (state != null) yield return state;
+
+            var climate = TryBuildVehicleClimate(item);
+            if (climate != null)
+            {
+                climate.OwnerPlayerId = ownerPlayerId;
+                yield return climate;
+            }
+        }
+
+        private string? TryGetFsmSnapshotState(uint netId)
+        {
+            if (_doors.TryGetValue(netId, out var door))
+                return door.LastSyncedState ?? TryReadActiveSyncedState(door.Fsm, door.SyncedStates);
+            if (_ignitions.TryGetValue(netId, out var ignition))
+                return ignition.LastSyncedState ?? TryReadActiveSyncedState(ignition.Fsm, ignition.SyncedStates);
+            if (_controls.TryGetValue(netId, out var control))
+                return control.LastSyncedState ?? TryReadActiveSyncedState(control.Fsm, control.SyncedStates);
+            if (_starters.TryGetValue(netId, out var starter))
+                return starter.LastSyncedState ?? TryReadActiveSyncedState(starter.Fsm, starter.SyncedStates);
+            if (_buys.TryGetValue(netId, out var buy))
+                return buy.LastSyncedState ?? TryReadActiveSyncedState(buy.Fsm, buy.ResultStates);
+            if (_parts.TryGetValue(netId, out var part))
+                return part.LastSyncedState ?? TryReadActiveSyncedState(part.Fsm, part.SyncedStates);
+            return null;
+        }
+
+        private static string? TryReadActiveSyncedState(PlayMakerFSM? fsm, string[] syncedStates)
+        {
+            if (fsm?.Fsm == null) return null;
+
+            try
+            {
+                string active = fsm.Fsm.ActiveStateName;
+                if (Array.IndexOf(syncedStates, active) >= 0) return active;
+            }
+            catch
+            {
+                // FSM not ready.
+            }
+
+            return null;
+        }
+
+        private VehicleState? TryBuildVehicleStateMessage(SyncedItem item, byte ownerPlayerId)
+        {
+            if (!item.IsVehicle || item.Body == null) return null;
+
+            EnsureVehicleSystemsProbe(item);
+            if (!item.SystemsReady) return null;
+
+            float revs = ReadBestRpm(item);
+            bool engineOn = revs > EngineRunningRevs;
+            bool accOn = ReadAccOn(item) || engineOn;
+            float speedKmh = item.GaugeSpeedVar != null ? item.GaugeSpeedVar.Value : 0f;
+
+            byte flags = 0;
+            if (engineOn) flags |= VehicleState.FlagEngineOn;
+            if (accOn) flags |= VehicleState.FlagAccOn;
+            if (ReadBlinkerLeft(item)) flags |= VehicleState.FlagBlinkerLeft;
+            if (ReadBlinkerRight(item)) flags |= VehicleState.FlagBlinkerRight;
+            if (ReadHazardOn(item)) flags |= VehicleState.FlagHazard;
+
+            return new VehicleState
+            {
+                VehicleId = item.Id,
+                OwnerPlayerId = ownerPlayerId,
+                Flags = flags,
+                Rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue),
+                SpeedTenthsKmh = (ushort)Mathf.Clamp(speedKmh * 10f, 0f, ushort.MaxValue),
+                FuelLevel = ReadFuelLevelByte(item),
+                CoolantTemp = ReadCoolantTempByte(item),
+            };
         }
 
         // ------------------------------------------------------------------ local -> network
@@ -1313,12 +1891,12 @@ namespace WinterMP.Core.Sync
                 buy.LastSyncedState = stateName;
 
             var session = SessionManager.Instance;
-            if (session == null || session.PlayerCount == 0) return;
+            if (session == null || session.PlayerCount == 0 || !session.IsHost) return;
 
-            if (session.IsHost)
-                _wallet.NotifyMoneyChanged();
+            _wallet.NotifyMoneyChanged();
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: buy {netId:X8} -> '{stateName}' (local).");
+            SyncEventLog.Record("buy", $"{netId:X8} -> {stateName}");
             session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
         }
 
@@ -1381,8 +1959,28 @@ namespace WinterMP.Core.Sync
             switch (eventName)
             {
                 case "USE":
+                    if (FsmHook.HasState(buy.Fsm, "Check car")) return "Check car";
+                    if (FsmHook.HasState(buy.Fsm, "1") && FsmHook.HasState(buy.Fsm, "Remove order")) return "1";
                     if (FsmHook.HasState(buy.Fsm, "Check money")) return "Check money";
                     if (Array.IndexOf(buy.ResultStates, "Purchase") >= 0) return "Purchase";
+                    break;
+                case "PAY":
+                    if (FsmHook.HasState(buy.Fsm, "Check money")) return "Check money";
+                    if (FsmHook.HasState(buy.Fsm, "Wait payment")) return "Wait payment";
+                    break;
+                case "PAYMENT":
+                    if (FsmHook.HasState(buy.Fsm, "Spawn package")) return "Spawn package";
+                    // Fleetari: PAYMENT confirms the bill after Wait payment, not the initial order.
+                    if (buy.Fsm.ActiveStateName == "Wait payment" && FsmHook.HasState(buy.Fsm, "State 3"))
+                        return "State 3";
+                    if (FsmHook.HasState(buy.Fsm, "Pending cost")) return "Pending cost";
+                    if (FsmHook.HasState(buy.Fsm, "State 3")) return "State 3";
+                    break;
+                case "BUY":
+                    if (Array.IndexOf(buy.ResultStates, "Fleetari 2") >= 0) return "Fleetari 2";
+                    break;
+                case "CLICK":
+                    if (FsmHook.HasState(buy.Fsm, "Pending cost")) return "Pending cost";
                     break;
                 case "PURCHASE":
                     if (FsmHook.HasState(buy.Fsm, "Purchase event")) return "Purchase event";
@@ -1394,6 +1992,7 @@ namespace WinterMP.Core.Sync
                 case "DEPURCHASE":
                     if (FsmHook.HasState(buy.Fsm, "Check if 0")) return "Check if 0";
                     if (Array.IndexOf(buy.ResultStates, "Subtract") >= 0) return "Subtract";
+                    if (Array.IndexOf(buy.ResultStates, "State 1") >= 0) return "State 1";
                     break;
             }
 
@@ -1773,6 +2372,8 @@ namespace WinterMP.Core.Sync
 
         private void ProcessPending()
         {
+            var session = SessionManager.Instance;
+
             for (int i = _pending.Count - 1; i >= 0; i--)
             {
                 var entry = _pending[i];
@@ -1783,12 +2384,16 @@ namespace WinterMP.Core.Sync
                 if (applied || Time.unscaledTime >= entry.ExpiresAt)
                 {
                     if (!applied)
+                    {
                         WinterMPPlugin.Log.LogWarning($"WorldSync: dropping expired event {entry.Name} for {entry.NetId:X8}.");
+                        if (session != null && !session.IsHost)
+                            RequestObjectState(entry.NetId);
+                    }
+
                     _pending.RemoveAt(i);
                 }
             }
 
-            var session = SessionManager.Instance;
             if (session != null && session.IsHost)
             {
                 for (int i = _pendingPurchaseIntents.Count - 1; i >= 0; i--)
@@ -1807,11 +2412,7 @@ namespace WinterMP.Core.Sync
 
         // ------------------------------------------------------------------ join snapshot & time
 
-        /// <summary>
-        /// Host side: world state for a fresh joiner — every door we saw change
-        /// plus the current pose of every item/vehicle, in send-ready chunks.
-        /// </summary>
-        public IEnumerable<IMessage> BuildWorldSnapshot()
+        private IEnumerable<WorldDoorSnapshot> BuildDoorSnapshotChunks()
         {
             var doors = new WorldDoorSnapshot();
             foreach (var pair in _doors)
@@ -1894,29 +2495,10 @@ namespace WinterMP.Core.Sync
 
             if (doors.Entries.Count > 0)
                 yield return doors;
+        }
 
-            var items = new WorldItemSnapshot();
-            foreach (var pair in _items)
-            {
-                var item = pair.Value;
-                if (item.Body == null) continue;
-
-                items.Entries.Add(new WorldItemSnapshot.Entry
-                {
-                    ItemId = pair.Key,
-                    Position = item.Body.transform.position.ToNet(),
-                    Rotation = item.Body.transform.rotation.ToNet(),
-                });
-                if (items.Entries.Count >= ItemSnapshotChunk)
-                {
-                    yield return items;
-                    items = new WorldItemSnapshot();
-                }
-            }
-
-            if (items.Entries.Count > 0)
-                yield return items;
-
+        private IEnumerable<WorldBoltSnapshot> BuildBoltSnapshotChunks()
+        {
             var bolts = new WorldBoltSnapshot();
             foreach (var pair in _bolts)
             {
@@ -1938,7 +2520,10 @@ namespace WinterMP.Core.Sync
 
             if (bolts.Entries.Count > 0)
                 yield return bolts;
+        }
 
+        private IEnumerable<WorldPartSnapshot> BuildPartSnapshotChunks()
+        {
             var parts = new WorldPartSnapshot();
             foreach (var pair in _parts)
             {
@@ -1961,6 +2546,64 @@ namespace WinterMP.Core.Sync
 
             if (parts.Entries.Count > 0)
                 yield return parts;
+        }
+
+        private IEnumerable<WorldItemSnapshot> BuildItemSnapshotChunks()
+        {
+            var items = new WorldItemSnapshot();
+            foreach (var pair in _items)
+            {
+                var item = pair.Value;
+                if (item.Body == null) continue;
+
+                items.Entries.Add(new WorldItemSnapshot.Entry
+                {
+                    ItemId = pair.Key,
+                    Position = item.Body.transform.position.ToNet(),
+                    Rotation = item.Body.transform.rotation.ToNet(),
+                });
+                if (items.Entries.Count >= ItemSnapshotChunk)
+                {
+                    yield return items;
+                    items = new WorldItemSnapshot();
+                }
+            }
+
+            if (items.Entries.Count > 0)
+                yield return items;
+        }
+
+        /// <summary>
+        /// Host side: world state for a fresh joiner — every door we saw change
+        /// plus the current pose of every item/vehicle, in send-ready chunks.
+        /// </summary>
+        public IEnumerable<IMessage> BuildWorldSnapshot()
+        {
+            foreach (var chunk in BuildDoorSnapshotChunks())
+                yield return chunk;
+
+            foreach (var chunk in BuildItemSnapshotChunks())
+                yield return chunk;
+
+            foreach (var chunk in BuildBoltSnapshotChunks())
+                yield return chunk;
+
+            foreach (var chunk in BuildPartSnapshotChunks())
+                yield return chunk;
+
+            var despawns = new WorldItemDespawnSnapshot();
+            foreach (uint itemId in _sessionDespawnedItems)
+            {
+                despawns.ItemIds.Add(itemId);
+                if (despawns.ItemIds.Count >= DespawnSnapshotChunk)
+                {
+                    yield return despawns;
+                    despawns = new WorldItemDespawnSnapshot();
+                }
+            }
+
+            if (despawns.ItemIds.Count > 0)
+                yield return despawns;
 
             foreach (var pair in _items)
             {
@@ -2047,6 +2690,38 @@ namespace WinterMP.Core.Sync
             }
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: item snapshot — {message.Entries.Count} entries, {applied} applied, {parked} parked.");
+        }
+
+        public void OnRemoteItemDespawnSnapshot(WorldItemDespawnSnapshot message)
+        {
+            int removed = 0, parked = 0;
+            foreach (uint itemId in message.ItemIds)
+            {
+                if (_items.TryGetValue(itemId, out var item) && item.Body != null)
+                {
+                    item.DespawnSent = true;
+                    _applyingRemote = true;
+                    try
+                    {
+                        Destroy(item.Body.gameObject);
+                    }
+                    finally
+                    {
+                        _applyingRemote = false;
+                    }
+
+                    RemoveTrackedItem(itemId, item.Body);
+                    removed++;
+                }
+                else
+                {
+                    _pendingDespawnedItems.Add(itemId);
+                    parked++;
+                }
+            }
+
+            WinterMPPlugin.Log.LogInfo(
+                $"WorldSync: despawn snapshot — {message.ItemIds.Count} ids, {removed} removed, {parked} parked.");
         }
 
         public void OnRemoteBoltSnapshot(WorldBoltSnapshot message)
@@ -2204,8 +2879,16 @@ namespace WinterMP.Core.Sync
             if (message.OwnerPlayerId == item.RemoteOwner)
             {
                 ushort diff = (ushort)(message.Sequence - item.LastRemoteSequence);
-                if (diff == 0 || diff > short.MaxValue) return;
+                if (diff == 0 || diff > short.MaxValue)
+                {
+                    if (!message.IsFinal)
+                        ConnectionQuality.Instance.NoteUnreliableDropped();
+                    return;
+                }
             }
+
+            if (!message.IsFinal)
+                ConnectionQuality.Instance.NoteUnreliableReceived();
 
             var session = SessionManager.Instance;
             if (item.LocallyOwned && session != null)
@@ -2355,8 +3038,16 @@ namespace WinterMP.Core.Sync
                     }
                     else if (!moving)
                     {
-                        SendItem(session, item, body, true);
-                        item.LocallyOwned = false;
+                        if (!ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
+                        {
+                            SendItem(session, item, body, true);
+                            item.LocallyOwned = false;
+                        }
+                        else if (now >= item.NextSendAt)
+                        {
+                            SendItem(session, item, body, false);
+                            item.NextSendAt = now + DriverKeepaliveSeconds;
+                        }
                     }
                     else if (now >= item.NextSendAt)
                     {
@@ -2365,7 +3056,8 @@ namespace WinterMP.Core.Sync
                     }
 
                 }
-                else if (moving && CanClaim(item, position))
+                else if (moving && CanClaim(item, position)
+                         && !ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
                 {
                     ClaimItem(session, item, body, now);
                 }
@@ -2664,7 +3356,13 @@ namespace WinterMP.Core.Sync
                 return;
 
             ushort diff = (ushort)(message.Sequence - item.LastVehicleStateSequence);
-            if (diff == 0 || diff > short.MaxValue) return;
+            if (diff == 0 || diff > short.MaxValue)
+            {
+                ConnectionQuality.Instance.NoteUnreliableDropped();
+                return;
+            }
+
+            ConnectionQuality.Instance.NoteUnreliableReceived();
             item.LastVehicleStateSequence = message.Sequence;
 
             bool electricsOn = message.AccOn || message.EngineOn;
@@ -3240,7 +3938,13 @@ namespace WinterMP.Core.Sync
             if (item.LocallyOwned) return;
 
             ushort diff = (ushort)(message.Sequence - item.LastClimateSequence);
-            if (diff == 0 || diff > short.MaxValue) return;
+            if (diff == 0 || diff > short.MaxValue)
+            {
+                ConnectionQuality.Instance.NoteUnreliableDropped();
+                return;
+            }
+
+            ConnectionQuality.Instance.NoteUnreliableReceived();
             item.LastClimateSequence = message.Sequence;
             item.RemoteClimateUntil = Time.unscaledTime + ClimateHoldSeconds;
 
@@ -3753,8 +4457,15 @@ namespace WinterMP.Core.Sync
             _pendingBoltStates.Clear();
             _pendingPartStates.Clear();
             _pendingPurchaseIntents.Clear();
+            _pendingDespawnedItems.Clear();
+            _nextObjectRequestAt.Clear();
             _snapshotRequested = false;
+            _worldSyncDisabled = false;
+            SyncEventLog.Clear();
         }
+
+        /// <summary>True after an unhandled sync error; cleared when the session ends.</summary>
+        public bool IsDisabled => _worldSyncDisabled;
 
         // ------------------------------------------------------------------ test tooling
 

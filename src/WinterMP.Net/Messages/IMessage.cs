@@ -30,6 +30,9 @@ namespace WinterMP.Net.Messages
         BoltState = 44,
         PartState = 45,
         ItemDespawn = 46,
+        WorldStateChecksum = 47,
+        WorldResyncRequest = 48,
+        WorldObjectStateRequest = 49,
 
         // 60-79: vehicles — M4
         VehicleState = 60,
@@ -45,6 +48,7 @@ namespace WinterMP.Net.Messages
         WorldItemSnapshot = 122,
         WorldBoltSnapshot = 123,
         WorldPartSnapshot = 124,
+        WorldItemDespawnSnapshot = 125,
 
         // Reserved ranges for future subsystems:
         //   61-79 vehicles (attachment, fuel/damage)

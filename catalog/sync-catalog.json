@@ -1,6 +1,22 @@
 {
   "gameBuild": "curated",
+  "doors": [
+    {
+      "fsmName": "Use",
+      "states": ["Open door", "Close door"]
+    },
+    {
+      "fsmName": "Use",
+      "states": ["Open", "Close", "Set rotation"],
+      "requireStates": ["Set rotation"]
+    }
+  ],
   "controls": [
+    {
+      "objectName": "beercase",
+      "fsmName": "Use",
+      "states": ["Remove bottle"]
+    },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonLightModes",
@@ -119,6 +135,168 @@
       "pathPrefix": "CORRIS/",
       "fsmName": "WiperModes",
       "states": ["Fast", "Slow", "Off"]
+    },
+    {
+      "pathContains": "ServiceBrochure/PageTirejob",
+      "fsmName": "Button",
+      "states": ["Switch 2", "State 4", "Disable"],
+      "requireStates": ["Switch 2", "State 4"]
+    },
+    {
+      "pathContains": "ServiceBrochure/PageGearing/Buttons/Lock",
+      "fsmName": "Button",
+      "states": ["LSD", "OPEN"],
+      "requireStates": ["LSD"]
+    },
+    {
+      "pathContains": "ServiceBrochure/PagePaintCar/Buttons/3",
+      "fsmName": "Button",
+      "states": ["On", "Off", "Switch"],
+      "requireStates": ["Off"]
+    },
+    {
+      "pathContains": "ServiceBrochure",
+      "fsmName": "Button",
+      "states": ["Set job"],
+      "requireStates": ["Set job"]
+    },
+    {
+      "pathContains": "ServiceBrochure",
+      "fsmName": "Button",
+      "states": ["On"],
+      "requireStates": ["On"]
+    },
+    {
+      "pathContains": "ServiceBrochure",
+      "fsmName": "Button",
+      "states": ["Switch 2"],
+      "requireStates": ["Switch 2"]
+    },
+    {
+      "pathContains": "ServiceBrochure",
+      "fsmName": "Button",
+      "states": ["Switch"],
+      "requireStates": ["Switch"]
+    },
+    {
+      "pathContains": "ServiceBrochure",
+      "fsmName": "Button",
+      "states": ["Next page"],
+      "requireStates": ["Next page"]
+    }
+  ],
+  "switchRules": [
+    {
+      "fsmName": "Use",
+      "states": ["ON", "OFF"],
+      "requireStates": ["Wait button"],
+      "excludePathPrefixes": ["SORBET(190-200psi)/", "CORRIS/"]
+    },
+    {
+      "pathContains": "/SetFire",
+      "fsmName": "Use",
+      "states": ["Burn", "Off"],
+      "requireStates": ["Wait button"]
+    },
+    {
+      "pathContains": "TVSwitch",
+      "fsmName": "Use",
+      "states": ["Open TV", "Close TV"],
+      "requireStates": ["Wait button"]
+    }
+  ],
+  "ignitions": [
+    {
+      "objectNameContains": "IGNITION",
+      "fsmName": "Use",
+      "states": ["ACC on", "Motor starting", "Motor OFF"]
+    }
+  ],
+  "starters": [
+    {
+      "pathPrefix": "SORBET(190-200psi)/Simulation/STARTER",
+      "fsmName": "Starter",
+      "states": ["Running", "Stall engine", "Start engine", "Crank up"]
+    },
+    {
+      "pathPrefix": "CORRIS/Simulation/STARTER",
+      "fsmName": "Starter",
+      "states": ["Running", "Stall engine", "Start engine", "Crank up"]
+    },
+    {
+      "pathPrefix": "CORRIS/Simulation/STARTER",
+      "fsmName": "Pushstart",
+      "states": ["Engine on", "Engine off"]
+    }
+  ],
+  "buys": [
+    {
+      "fsmName": "Use",
+      "requireStates": ["Check car", "Check money", "Pay"],
+      "entryGuards": [{ "state": "Check car", "event": "USE" }],
+      "resultStates": ["Pay", "State 2"]
+    },
+    {
+      "fsmName": "Use",
+      "requireStates": ["Remove order", "Close box", "Wait button", "1"],
+      "entryGuards": [{ "state": "1", "event": "USE" }],
+      "resultStates": ["Close box", "Remove order"]
+    },
+    {
+      "pathContains": "NotificationsPile",
+      "fsmName": "Use",
+      "requireStates": ["Check money", "Spawn"],
+      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
+      "resultStates": ["Spawn", "State 2", "Disable"]
+    },
+    {
+      "pathContains": "OrderAMIS",
+      "fsmName": "Data",
+      "requireStates": ["Idle", "Spawn package"],
+      "entryGuards": [{ "state": "Spawn package", "event": "PAYMENT" }],
+      "resultStates": ["Spawn package", "State 1"]
+    },
+    {
+      "pathContains": "OrderYP",
+      "fsmName": "Data",
+      "requireStates": ["Idle", "Spawn package"],
+      "entryGuards": [{ "state": "Spawn package", "event": "PAYMENT" }],
+      "resultStates": ["Spawn package", "State 1"]
+    },
+    {
+      "pathContains": "OrderFleetari",
+      "fsmName": "Data",
+      "requireStates": ["Pending cost", "State 3"],
+      "entryGuards": [
+        { "state": "Pending cost", "event": "PAYMENT" },
+        { "state": "State 3", "event": "PAYMENT" },
+        { "state": "Wait payment", "event": "PAY", "optional": true }
+      ],
+      "resultStates": ["Pending cost", "Wait payment", "State 3"]
+    },
+    {
+      "pathContains": "ServiceBrochure/ButtonOrder",
+      "fsmName": "Button",
+      "requireStates": ["Fleetari 2"],
+      "entryGuards": [{ "state": "Fleetari 2", "event": "BUY" }],
+      "resultStates": ["Fleetari 2", "State 5", "State 3"]
+    },
+    {
+      "pathContains": "ServicePayment/ButtonOrder",
+      "fsmName": "Button",
+      "requireStates": ["Pending cost"],
+      "entryGuards": [{ "state": "Pending cost", "event": "CLICK" }],
+      "resultStates": ["Pending cost", "State 5"]
+    },
+    {
+      "pathContains": "CashRegister",
+      "fsmName": "Data",
+      "requireStates": ["Purchase"],
+      "entryGuards": [
+        { "state": "Check money", "event": "USE", "optional": true },
+        { "state": "Purchase event", "event": "PURCHASE", "optional": true }
+      ],
+      "resultStates": ["Purchase"]
     }
   ]
 }

@@ -228,6 +228,46 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
+        public void WorldStateChecksum_RoundTrips()
+        {
+            var original = new WorldStateChecksum
+            {
+                WalletCrc = 0x12345678,
+                WorldCrc = 0xABCDEF01,
+                ItemCrc = 0x55AA55AA,
+                VehicleCrc = 0xDEADBEEF,
+                Sequence = 42,
+            };
+            var decoded = Assert.IsType<WorldStateChecksum>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.WalletCrc, decoded.WalletCrc);
+            Assert.Equal(original.WorldCrc, decoded.WorldCrc);
+            Assert.Equal(original.ItemCrc, decoded.ItemCrc);
+            Assert.Equal(original.VehicleCrc, decoded.VehicleCrc);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+        }
+
+        [Fact]
+        public void WorldObjectStateRequest_RoundTrips()
+        {
+            var original = new WorldObjectStateRequest { NetId = 0xCAFEBABE };
+            var decoded = Assert.IsType<WorldObjectStateRequest>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.NetId, decoded.NetId);
+        }
+
+        [Fact]
+        public void WorldResyncRequest_RoundTrips()
+        {
+            var original = new WorldResyncRequest
+            {
+                Flags = WorldResyncRequest.FlagWallet | WorldResyncRequest.FlagParts,
+                ChecksumSequence = 7,
+            };
+            var decoded = Assert.IsType<WorldResyncRequest>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.Flags, decoded.Flags);
+            Assert.Equal(original.ChecksumSequence, decoded.ChecksumSequence);
+        }
+
+        [Fact]
         public void WorldDoorSnapshot_RoundTrips()
         {
             var original = new WorldDoorSnapshot();
@@ -302,6 +342,18 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Entries[0].NetId, decoded.Entries[0].NetId);
             Assert.Equal(original.Entries[0].BoltTightness, decoded.Entries[0].BoltTightness);
             Assert.Equal(original.Entries[0].ScrewInt, decoded.Entries[0].ScrewInt);
+        }
+
+        [Fact]
+        public void WorldItemDespawnSnapshot_RoundTrips()
+        {
+            var original = new WorldItemDespawnSnapshot();
+            original.ItemIds.Add(0x11223344);
+            original.ItemIds.Add(0xAABBCCDD);
+
+            var decoded = Assert.IsType<WorldItemDespawnSnapshot>(
+                PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.ItemIds, decoded.ItemIds);
         }
 
         [Fact]

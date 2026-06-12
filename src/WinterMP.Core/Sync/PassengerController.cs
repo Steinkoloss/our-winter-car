@@ -11,11 +11,11 @@ namespace WinterMP.Core.Sync
     /// passenger seat plus two rear bench spots, so a full car carries 4 players.
     ///
     /// The game has no passenger mechanic for these cars, so this is hand-rolled
-    /// (the proven MSC-multiplayer approach): standing near a free seat and
+    /// (the proven MSC-multiplayer approach): crouch on a free seat cushion and
     /// pressing Return parents PLAYER under the vehicle at the seat position with
-    /// its CharacterController disabled; Return again gets out. Seat positions are
-    /// derived from the game's own anchors — the drive trigger (mirrored for the
-    /// front passenger), the CORRIS seat assembly pivots and the SORBET RearSeat.
+    /// its CharacterController disabled; Return again gets out. Entry mirrors drive
+    /// mode (Return at the in-cabin seat, not at the exterior door): front seats use
+    /// MassPassenger, rear bench spots use the game's bench/rear-seat pivots.
     ///
     /// Occupancy is replicated via <see cref="PassengerState"/> (re-broadcast
     /// while seated so late joiners learn it): occupied seats refuse local entry,
@@ -24,7 +24,8 @@ namespace WinterMP.Core.Sync
     /// </summary>
     public sealed class PassengerController : MonoBehaviour
     {
-        private const float EnterRadius = 0.75f;
+        /// <summary>Must be on the cushion — same scale as the in-cabin drive seat.</summary>
+        private const float EnterRadius = 0.55f;
         /// <summary>Return is also the game's own enter-car key; never compete with
         /// the drive trigger when the player stands next to the driver's door.</summary>
         private const float DriveTriggerExclusionRadius = 1.0f;
@@ -35,6 +36,7 @@ namespace WinterMP.Core.Sync
         /// <summary>Seat anchors sit at cushion height; the player pivot (feet)
         /// goes below so the camera ends up at seated eye level.</summary>
         private const float SeatPivotDrop = 0.4f;
+        private const float SeatHeightOffset = 0.5f;
         private const float ExitLateralMeters = 1.3f;
         private const float RearBenchHalfWidth = 0.35f;
         private const string PlayerObjectName = "PLAYER";
@@ -131,8 +133,7 @@ namespace WinterMP.Core.Sync
             if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null) return;
 
             var seat = vehicle.SeatLocal[_seatedIndex];
-            _player.position = vehicle.Body.transform.TransformPoint(
-                new Vector3(seat.x, seat.y - SeatPivotDrop, seat.z));
+            _player.position = vehicle.Body.transform.TransformPoint(SeatedLocalOffset(seat));
         }
 
         private void OnGUI()
@@ -260,7 +261,8 @@ namespace WinterMP.Core.Sync
             {
                 var seat = vehicle.SeatLocal[_seatedIndex];
                 float side = seat.x >= 0f ? 1f : -1f;
-                var exitLocal = new Vector3(side * (Mathf.Abs(seat.x) + ExitLateralMeters), seat.y - SeatPivotDrop + 0.2f, seat.z);
+                var seated = SeatedLocalOffset(seat);
+                var exitLocal = new Vector3(side * (Mathf.Abs(seat.x) + ExitLateralMeters), seated.y + 0.2f, seat.z);
                 _player.parent = _originalParent;
                 _player.position = vehicle.Body.transform.TransformPoint(exitLocal);
             }
@@ -359,7 +361,7 @@ namespace WinterMP.Core.Sync
             {
                 anchor = new GameObject($"WinterMP_Seat_{seatRef.VehicleId:X8}_{seatRef.Seat}");
                 anchor.transform.parent = seats.Body.transform;
-                anchor.transform.localPosition = seats.SeatLocal[seatRef.Seat];
+                anchor.transform.localPosition = SeatedLocalOffset(seats.SeatLocal[seatRef.Seat]);
                 anchor.transform.localRotation = Quaternion.identity;
                 seats.RemoteAnchors[seatRef.Seat] = anchor;
             }
@@ -443,12 +445,16 @@ namespace WinterMP.Core.Sync
             }
         }
 
+        private static Vector3 SeatedLocalOffset(Vector3 seatLocal) =>
+            new Vector3(seatLocal.x, seatLocal.y - SeatPivotDrop + SeatHeightOffset, seatLocal.z);
+
         /// <summary>
-        /// Seat layout from the game's own anchors. The drive trigger gives seated
-        /// height and front-row depth; the front passenger spot is its mirror (or
-        /// the CORRIS seat assembly pivot), the rear bench comes from the bench
-        /// anchor ("VINP_SeatReatBench" — sic — on the CORRIS, "RearSeat" on the
-        /// SORBET) with a fixed fallback depth.
+        /// Seat layout from the game's own in-cabin anchors. Front passenger uses
+        /// MassPassenger (the seated physics point, like MassDriver for the driver);
+        /// rear bench spots use the bench pivot ("VINP_SeatReatBench" — sic — on the
+        /// CORRIS, "RearSeat" on the SORBET). DriveTrigger is only used to confirm
+        /// the vehicle is enterable and to exclude the driver's door from passenger
+        /// entry.
         /// </summary>
         private static VehicleSeats? ResolveSeats(uint vehicleId, Rigidbody body)
         {
@@ -462,32 +468,24 @@ namespace WinterMP.Core.Sync
                 string childName = child.name;
                 if (driveTrigger == null && childName.StartsWith("DriveTrigger", System.StringComparison.Ordinal))
                     driveTrigger = child;
-                else if (frontAnchor == null && childName == "VINP_SeatPassenger")
+                else if (frontAnchor == null && childName == "MassPassenger")
                     frontAnchor = child;
                 else if (benchAnchor == null
                          && (childName == "VINP_SeatReatBench" || childName == "VINP_SeatRearBench" || childName == "RearSeat"))
                     benchAnchor = child;
             }
 
-            if (driveTrigger == null) return null; // not actually enterable
+            if (driveTrigger == null || frontAnchor == null) return null;
 
+            var front = root.InverseTransformPoint(frontAnchor.position);
             var driverLocal = root.InverseTransformPoint(driveTrigger.position);
-
-            Vector3 front;
-            if (frontAnchor != null)
-            {
-                var anchorLocal = root.InverseTransformPoint(frontAnchor.position);
-                front = new Vector3(anchorLocal.x, driverLocal.y, anchorLocal.z);
-            }
-            else
-            {
-                front = new Vector3(-driverLocal.x, driverLocal.y, driverLocal.z);
-            }
 
             float rearZ = benchAnchor != null
                 ? root.InverseTransformPoint(benchAnchor.position).z
                 : driverLocal.z - 0.85f;
-            float rearY = driverLocal.y + 0.02f;
+            float rearY = benchAnchor != null
+                ? root.InverseTransformPoint(benchAnchor.position).y
+                : front.y + 0.02f;
 
             var seats = new VehicleSeats
             {
@@ -538,5 +536,6 @@ namespace WinterMP.Core.Sync
             if (playerObject != null)
                 _player = playerObject.transform;
         }
+
     }
 }

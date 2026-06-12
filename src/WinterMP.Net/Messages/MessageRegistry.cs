@@ -25,6 +25,9 @@ namespace WinterMP.Net.Messages
                 { MessageId.BoltState, () => new BoltState() },
                 { MessageId.PartState, () => new PartState() },
                 { MessageId.ItemDespawn, () => new ItemDespawn() },
+                { MessageId.WorldStateChecksum, () => new WorldStateChecksum() },
+                { MessageId.WorldResyncRequest, () => new WorldResyncRequest() },
+                { MessageId.WorldObjectStateRequest, () => new WorldObjectStateRequest() },
                 { MessageId.VehicleState, () => new VehicleState() },
                 { MessageId.VehicleClimate, () => new VehicleClimate() },
                 { MessageId.WalletState, () => new WalletState() },
@@ -34,6 +37,7 @@ namespace WinterMP.Net.Messages
                 { MessageId.WorldItemSnapshot, () => new WorldItemSnapshot() },
                 { MessageId.WorldBoltSnapshot, () => new WorldBoltSnapshot() },
                 { MessageId.WorldPartSnapshot, () => new WorldPartSnapshot() },
+                { MessageId.WorldItemDespawnSnapshot, () => new WorldItemDespawnSnapshot() },
             };
 
         public static IEnumerable<MessageId> KnownIds => Factories.Keys;

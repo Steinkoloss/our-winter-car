@@ -21,32 +21,117 @@ namespace WinterMP.Core.Catalog
             if (root.TryGetValue("gameBuild", out var build) && build is string buildText)
                 data.GameBuild = buildText;
 
-            if (!root.TryGetValue("controls", out var controlsObj) || controlsObj is not List<object?> controls)
-                return data;
+            ParseRuleArray(root, "doors", data.Doors);
+            ParseRuleArray(root, "controls", data.Controls);
+            ParseRuleArray(root, "switchRules", data.SwitchRules);
+            ParseRuleArray(root, "ignitions", data.Ignitions);
+            ParseRuleArray(root, "starters", data.Starters);
+            ParseBuyArray(root, "buys", data.Buys);
+            return data;
+        }
 
-            foreach (var entry in controls)
+        private static void ParseBuyArray(
+            Dictionary<string, object?> root,
+            string key,
+            List<BuyRuleData> target)
+        {
+            if (!root.TryGetValue(key, out var arrayObj) || arrayObj is not List<object?> entries)
+                return;
+
+            foreach (var entry in entries)
             {
                 if (entry is not Dictionary<string, object?> obj) continue;
-                var rule = new ControlRuleData();
-                rule.PathPrefix = GetString(obj, "pathPrefix");
-                rule.PathContains = GetOptionalString(obj, "pathContains");
-                rule.ObjectName = GetOptionalString(obj, "objectName");
-                rule.FsmName = GetString(obj, "fsmName");
+                var rule = ParseBuyRule(obj);
+                if (rule.FsmName.Length > 0 && rule.EntryGuards.Count > 0 && rule.ResultStates.Count > 0)
+                    target.Add(rule);
+            }
+        }
 
-                if (obj.TryGetValue("states", out var statesObj) && statesObj is List<object?> states)
+        private static BuyRuleData ParseBuyRule(Dictionary<string, object?> obj)
+        {
+            var rule = new BuyRuleData
+            {
+                PathPrefix = GetString(obj, "pathPrefix"),
+                PathContains = GetOptionalString(obj, "pathContains"),
+                ObjectName = GetOptionalString(obj, "objectName"),
+                ObjectNameContains = GetOptionalString(obj, "objectNameContains"),
+                FsmName = GetString(obj, "fsmName"),
+            };
+
+            AppendStrings(obj, "requireStates", rule.RequireStates);
+            AppendStrings(obj, "resultStates", rule.ResultStates);
+            AppendStrings(obj, "excludePathPrefixes", rule.ExcludePathPrefixes);
+
+            if (!obj.TryGetValue("entryGuards", out var guardsObj) || guardsObj is not List<object?> guards)
+                return rule;
+
+            foreach (var guardObj in guards)
+            {
+                if (guardObj is not Dictionary<string, object?> guardDict) continue;
+                string state = GetString(guardDict, "state");
+                string trigger = GetString(guardDict, "event");
+                if (state.Length == 0 || trigger.Length == 0) continue;
+                rule.EntryGuards.Add(new BuyGuardData
                 {
-                    foreach (var state in states)
-                    {
-                        if (state is string stateName && stateName.Length > 0)
-                            rule.States.Add(stateName);
-                    }
-                }
-
-                if (rule.PathPrefix.Length > 0 && rule.FsmName.Length > 0 && rule.States.Count > 0)
-                    data.Controls.Add(rule);
+                    StateName = state,
+                    TriggerEvent = trigger,
+                    Optional = GetBool(guardDict, "optional"),
+                });
             }
 
-            return data;
+            return rule;
+        }
+
+        private static bool GetBool(Dictionary<string, object?> obj, string key)
+        {
+            if (!obj.TryGetValue(key, out var value)) return false;
+            return value is bool b && b;
+        }
+
+        private static void ParseRuleArray(
+            Dictionary<string, object?> root,
+            string key,
+            List<CatalogRuleData> target)
+        {
+            if (!root.TryGetValue(key, out var arrayObj) || arrayObj is not List<object?> entries)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (entry is not Dictionary<string, object?> obj) continue;
+                var rule = ParseRule(obj);
+                if (rule.FsmName.Length > 0 && rule.States.Count > 0)
+                    target.Add(rule);
+            }
+        }
+
+        private static CatalogRuleData ParseRule(Dictionary<string, object?> obj)
+        {
+            var rule = new CatalogRuleData
+            {
+                PathPrefix = GetString(obj, "pathPrefix"),
+                PathContains = GetOptionalString(obj, "pathContains"),
+                ObjectName = GetOptionalString(obj, "objectName"),
+                ObjectNameContains = GetOptionalString(obj, "objectNameContains"),
+                FsmName = GetString(obj, "fsmName"),
+            };
+
+            AppendStrings(obj, "states", rule.States);
+            AppendStrings(obj, "requireStates", rule.RequireStates);
+            AppendStrings(obj, "excludePathPrefixes", rule.ExcludePathPrefixes);
+            return rule;
+        }
+
+        private static void AppendStrings(Dictionary<string, object?> obj, string key, List<string> target)
+        {
+            if (!obj.TryGetValue(key, out var valuesObj) || valuesObj is not List<object?> values)
+                return;
+
+            foreach (var value in values)
+            {
+                if (value is string text && text.Length > 0)
+                    target.Add(text);
+            }
         }
 
         private static string GetString(Dictionary<string, object?> obj, string key)
@@ -130,6 +215,8 @@ namespace WinterMP.Core.Catalog
                 if (c == '{') return ReadObject();
                 if (c == '[') return ReadArray();
                 if (c == 'n' && MatchLiteral("null")) return null;
+                if (c == 't' && MatchLiteral("true")) return true;
+                if (c == 'f' && MatchLiteral("false")) return false;
                 throw new FormatException("Unsupported JSON value at " + _index + ".");
             }
 
@@ -203,15 +290,43 @@ namespace WinterMP.Core.Catalog
     internal sealed class SyncCatalogData
     {
         public string? GameBuild;
-        public readonly List<ControlRuleData> Controls = new List<ControlRuleData>();
+        public readonly List<CatalogRuleData> Doors = new List<CatalogRuleData>();
+        public readonly List<CatalogRuleData> Controls = new List<CatalogRuleData>();
+        public readonly List<CatalogRuleData> SwitchRules = new List<CatalogRuleData>();
+        public readonly List<CatalogRuleData> Ignitions = new List<CatalogRuleData>();
+        public readonly List<CatalogRuleData> Starters = new List<CatalogRuleData>();
+        public readonly List<BuyRuleData> Buys = new List<BuyRuleData>();
     }
 
-    internal sealed class ControlRuleData
+    internal sealed class BuyRuleData
     {
         public string PathPrefix = string.Empty;
         public string? PathContains;
         public string? ObjectName;
+        public string? ObjectNameContains;
+        public string FsmName = string.Empty;
+        public readonly List<string> RequireStates = new List<string>();
+        public readonly List<string> ResultStates = new List<string>();
+        public readonly List<string> ExcludePathPrefixes = new List<string>();
+        public readonly List<BuyGuardData> EntryGuards = new List<BuyGuardData>();
+    }
+
+    internal sealed class BuyGuardData
+    {
+        public string StateName = string.Empty;
+        public string TriggerEvent = string.Empty;
+        public bool Optional;
+    }
+
+    internal sealed class CatalogRuleData
+    {
+        public string PathPrefix = string.Empty;
+        public string? PathContains;
+        public string? ObjectName;
+        public string? ObjectNameContains;
         public string FsmName = string.Empty;
         public readonly List<string> States = new List<string>();
+        public readonly List<string> RequireStates = new List<string>();
+        public readonly List<string> ExcludePathPrefixes = new List<string>();
     }
 }

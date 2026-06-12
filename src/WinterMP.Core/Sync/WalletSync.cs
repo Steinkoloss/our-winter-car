@@ -25,6 +25,19 @@ namespace WinterMP.Core.Sync
 
         public bool Ready => _moneyVar != null;
 
+        public bool TryGetMoney(out float money)
+        {
+            Locate();
+            if (_moneyVar == null)
+            {
+                money = 0f;
+                return false;
+            }
+
+            money = _moneyVar.Value;
+            return true;
+        }
+
         public void Reset()
         {
             _moneyVar = null;
