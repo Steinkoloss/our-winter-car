@@ -17,7 +17,8 @@ namespace WinterMP.Launcher
         {
             InitializeComponent();
             Title = $"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}";
-            SubtitleText.Text = $"Multiplayer for My Winter Car · protocol v{ModMeta.ProtocolVersion}";
+            SubtitleText.Text =
+                $"Install the mod · host co-op · open the game · protocol v{ModMeta.ProtocolVersion}";
             AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
             RefreshStatus();
             ShowLastInstallFailureIfAny();
@@ -59,8 +60,8 @@ namespace WinterMP.Launcher
             MessageBox.Show(this,
                 $"Welcome to {Branding.ProductName}!\n\n" +
                 "The launcher installs BepInEx and the mod into your My Winter Car folder automatically.\n\n" +
-                "1. HOST GAME — backs up save and opens a Steam lobby\n" +
-                "2. Friends install the same build, then use Steam Join Game\n\n" +
+                "1. HOST GAME — backs up your save and opens a friends-only Steam lobby\n" +
+                "2. LAUNCH GAME — open the game without hosting (practice alone, or join a friend via Steam Join Game)\n\n" +
                 "Never save the game as a guest.",
                 Branding.ProductName,
                 MessageBoxButton.OK,
@@ -506,7 +507,7 @@ namespace WinterMP.Launcher
             try
             {
                 LaunchGame(string.Empty);
-                AppendLog("Launching solo.");
+                AppendLog("Launching game (no lobby).");
             }
             catch (Exception ex)
             {

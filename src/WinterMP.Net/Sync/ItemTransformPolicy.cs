@@ -38,10 +38,13 @@ namespace WinterMP.Net.Sync
             byte localPlayerId,
             byte remoteOwnerId)
         {
-            if (remoteStreamLive && (remoteIsDriver || remoteIsVehicle))
+            // Only a live remote *driver* blocks a local driver from claiming.
+            // Proximity push streams (FlagVehicle without FlagDriver) must not
+            // trap the person actually in the seat.
+            if (remoteStreamLive && remoteIsDriver)
                 return false;
 
-            if ((remoteIsDriver || remoteIsVehicle) && remoteOwnerId != NoRemoteOwner)
+            if (remoteIsDriver && remoteOwnerId != NoRemoteOwner)
                 return localPlayerId < remoteOwnerId;
 
             return true;
@@ -73,15 +76,8 @@ namespace WinterMP.Net.Sync
             bool localIsDriver,
             bool remoteIsDriver,
             byte localPlayerId,
-            byte remoteOwnerId,
-            bool isVehicleStream,
-            bool isFinal)
+            byte remoteOwnerId)
         {
-            // Active vehicle streams beat idle local proximity claims — otherwise
-            // the host (id 0) ignores guest driver packets and vice versa.
-            if (isVehicleStream && !isFinal)
-                return true;
-
             if (remoteIsDriver != localIsDriver)
                 return remoteIsDriver;
 

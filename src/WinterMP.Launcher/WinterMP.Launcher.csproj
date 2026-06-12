@@ -9,7 +9,7 @@
     <RootNamespace>WinterMP.Launcher</RootNamespace>
     <AssemblyName>WinterMPLauncher</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>0.1.5</Version>
+    <Version>0.1.6</Version>
     <WinterMPCoreOut>$(MSBuildThisFileDirectory)..\WinterMP.Core\bin\$(Configuration)\net35</WinterMPCoreOut>
   </PropertyGroup>
 

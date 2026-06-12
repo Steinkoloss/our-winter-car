@@ -29,6 +29,7 @@ namespace WinterMP.Core.Sync
         private Transform? _localPlayer;
         private CharacterController? _localController;
         private float _standingControllerHeight = -1f;
+        private readonly PlayerMoveStateReader _moveStateReader = new PlayerMoveStateReader();
         private float _nextSearchAt;
         private float _nextSendAt;
         private ushort _sequence;
@@ -86,6 +87,8 @@ namespace WinterMP.Core.Sync
             _localPlayer = null;
             _localController = null;
             _standingControllerHeight = -1f;
+            _moveStateReader.Reset();
+            NpcCharacterFactory.ClearCache();
             _nextSearchAt = 0f;
             _avatars.Clear();
         }
@@ -112,8 +115,8 @@ namespace WinterMP.Core.Sync
             if (Time.unscaledTime < _nextSendAt) return;
             _nextSendAt = Time.unscaledTime + 1f / SendRateHz;
 
-            var position = _localPlayer.position;
-            var rotation = _localPlayer.rotation;
+            var position = PlayerPoseReader.ReadFeetPosition(_localPlayer, _localController);
+            var rotation = PlayerPoseReader.ReadLookRotation(_localPlayer);
             session.SendPlayerTransform(new PlayerTransform
             {
                 PlayerId = session.LocalPlayerId,
@@ -126,16 +129,16 @@ namespace WinterMP.Core.Sync
 
         private byte ReadLocalMoveState()
         {
-            if (_localController == null) return 0;
+            if (_localPlayer == null) return 0;
 
-            float height = _localController.height;
-            if (height > _standingControllerHeight)
-                _standingControllerHeight = height;
+            if (_localController != null)
+            {
+                float height = _localController.height;
+                if (height > _standingControllerHeight)
+                    _standingControllerHeight = height;
+            }
 
-            if (_standingControllerHeight <= 0f) return 0;
-
-            // Crouch shrinks the controller noticeably; ignore tiny animation wobble.
-            return height < _standingControllerHeight * 0.85f ? PlayerMoveState.Crouch : (byte)0;
+            return _moveStateReader.Read(_localPlayer, _localController, _standingControllerHeight);
         }
 
         // ------------------------------------------------------------------ avatars

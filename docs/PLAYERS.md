@@ -37,8 +37,9 @@ Re-run **Install / Repair** after an update or if the game moved.
 You do not need to click anything in the launcher to join. Steam overlay join
 works from the main menu.
 
-To play solo without multiplayer, use **PLAY SOLO** in the launcher (or start
-the game normally from Steam).
+To play without hosting a session, use **LAUNCH GAME** in the launcher (or start
+the game normally from Steam). Friends who are joining a host use Steam
+**Join Game** — they do not need to host.
 
 ## Updates
 

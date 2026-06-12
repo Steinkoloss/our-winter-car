@@ -3,10 +3,9 @@ using UnityEngine;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Visible body for a remote player: a tinted capsule with a floating name tag,
-    /// smoothed toward the latest network snapshot. Placeholder until M5 swaps in a
-    /// proper character model — but everything downstream (transform stream,
-    /// interpolation, spawn/despawn) is the real thing.
+    /// Visible body for a remote player: a cloned HUMANS walker rig (or capsule
+    /// fallback) with a floating name tag, smoothed toward the latest network
+    /// snapshot and animated from streamed <see cref="PlayerMoveState"/> flags.
     /// </summary>
     public sealed class RemoteAvatar : MonoBehaviour
     {
@@ -16,12 +15,11 @@ namespace WinterMP.Core.Sync
 
         /// <summary>Seat triggers sit at cushion height; avatar pivot is at the feet.</summary>
         private const float SeatFootOffset = 0.8f;
+        private const float SeatedFootOffset = 0.55f;
 
-        /// <summary>Unity's capsule primitive is 2 m tall and 1 m wide at scale 1.</summary>
         private const float DefaultCapsuleHeight = 2f;
         private const float BodyWidthScale = 0.5f;
         private const float BodyHeightScale = 2f / 3f;
-        /// <summary>Crouching removes another third of standing avatar height.</summary>
         private const float CrouchHeightFactor = 2f / 3f;
         private const float NameTagClearance = 0.25f;
 
@@ -31,11 +29,21 @@ namespace WinterMP.Core.Sync
         private Transform? _bodyTransform;
         private TextMesh? _nameTag;
         private Transform? _nameTagTransform;
+        private RemoteCharacterAnimator? _characterAnimator;
+        private Transform? _rigRoot;
+        private Transform? _rigPivot;
+        private Transform? _lookTarget;
+        private Vector3 _rigFootOffset;
+        private Vector3 _pivotBaseLocalPos;
+        private Quaternion _pivotBaseLocalRot = Quaternion.identity;
+        /// <summary>NPC mesh forward axis relative to avatar +Z (MWC walkers face -Z).</summary>
+        private const float ModelForwardSign = -1f;
+        private static readonly Vector3 LookTargetLocalOffset = new Vector3(0f, 1.2f, 2f);
         private bool _hasTarget;
         private bool _crouching;
+        private bool _vehicleAnchored;
+        private byte _moveState;
 
-        // While driving, the avatar is pinned to the vehicle's seat instead of
-        // chasing the (smoothed, lagging) world-space transform stream.
         private Transform? _anchorSeat;
         private Transform? _anchorVehicle;
 
@@ -44,19 +52,59 @@ namespace WinterMP.Core.Sync
             var root = new GameObject($"WinterMP_Avatar_{playerId}");
             var avatar = root.AddComponent<RemoteAvatar>();
 
+            var rig = NpcCharacterFactory.TryCreate(playerId);
+            if (rig != null)
+            {
+                rig.Root.transform.parent = root.transform;
+                rig.Root.transform.localRotation = Quaternion.identity;
+                avatar._rigRoot = rig.Root.transform;
+                avatar._rigPivot = rig.Pivot;
+                avatar._lookTarget = rig.LookTarget;
+                avatar._rigFootOffset = new Vector3(0f, rig.FootOffsetY, 0f);
+                avatar._pivotBaseLocalPos = rig.PivotBaseLocalPos;
+                avatar._pivotBaseLocalRot = rig.PivotBaseLocalRot;
+                avatar._rigRoot.localPosition = avatar._rigFootOffset;
+
+                if (avatar._lookTarget != null)
+                {
+                    avatar._lookTarget.parent = root.transform;
+                    avatar._lookTarget.localPosition = new Vector3(
+                        LookTargetLocalOffset.x,
+                        LookTargetLocalOffset.y,
+                        LookTargetLocalOffset.z * ModelForwardSign);
+                }
+
+                avatar._characterAnimator = new RemoteCharacterAnimator(rig);
+                avatar._bodyTransform = rig.BodyPivot;
+            }
+            else
+            {
+                avatar.CreateCapsuleFallback(playerId);
+            }
+
+            avatar.CreateNameTag(playerName);
+            root.SetActive(false);
+            return avatar;
+        }
+
+        private void CreateCapsuleFallback(byte playerId)
+        {
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.name = "Body";
-            body.transform.parent = root.transform;
-            Destroy(body.GetComponent<Collider>()); // visual only — must not push the world around
+            body.transform.parent = transform;
+            Destroy(body.GetComponent<Collider>());
 
-            avatar._bodyTransform = body.transform;
-            avatar._bodyRenderer = body.GetComponent<Renderer>();
-            if (avatar._bodyRenderer != null)
-                avatar._bodyRenderer.material.color = ColorForPlayer(playerId);
-            avatar.ApplyBodyScale();
+            _bodyTransform = body.transform;
+            _bodyRenderer = body.GetComponent<Renderer>();
+            if (_bodyRenderer != null)
+                _bodyRenderer.material.color = ColorForPlayer(playerId);
+            ApplyCapsuleScale();
+        }
 
+        private void CreateNameTag(string playerName)
+        {
             var tag = new GameObject("NameTag");
-            tag.transform.parent = root.transform;
+            tag.transform.parent = transform;
             var text = tag.AddComponent<TextMesh>();
             text.text = playerName;
             text.anchor = TextAnchor.MiddleCenter;
@@ -72,10 +120,9 @@ namespace WinterMP.Core.Sync
                 if (tagRenderer != null) tagRenderer.material = font.material;
             }
 
-            avatar._nameTag = text;
-            avatar._nameTagTransform = tag.transform;
-            root.SetActive(false); // until the first snapshot arrives
-            return avatar;
+            _nameTag = text;
+            _nameTagTransform = tag.transform;
+            UpdateNameTagPosition();
         }
 
         public void SetTarget(Vector3 position, Quaternion rotation)
@@ -100,23 +147,38 @@ namespace WinterMP.Core.Sync
 
         public void SetMoveState(byte moveState)
         {
-            bool crouching = (moveState & PlayerMoveState.Crouch) != 0;
-            if (_crouching == crouching) return;
-            _crouching = crouching;
-            ApplyBodyScale();
+            _moveState = moveState;
+            ApplyMoveState();
         }
 
-        /// <summary>Pin the avatar into a vehicle (remote player is driving it).</summary>
         public void SetAnchor(Transform? seat, Transform? vehicle)
         {
+            if (_anchorSeat == seat && _anchorVehicle == vehicle)
+                return;
+
             _anchorSeat = seat;
             _anchorVehicle = vehicle;
+            _vehicleAnchored = seat != null && vehicle != null;
+            ApplyMoveState();
         }
 
-        public void ClearAnchor()
+        public void ClearAnchor() => SetAnchor(null, null);
+
+        private void ApplyMoveState()
         {
-            _anchorSeat = null;
-            _anchorVehicle = null;
+            if (_characterAnimator != null)
+            {
+                _characterAnimator.Apply(_moveState, _vehicleAnchored);
+                UpdateNameTagPosition();
+                UpdateNameTagVisibility();
+                return;
+            }
+
+            bool crouching = PlayerMoveState.Has(_moveState, PlayerMoveState.Crouch);
+            if (_crouching == crouching) return;
+            _crouching = crouching;
+            ApplyCapsuleScale();
+            UpdateNameTagVisibility();
         }
 
         private void Update()
@@ -125,9 +187,8 @@ namespace WinterMP.Core.Sync
 
             if (_anchorSeat != null && _anchorVehicle != null)
             {
-                // Hard-follow the vehicle: both it and this avatar are smoothed
-                // copies; chaining a second lerp would visibly trail the cabin.
-                transform.position = _anchorSeat.position - _anchorVehicle.up * SeatFootOffset;
+                float footOffset = _vehicleAnchored ? SeatedFootOffset : SeatFootOffset;
+                transform.position = _anchorSeat.position - _anchorVehicle.up * footOffset;
                 transform.rotation = _anchorVehicle.rotation;
             }
             else if (Vector3.Distance(transform.position, _targetPosition) > SnapDistance)
@@ -143,13 +204,28 @@ namespace WinterMP.Core.Sync
                 transform.rotation = Quaternion.Slerp(transform.rotation, _targetRotation, rotationT);
             }
 
-            // Billboard the name tag. TextMesh faces +Z, so look away from the camera.
+            PinRigRoot();
+            _characterAnimator?.Tick();
+
             var camera = Camera.main;
             if (camera != null && _nameTagTransform != null)
                 _nameTagTransform.rotation = Quaternion.LookRotation(_nameTagTransform.position - camera.transform.position);
         }
 
-        private void ApplyBodyScale()
+        private void PinRigRoot()
+        {
+            if (_rigRoot == null) return;
+            _rigRoot.localPosition = _rigFootOffset;
+            _rigRoot.localRotation = Quaternion.identity;
+
+            if (_rigPivot != null)
+            {
+                _rigPivot.localPosition = _pivotBaseLocalPos;
+                _rigPivot.localRotation = _pivotBaseLocalRot;
+            }
+        }
+
+        private void ApplyCapsuleScale()
         {
             if (_bodyTransform == null) return;
 
@@ -159,24 +235,38 @@ namespace WinterMP.Core.Sync
 
             _bodyTransform.localScale = new Vector3(BodyWidthScale, heightScale, BodyWidthScale);
 
-            // Capsule pivot is its center; player positions are at the feet.
             float height = DefaultCapsuleHeight * heightScale;
             _bodyTransform.localPosition = new Vector3(0f, height * 0.5f, 0f);
+            UpdateNameTagPosition();
+        }
 
-            if (_nameTagTransform != null)
-                _nameTagTransform.localPosition = new Vector3(0f, height + NameTagClearance, 0f);
+        private void UpdateNameTagPosition()
+        {
+            if (_nameTagTransform == null) return;
+
+            float height = _characterAnimator != null
+                ? _characterAnimator.NameTagHeight
+                : DefaultCapsuleHeight * BodyHeightScale * (_crouching ? CrouchHeightFactor : 1f);
+
+            _nameTagTransform.localPosition = new Vector3(0f, height + NameTagClearance, 0f);
+        }
+
+        private void UpdateNameTagVisibility()
+        {
+            if (_nameTagTransform == null) return;
+            bool hide = PlayerMoveState.Has(_moveState, PlayerMoveState.Swimming);
+            if (_nameTagTransform.gameObject.activeSelf == !hide) return;
+            _nameTagTransform.gameObject.SetActive(!hide);
         }
 
         private static Color ColorForPlayer(byte playerId)
         {
-            // Stable, distinct tints; golden-ratio hue stepping.
             float hue = (playerId * 0.618034f) % 1f;
             return HsvToRgb(hue, 0.65f, 0.9f);
         }
 
         private static Color HsvToRgb(float h, float s, float v)
         {
-            // Unity 5.0 has no Color.HSVToRGB yet.
             float r = Mathf.Abs(h * 6f - 3f) - 1f;
             float g = 2f - Mathf.Abs(h * 6f - 2f);
             float b = 2f - Mathf.Abs(h * 6f - 4f);

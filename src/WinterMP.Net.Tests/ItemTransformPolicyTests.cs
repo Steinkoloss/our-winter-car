@@ -54,12 +54,12 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
-        public void ShouldSeatDriverOutClaimRemote_BlocksLiveRemoteVehicleStreamEvenForHost()
+        public void ShouldSeatDriverOutClaimRemote_AllowsClaimOverLiveProximityVehicleStream()
         {
             float now = 50f;
             float last = now - 1f;
 
-            Assert.False(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
+            Assert.True(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
                 remoteStreamLive: true,
                 remoteIsDriver: false,
                 remoteIsVehicle: true,
@@ -70,83 +70,13 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
-        public void ShouldSeatDriverOutClaimRemote_AllowsClaimAfterDriverStreamStale()
+        public void RemoteClaimWinsOverLocal_LocalDriverBeatsRemotePusher()
         {
-            float now = 50f;
-            float last = now - ItemTransformPolicy.DriverRemoteHoldSeconds - 0.1f;
-
-            Assert.True(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
-                remoteStreamLive: false,
-                remoteIsDriver: true,
-                remoteIsVehicle: false,
-                lastRemoteAt: last,
-                now: now,
-                localPlayerId: 0,
-                remoteOwnerId: 2));
-        }
-
-        [Fact]
-        public void ShouldSeatDriverOutClaimRemote_TieBreaksStaleDualDriverByPlayerId()
-        {
-            float now = 50f;
-            float last = now - ItemTransformPolicy.DriverRemoteHoldSeconds - 0.1f;
-
-            Assert.False(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
-                remoteStreamLive: false,
-                remoteIsDriver: true,
-                remoteIsVehicle: false,
-                lastRemoteAt: last,
-                now: now,
+            Assert.False(ItemTransformPolicy.RemoteClaimWinsOverLocal(
+                localIsDriver: true,
+                remoteIsDriver: false,
                 localPlayerId: 2,
                 remoteOwnerId: 0));
-        }
-
-        [Fact]
-        public void AllowsVehicleProximityClaim_BlocksNearLiveRemoteDriver()
-        {
-            float now = 10f;
-            Assert.False(ItemTransformPolicy.AllowsVehicleProximityClaim(
-                remoteIsDriver: true,
-                remoteVehicleStreamLive: false,
-                remoteOwnerId: 1,
-                lastRemoteAt: now - 0.5f,
-                now: now));
-        }
-
-        [Fact]
-        public void AllowsVehicleProximityClaim_BlocksNearLiveRemoteVehicleStream()
-        {
-            float now = 10f;
-            Assert.False(ItemTransformPolicy.AllowsVehicleProximityClaim(
-                remoteIsDriver: false,
-                remoteVehicleStreamLive: true,
-                remoteOwnerId: 1,
-                lastRemoteAt: now - 0.5f,
-                now: now));
-        }
-
-        [Fact]
-        public void AllowsVehicleProximityClaim_AllowsAfterDriverHoldExpires()
-        {
-            float now = 10f;
-            Assert.True(ItemTransformPolicy.AllowsVehicleProximityClaim(
-                remoteIsDriver: true,
-                remoteVehicleStreamLive: false,
-                remoteOwnerId: 1,
-                lastRemoteAt: now - ItemTransformPolicy.DriverRemoteHoldSeconds - 0.1f,
-                now: now));
-        }
-
-        [Fact]
-        public void RemoteClaimWinsOverLocal_ActiveVehicleStreamAlwaysWins()
-        {
-            Assert.True(ItemTransformPolicy.RemoteClaimWinsOverLocal(
-                localIsDriver: false,
-                remoteIsDriver: false,
-                localPlayerId: 0,
-                remoteOwnerId: 2,
-                isVehicleStream: true,
-                isFinal: false));
         }
 
         [Theory]
@@ -158,8 +88,7 @@ namespace WinterMP.Net.Tests
             bool localIsDriver, bool remoteIsDriver, byte localId, byte remoteId, bool remoteWins)
         {
             Assert.Equal(remoteWins, ItemTransformPolicy.RemoteClaimWinsOverLocal(
-                localIsDriver, remoteIsDriver, localId, remoteId,
-                isVehicleStream: false, isFinal: false));
+                localIsDriver, remoteIsDriver, localId, remoteId));
         }
 
         [Fact]

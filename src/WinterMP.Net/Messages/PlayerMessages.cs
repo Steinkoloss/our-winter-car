@@ -54,7 +54,7 @@ namespace WinterMP.Net.Messages
         public ushort Sequence;
         public NetVector3 Position;
         public NetQuaternion Rotation = NetQuaternion.Identity;
-        /// <summary>Coarse animation state (idle/walk/run/crouch/carry/drive...). Enum defined in Core for now.</summary>
+        /// <summary>Coarse animation flags — see <c>WinterMP.Core.Sync.PlayerMoveState</c>.</summary>
         public byte MoveState;
 
         public MessageId Id => MessageId.PlayerTransform;
