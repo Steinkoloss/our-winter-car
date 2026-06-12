@@ -32,11 +32,11 @@ if ($null -eq $iscc) {
 $iss = Join-Path $root "installer\WinterMP.iss"
 & $iscc /Qp $iss
 
-$setup = Join-Path $root "dist\WinterMP-Setup.exe"
+$setup = Join-Path $root "dist\OurWinterCar-Setup.exe"
 Write-Host ""
 if (Test-Path $setup) {
     Write-Host "Installer ready: $setup"
-    Write-Host "Send WinterMP-Setup.exe to friends. They run it, then Install / Repair in the launcher."
+    Write-Host "Send OurWinterCar-Setup.exe to friends. Setup installs the launcher and mod automatically."
 } else {
     throw "Build finished but $setup was not created."
 }

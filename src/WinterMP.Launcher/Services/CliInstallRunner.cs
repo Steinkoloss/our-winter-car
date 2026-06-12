@@ -24,7 +24,7 @@ namespace WinterMP.Launcher.Services
 
             bool silent = args.Contains("--silent", StringComparer.OrdinalIgnoreCase);
             string? gameDirArg = ReadGameDirArg(args);
-            var log = new List<string> { $"[{DateTime.Now:u}] WinterMP mod install" };
+            var log = new List<string> { $"[{DateTime.Now:u}] {Branding.ProductName} mod install" };
 
             try
             {
@@ -35,7 +35,7 @@ namespace WinterMP.Launcher.Services
                     if (!silent)
                     {
                         MessageBox.Show(
-                            "WinterMP mod files are missing. Reinstall WinterMP.",
+                            $"{Branding.ProductName} mod files are missing. Reinstall from GitHub.",
                             "Install failed",
                             MessageBoxButton.OK,
                             MessageBoxImage.Error);
@@ -61,7 +61,7 @@ namespace WinterMP.Launcher.Services
                     {
                         MessageBox.Show(
                             "My Winter Car was not found.\n\n" +
-                            "Install the game via Steam, or open WinterMP Launcher → Settings and browse to your game folder.",
+                            $"Install the game via Steam, or open {Branding.LauncherWindowTitle} → Settings and browse to your game folder.",
                             "Game not found",
                             MessageBoxButton.OK,
                             MessageBoxImage.Warning);
@@ -80,7 +80,7 @@ namespace WinterMP.Launcher.Services
                 {
                     MessageBox.Show(
                         result,
-                        "WinterMP installed",
+                        $"{Branding.ProductName} installed",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
                 }

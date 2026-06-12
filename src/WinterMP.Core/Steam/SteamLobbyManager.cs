@@ -124,7 +124,7 @@ namespace WinterMP.Core.Steam
             try
             {
                 SteamFriends.SetRichPresence("connect", $"+connect_lobby {data.m_ulSteamIDLobby}");
-                SteamFriends.SetRichPresence("status", "Hosting WinterMP");
+                SteamFriends.SetRichPresence("status", $"Hosting {MyPluginInfo.PLUGIN_NAME}");
             }
             catch (Exception e)
             {
@@ -160,7 +160,7 @@ namespace WinterMP.Core.Steam
             if (!string.IsNullOrEmpty(lobbyMod)
                 && !string.Equals(lobbyMod, MyPluginInfo.PLUGIN_VERSION, StringComparison.Ordinal))
             {
-                Fail($"Mod version mismatch (host {lobbyMod}, you {MyPluginInfo.PLUGIN_VERSION}). Update WinterMP.");
+                Fail($"Mod version mismatch (host {lobbyMod}, you {MyPluginInfo.PLUGIN_VERSION}). Update {MyPluginInfo.PLUGIN_NAME}.");
                 LeaveLobby();
                 return;
             }
@@ -169,7 +169,7 @@ namespace WinterMP.Core.Steam
             ulong hostId;
             if (!ulong.TryParse(hostIdRaw, out hostId) || hostId == 0)
             {
-                Fail("Lobby has no WinterMP host data — is the host running WinterMP?");
+                Fail($"Lobby has no {MyPluginInfo.PLUGIN_NAME} host data — is the host running the mod?");
                 return;
             }
 

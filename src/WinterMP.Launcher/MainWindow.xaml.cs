@@ -16,9 +16,9 @@ namespace WinterMP.Launcher
         public MainWindow()
         {
             InitializeComponent();
-            Title = $"WinterMP Launcher {ModPayload.LauncherVersion}";
+            Title = $"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}";
             SubtitleText.Text = $"Multiplayer for My Winter Car · protocol v{ModMeta.ProtocolVersion}";
-            AppendLog($"WinterMP Launcher {ModPayload.LauncherVersion}");
+            AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
             RefreshStatus();
             ShowWelcomeIfNeeded();
             Loaded += async (_, _) => await CheckForUpdatesAsync(showUpToDate: false);
@@ -29,12 +29,12 @@ namespace WinterMP.Launcher
             if (_settings.SeenWelcome) return;
 
             MessageBox.Show(this,
-                "Welcome to WinterMP!\n\n" +
+                $"Welcome to {Branding.ProductName}!\n\n" +
                 "1. Click Install / Repair\n" +
                 "2. HOST GAME opens a Steam lobby for friends\n" +
-                "3. Friends install WinterMP, then use Steam Join Game\n\n" +
+                $"3. Friends install {Branding.ProductName}, then use Steam Join Game\n\n" +
                 "Never save the game as a guest.",
-                "WinterMP",
+                Branding.ProductName,
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
 
@@ -47,19 +47,19 @@ namespace WinterMP.Launcher
             try
             {
                 AppendLog("Checking for updates...");
-                var result = await UpdateChecker.CheckAsync(_game?.GameDir);
+                var result = await UpdateChecker.CheckAsync(_game?.GameDir, _settings.GitHubToken);
                 _settings.LastUpdateCheckUtc = DateTime.UtcNow;
                 _settings.Save();
 
-                if (result == null)
-                {
-                    UpdateStatusText.Text = "Could not check (offline?)";
-                    AppendLog("Update check failed.");
-                    return;
-                }
-
                 _pendingUpdate = result;
                 ApplyUpdateUi();
+
+                if (!result.IsSuccess)
+                {
+                    UpdateStatusText.Text = result.ErrorMessage ?? "Update check failed";
+                    AppendLog($"Update check failed: {result.ErrorMessage}");
+                    return;
+                }
 
                 if (result.AnyUpdateAvailable)
                 {
@@ -72,7 +72,7 @@ namespace WinterMP.Launcher
                 if (showUpToDate)
                 {
                     MessageBox.Show(this,
-                        $"WinterMP is up to date ({result.Tag}).",
+                        $"{Branding.ProductName} is up to date ({result.Tag}).",
                         "No updates",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
@@ -87,7 +87,7 @@ namespace WinterMP.Launcher
 
         private void ApplyUpdateUi()
         {
-            if (_pendingUpdate == null)
+            if (_pendingUpdate == null || !_pendingUpdate.IsSuccess)
             {
                 UpdateBannerPanel.Visibility = Visibility.Collapsed;
                 return;
@@ -187,7 +187,7 @@ namespace WinterMP.Launcher
             PlayButton.IsEnabled = playable;
 
             if (!ModPayload.PayloadPresent())
-                ShowWarning("Mod payload missing from launcher — reinstall WinterMP.");
+                ShowWarning($"Mod payload missing from launcher — reinstall {Branding.ProductName}.");
 
             ApplyUpdateUi();
         }
@@ -231,7 +231,7 @@ namespace WinterMP.Launcher
             {
                 AppendLog($"Downloading mod update {_pendingUpdate.Tag}...");
                 string result = await UpdateChecker.DownloadAndApplyPayloadAsync(
-                    _pendingUpdate.PayloadDownloadUrl, _game.GameDir);
+                    _pendingUpdate.PayloadDownloadUrl, _game.GameDir, _settings.GitHubToken);
                 AppendLog(result);
                 MessageBox.Show(this, result, "Mod updated", MessageBoxButton.OK, MessageBoxImage.Information);
                 await CheckForUpdatesAsync(showUpToDate: false);
@@ -254,7 +254,7 @@ namespace WinterMP.Launcher
             if (_updateBusy) return;
 
             var confirm = MessageBox.Show(this,
-                $"Download and install WinterMP {_pendingUpdate.Tag}?\n\n" +
+                $"Download and install {_pendingUpdate.Tag}?\n\n" +
                 "The launcher will close and the installer will run silently.",
                 "Update launcher",
                 MessageBoxButton.YesNo,
@@ -266,7 +266,8 @@ namespace WinterMP.Launcher
             try
             {
                 AppendLog($"Downloading launcher update {_pendingUpdate.Tag}...");
-                string setupPath = await UpdateChecker.DownloadLauncherSetupAsync(_pendingUpdate.SetupDownloadUrl);
+                string setupPath = await UpdateChecker.DownloadLauncherSetupAsync(
+                    _pendingUpdate.SetupDownloadUrl, _settings.GitHubToken);
                 AppendLog($"Running installer: {setupPath}");
                 UpdateChecker.RunLauncherSetup(setupPath);
                 Application.Current.Shutdown();
@@ -389,6 +390,7 @@ namespace WinterMP.Launcher
             {
                 _settings = dialog.Settings;
                 RefreshStatus();
+                _ = CheckForUpdatesAsync(showUpToDate: false);
             }
         }
 
@@ -430,7 +432,7 @@ namespace WinterMP.Launcher
         {
             if (HostButton.IsEnabled) return true;
             MessageBox.Show(this,
-                "Install / Repair first. Both BepInEx and the WinterMP mod must be ready.",
+                $"Install / Repair first. Both BepInEx and {Branding.ProductName} must be ready.",
                 "Not ready",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);

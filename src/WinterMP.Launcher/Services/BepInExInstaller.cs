@@ -103,7 +103,7 @@ namespace WinterMP.Launcher.Services
             if (zipPath == null)
             {
                 throw new InvalidOperationException(
-                    $"BepInEx package not found ({BepInExZipName}). Reinstall WinterMP or place the zip in vendor/.");
+                    $"BepInEx package not found ({BepInExZipName}). Reinstall {Branding.ProductName} or place the zip in vendor/.");
             }
 
             using var archive = ZipFile.OpenRead(zipPath);

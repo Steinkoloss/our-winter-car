@@ -34,12 +34,12 @@ dotnet publish $launcherProj -c Release -r win-x64 --self-contained true `
 $dist = Join-Path $root "dist"
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-$launcherZip = Join-Path $dist "WinterMP-Launcher-win-x64.zip"
+$launcherZip = Join-Path $dist "OurWinterCar-Launcher-win-x64.zip"
 if (Test-Path $launcherZip) { Remove-Item $launcherZip -Force }
 Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $launcherZip
 
 $payloadDir = Join-Path $publishDir "payload"
-$payloadZip = Join-Path $dist "WinterMP-payload.zip"
+$payloadZip = Join-Path $dist "OurWinterCar-payload.zip"
 if (Test-Path $payloadZip) { Remove-Item $payloadZip -Force }
 Compress-Archive -Path (Join-Path $payloadDir "*") -DestinationPath $payloadZip
 

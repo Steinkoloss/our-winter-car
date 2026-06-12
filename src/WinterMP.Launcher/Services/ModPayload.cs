@@ -46,7 +46,7 @@ namespace WinterMP.Launcher.Services
         {
             if (!PayloadPresent())
                 throw new InvalidOperationException(
-                    "WinterMP mod files are missing from the launcher install. Reinstall WinterMP.");
+                    $"{Branding.ProductName} mod files are missing from the launcher. Reinstall from GitHub.");
 
             string modDir = Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP");
             Directory.CreateDirectory(modDir);
@@ -60,7 +60,7 @@ namespace WinterMP.Launcher.Services
                 copied++;
             }
 
-            return $"Deployed WinterMP ({LauncherVersion}) — {copied} files to {modDir}";
+            return $"Deployed {Branding.ProductName} ({LauncherVersion}) — {copied} files to {modDir}";
         }
     }
 }

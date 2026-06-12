@@ -47,7 +47,7 @@ namespace WinterMP.Core.UI
                 $"<color={color}><b>{session.State}</b></color> — {session.StatusText}",
                 RichLabel());
             GUILayout.Label(
-                $"WinterMP {MyPluginInfo.PLUGIN_VERSION} · protocol v{WinterMP.Net.ProtocolInfo.Version}",
+                $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION} · protocol v{WinterMP.Net.ProtocolInfo.Version}",
                 RichLabel());
             GUILayout.EndArea();
         }
@@ -84,7 +84,7 @@ namespace WinterMP.Core.UI
             float height = 128f + session.PlayerCount * 22f;
             GUILayout.BeginArea(new Rect(12f, 12f, width, height), GUI.skin.box);
 
-            GUILayout.Label($"<b>WinterMP</b> {MyPluginInfo.PLUGIN_VERSION} (proto v{WinterMP.Net.ProtocolInfo.Version})", RichLabel());
+            GUILayout.Label($"<b>{MyPluginInfo.PLUGIN_NAME}</b> {MyPluginInfo.PLUGIN_VERSION} (proto v{WinterMP.Net.ProtocolInfo.Version})", RichLabel());
             GUILayout.Label(session.StatusText);
             GUILayout.Label($"You: {session.LocalPlayerName} (id {session.LocalPlayerId})");
             if (session.State == SessionState.Failed)

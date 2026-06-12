@@ -15,6 +15,8 @@ namespace WinterMP.Launcher
             Settings = settings;
             _game = game;
             GamePathBox.Text = settings.CustomGameDir ?? string.Empty;
+            if (!string.IsNullOrEmpty(settings.GitHubToken))
+                GitHubTokenBox.Password = settings.GitHubToken;
         }
 
         private void Browse_Click(object sender, RoutedEventArgs e)
@@ -37,7 +39,7 @@ namespace WinterMP.Launcher
             }
 
             var confirm = MessageBox.Show(this,
-                "Remove the WinterMP mod from your game folder?\n\nBepInEx will remain installed.",
+                $"Remove {Branding.ProductName} from your game folder?\n\nBepInEx will remain installed.",
                 "Remove mod",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
@@ -65,6 +67,8 @@ namespace WinterMP.Launcher
         {
             string text = GamePathBox.Text.Trim();
             Settings.CustomGameDir = string.IsNullOrEmpty(text) ? null : text;
+            if (GitHubTokenBox.Password.Length > 0)
+                Settings.GitHubToken = GitHubTokenBox.Password;
             Settings.Save();
             DialogResult = true;
             Close();

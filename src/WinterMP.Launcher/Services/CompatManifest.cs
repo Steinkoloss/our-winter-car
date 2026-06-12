@@ -36,7 +36,7 @@ namespace WinterMP.Launcher.Services
                     return null;
             }
 
-            return $"Game build {buildId} has not been tested with WinterMP {ModVersion}. " +
+            return $"Game build {buildId} has not been tested with {Branding.ProductName} {ModVersion}. " +
                    "It may still work — report issues on GitHub.";
         }
 
@@ -45,7 +45,7 @@ namespace WinterMP.Launcher.Services
             if (ModMeta.ProtocolVersion > 0 && ModMeta.ProtocolVersion != ProtocolVersion)
             {
                 return $"Launcher payload protocol v{ModMeta.ProtocolVersion} does not match " +
-                       $"manifest v{ProtocolVersion}. Reinstall WinterMP.";
+                       $"manifest v{ProtocolVersion}. Reinstall {Branding.ProductName}.";
             }
 
             return null;

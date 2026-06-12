@@ -9,8 +9,8 @@
     <Description>WinterMP core plugin: multiplayer conversion for My Winter Car (BepInEx 5).</Description>
     <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
     <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>
-    <BepInExPluginName>WinterMP</BepInExPluginName>
-    <Version>0.1.1</Version>
+    <BepInExPluginName>Our Winter Car</BepInExPluginName>
+    <Version>0.1.2</Version>
     <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
   </PropertyGroup>
 

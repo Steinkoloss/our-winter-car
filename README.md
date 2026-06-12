@@ -1,6 +1,6 @@
-# WinterMP — Multiplayer for My Winter Car
+# Our Winter Car — Multiplayer for My Winter Car
 
-**[Download WinterMP-Setup.exe (latest release)](https://github.com/Steinkoloss/our-winter-car/releases/latest)**
+**[Download OurWinterCar-Setup.exe (latest release)](https://github.com/Steinkoloss/our-winter-car/releases/latest)**
 
 This thing is completely AI slopped with Fable 5 & Composer.
 Probably horrible!
@@ -42,11 +42,14 @@ dev loop (F8 loopback session, F9 catalog dump).
 
 ## Players
 
-Build the launcher with `.\tools\build-launcher.ps1` or grab a release zip.
+**Our Winter Car** is the mod name players see in-game and in the launcher.
+(Code and folders still use `WinterMP` internally.)
+
+Build with `.\tools\build-launcher.ps1` or grab a release from GitHub.
 Full instructions: [docs/PLAYERS.md](docs/PLAYERS.md).
 
-- **Host:** launcher → **HOST GAME** (save backed up, Steam friends-only lobby).
-- **Friends:** Steam **Join Game** on the host — no IPs or lobby codes.
+- **Host:** **Our Winter Car** launcher → **HOST GAME** (save backed up, Steam lobby).
+- **Friends:** install the same build, then Steam **Join Game** on the host.
 
 ## License
 

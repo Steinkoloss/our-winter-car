@@ -8,10 +8,10 @@ namespace WinterMP.Launcher.Services
         {
             string modDir = Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP");
             if (!Directory.Exists(modDir))
-                return "WinterMP mod is not installed.";
+                return $"{Branding.ProductName} is not installed.";
 
             Directory.Delete(modDir, recursive: true);
-            return $"Removed WinterMP from {modDir}. BepInEx remains installed.";
+            return $"Removed {Branding.ProductName} from the game. BepInEx remains installed.";
         }
     }
 }

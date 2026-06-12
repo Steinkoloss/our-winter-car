@@ -1,8 +1,8 @@
-WinterMP adds co-op multiplayer to My Winter Car.
+Our Winter Car adds co-op multiplayer to My Winter Car.
 
 This installer will:
-1. Install the WinterMP Launcher
-2. Find My Winter Car via Steam and install BepInEx + the WinterMP mod
+1. Install the Our Winter Car launcher
+2. Find My Winter Car via Steam and install BepInEx + the mod
 
 You need My Winter Car installed on Steam before continuing.
 

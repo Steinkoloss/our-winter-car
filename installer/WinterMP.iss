@@ -1,4 +1,4 @@
-; WinterMP Launcher installer — build with:  .\tools\build-installer.ps1
+; Our Winter Car installer — build with:  .\tools\build-installer.ps1
 
 #ifexist "..\src\WinterMP.Launcher\bin\publish\win-x64\WinterMPLauncher.exe"
   #define SourceDir "..\src\WinterMP.Launcher\bin\publish\win-x64"
@@ -8,20 +8,17 @@
 
 [Setup]
 AppId={{A7B3C4D5-E6F7-4890-ABCD-EF1234567890}
-AppName=WinterMP
-AppVersion=0.1.1
-AppVerName=WinterMP 0.1.1
-AppPublisher=WinterMP
-AppPublisherURL=https://github.com/Steinkoloss/our-winter-car
-AppSupportURL=https://github.com/Steinkoloss/our-winter-car/issues
-AppUpdatesURL=https://github.com/Steinkoloss/our-winter-car/releases
-DefaultDirName={autopf}\WinterMP
-DefaultGroupName=WinterMP
+AppName=Our Winter Car
+AppVersion=0.1.2
+AppVerName=Our Winter Car 0.1.2
+AppPublisher=Our Winter Car
+DefaultDirName={autopf}\Our Winter Car
+DefaultGroupName=Our Winter Car
 DisableProgramGroupPage=yes
 OutputDir=..\dist
-OutputBaseFilename=WinterMP-Setup
+OutputBaseFilename=OurWinterCar-Setup
 UninstallDisplayIcon={app}\WinterMPLauncher.exe
-UninstallDisplayName=WinterMP Launcher
+UninstallDisplayName=Our Winter Car Launcher
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -36,19 +33,19 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: desktopicon; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: launchafter; Description: "Launch WinterMP Launcher when setup finishes"; GroupDescription: "Options:"; Flags: checkedonce
+Name: launchafter; Description: "Launch Our Winter Car when setup finishes"; GroupDescription: "Options:"; Flags: checkedonce
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\WinterMP Launcher"; Filename: "{app}\WinterMPLauncher.exe"
+Name: "{group}\Our Winter Car"; Filename: "{app}\WinterMPLauncher.exe"
 Name: "{group}\Player guide"; Filename: "{app}\PLAYERS.md"
-Name: "{group}\Uninstall WinterMP"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\WinterMP Launcher"; Filename: "{app}\WinterMPLauncher.exe"; Tasks: desktopicon
+Name: "{group}\Uninstall Our Winter Car"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Our Winter Car"; Filename: "{app}\WinterMPLauncher.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\WinterMPLauncher.exe"; Description: "Launch WinterMP Launcher"; Flags: nowait postinstall skipifsilent; Tasks: launchafter
+Filename: "{app}\WinterMPLauncher.exe"; Description: "Launch Our Winter Car"; Flags: nowait postinstall skipifsilent; Tasks: launchafter
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\WinterMP\downloads"
@@ -61,21 +58,21 @@ begin
   if CurStep <> ssPostInstall then
     Exit;
 
-  WizardForm.StatusLabel.Caption := 'Installing BepInEx and WinterMP mod into My Winter Car...';
+  WizardForm.StatusLabel.Caption := 'Installing BepInEx and Our Winter Car into My Winter Car...';
   WizardForm.ProgressGauge.Style := npbstMarquee;
 
   if not Exec(ExpandConstant('{app}\WinterMPLauncher.exe'),
     '--install-mod --silent', ExpandConstant('{app}'),
     SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
-    MsgBox('WinterMP Launcher was installed, but the mod installer could not run.'#13#13 +
-      'Open WinterMP Launcher and click Install / Repair.',
+    MsgBox('The launcher was installed, but the mod installer could not run.'#13#13 +
+      'Open Our Winter Car and click Install / Repair.',
       mbError, MB_OK);
   end
   else if ResultCode <> 0 then
   begin
-    MsgBox('WinterMP Launcher is installed, but the mod could not be installed automatically.'#13#13 +
-      'Make sure My Winter Car is installed via Steam, then open WinterMP Launcher and click Install / Repair.'#13#13 +
+    MsgBox('The launcher is installed, but the mod could not be installed automatically.'#13#13 +
+      'Make sure My Winter Car is installed via Steam, then open Our Winter Car and click Install / Repair.'#13#13 +
       'Details: %LOCALAPPDATA%\WinterMP\last-install.log',
       mbInformation, MB_OK);
   end;

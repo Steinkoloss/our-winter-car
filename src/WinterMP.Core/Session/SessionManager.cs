@@ -667,13 +667,13 @@ namespace WinterMP.Core.Session
             string? refusal = null;
             string hostGameVersion = Util.SafeApp.GameVersion;
             if (request.ProtocolVersion != ProtocolInfo.Version)
-                refusal = $"Protocol mismatch (host v{ProtocolInfo.Version}, you v{request.ProtocolVersion}). Update WinterMP.";
+                refusal = $"Protocol mismatch (host v{ProtocolInfo.Version}, you v{request.ProtocolVersion}). Update {MyPluginInfo.PLUGIN_NAME}.";
             else if (request.ModVersion != MyPluginInfo.PLUGIN_VERSION)
                 refusal = $"Mod version mismatch (host {MyPluginInfo.PLUGIN_VERSION}, you {request.ModVersion}).";
             else if (request.GameVersion != hostGameVersion)
                 refusal = $"Game version mismatch (host {hostGameVersion}, you {request.GameVersion}).";
             else if (SyncCatalog.Loaded && request.CatalogHash != SyncCatalog.Hash)
-                refusal = $"Sync catalog mismatch (host {SyncCatalog.Hash:X8}, you {request.CatalogHash:X8}). Reinstall WinterMP.";
+                refusal = $"Sync catalog mismatch (host {SyncCatalog.Hash:X8}, you {request.CatalogHash:X8}). Reinstall {MyPluginInfo.PLUGIN_NAME}.";
 
             if (refusal != null)
             {
