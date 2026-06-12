@@ -23,7 +23,7 @@ events are synchronized.
 | Mod loader standard | BepInEx 5 (`5.4.23.x`) x64, entrypoint set to `MonoBehaviour` | Our mod ships as a BepInEx plugin |
 | Save format | ES2 / Easy Save 2 (`ES2.dll` verified; MSCEditor partially reads saves) | Host-side save manipulation is feasible; guests get sidecar profiles |
 | Game status | Early Access, frequent updates | Sync catalog must be regenerable per game build; version pinning required |
-| Prior art | MSCMP (dead, GPLv3), BeerMP → WreckMP (active, MSC only) | Proven concepts: host/client, rigidbody ownership, launcher + injection. Do **not** copy MSCMP code unless we accept GPLv3 |
+| Prior art | MSCMP (dead, GPLv3), BeerMP → WreckMP (active, MSC only) | Proven concepts: host/client, rigidbody ownership, launcher + injection. MSCMP is license-compatible (also GPLv3); still prefer clean-room for correctness |
 
 ---
 
@@ -337,7 +337,7 @@ real-world feedback while M5/M6 land.
 | Game switches to IL2CPP or breaks BepInEx | Low | BepInEx 6/Il2CppInterop migration path exists; monitor dev announcements |
 | Amistech objects to the mod | Low (MSC mods tolerated for years) | Non-commercial, no piracy enablement (every player needs the game), takedown-compliant |
 | Save corruption | Medium | Host-only writes through vanilla flow; launcher auto-backups; sidecar never touches vanilla keys |
-| Licensing contamination from MSCMP (GPLv3) | Low | Clean-room: read for concepts only, no code reuse; our license: MIT or closed, decide before first public commit |
+| Licensing / MSCMP prior art (GPLv3) | Low | **Our license: GPLv3-or-later** (see `LICENSE`). Clean-room preferred; MSCMP code is license-compatible if ever needed |
 
 ---
 

@@ -81,8 +81,9 @@ list. Logs at `<game>\BepInEx\LogOutput.log`.
    (`.NET 8`) is the only place modern APIs are safe.
 2. **Nullable reference types are on** (`<Nullable>enable</Nullable>`). Keep it
    clean; don't paper over warnings with `!` unless you genuinely know better.
-3. **Never copy code from MSCMP** (it is GPLv3 and the project license is still
-   undecided — see `PLAN.md` §6). Read prior art for *concepts only*.
+3. **MSCMP is GPLv3 prior art** (same license as us — see `LICENSE`). Prefer
+   clean-room; read MSCMP for *concepts*, not blind copy-paste (bugs, game
+   differences). If you port MSCMP code, keep attribution and stay GPLv3.
 
 ---
 

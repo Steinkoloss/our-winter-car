@@ -3,6 +3,8 @@
   <PropertyGroup>
     <Product>WinterMP</Product>
     <Authors>Our Winter Car contributors</Authors>
+    <Copyright>Copyright (C) 2025 Steinkoloss and contributors</Copyright>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
     <Version>0.1.0</Version>
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>

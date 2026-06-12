@@ -53,5 +53,8 @@ Full instructions: [docs/PLAYERS.md](docs/PLAYERS.md).
 
 ## License
 
-TBD before first public release (decision tracked in PLAN.md §6 — MSCMP is
-GPLv3 and must not be copied from while this is undecided).
+[GNU General Public License v3.0 or later](LICENSE) (GPL-3.0-or-later).
+
+Copyleft: you may use, modify, and redistribute this project; derivative
+works must stay under the same license and include corresponding source when
+you convey binaries. See [LICENSE](LICENSE) for the full terms.
