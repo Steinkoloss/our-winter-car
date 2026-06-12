@@ -9,6 +9,39 @@
     <RootNamespace>WinterMP.Launcher</RootNamespace>
     <AssemblyName>WinterMPLauncher</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>0.1.1</Version>
+    <WinterMPCoreOut>$(MSBuildThisFileDirectory)..\WinterMP.Core\bin\$(Configuration)\net35</WinterMPCoreOut>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\BepInEx.cfg" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docs\PLAYERS.md" Link="PLAYERS.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="StageLauncherPayload" AfterTargets="Build;Publish">
+    <PropertyGroup>
+      <LauncherStageDir Condition="'$(PublishDir)' != ''">$(PublishDir)</LauncherStageDir>
+      <LauncherStageDir Condition="'$(LauncherStageDir)' == ''">$(TargetDir)</LauncherStageDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <ModPayloadFiles Include="$(WinterMPCoreOut)\WinterMP.Core.dll;$(WinterMPCoreOut)\WinterMP.Net.dll;$(WinterMPCoreOut)\sync-catalog.json" />
+      <BepInExZip Include="$(MSBuildThisFileDirectory)..\..\vendor\BepInEx_win_x64_5.4.23.5.zip" />
+    </ItemGroup>
+    <MakeDir Directories="$(LauncherStageDir)payload" />
+    <MakeDir Directories="$(LauncherStageDir)vendor" />
+    <Copy SourceFiles="@(ModPayloadFiles)" DestinationFolder="$(LauncherStageDir)payload" SkipUnchangedFiles="true"
+          Condition="Exists('%(ModPayloadFiles.Identity)')" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Assets\wintermp-compat.json"
+          DestinationFolder="$(LauncherStageDir)payload" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BepInExZip)" DestinationFolder="$(LauncherStageDir)vendor" SkipUnchangedFiles="true"
+          Condition="Exists('%(BepInExZip.Identity)')" />
+    <Warning Text="WinterMP.Core Release build not found — run 'dotnet build src/WinterMP.Core -c Release' before the launcher."
+             Condition="!Exists('$(WinterMPCoreOut)\WinterMP.Core.dll')" />
+    <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing — run tools/fetch-vendor.ps1"
+             Condition="!Exists('@(BepInExZip)')" />
+  </Target>
 
 </Project>

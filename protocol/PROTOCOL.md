@@ -1,6 +1,6 @@
 # WinterMP wire protocol
 
-Protocol version: **8** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+Protocol version: **15** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
 Any breaking change to framing, message layout or semantics bumps the version;
 hosts refuse mismatched clients during handshake.
 
@@ -38,7 +38,10 @@ client                          host
   |------ WorldSnapshotRequest -->|   guest's id hash (diagnostic)
   |<----- WorldDoorSnapshot * n --|   doors the host has seen change
   |<----- WorldItemSnapshot * n --|   current pose of every item/vehicle
-  |<----- TimeSync ---------------|   clock + weather (also re-broadcast every 30 s)
+  |<----- WorldBoltSnapshot * n --|   bolt tightness for every non-loose Screw FSM
+  |<----- WorldPartSnapshot * n --|   installed/tightness/wear for every non-default car part
+  |<----- TimeSync ---------------|   clock + weather + calendar (also re-broadcast every 30 s)
+  |<----- WalletState ------------|   shared wallet (also re-broadcast every ~2 s while balance changes)
   |<-----> Chat / PlayerTransform / ItemTransform / FsmStateEnter ...
 ```
 
@@ -59,15 +62,22 @@ transforms to other guests and is authoritative for all world state.
 | 21 | PlayerDespawn | 0 | playerId, reason |
 | 22 | PlayerTransform | 1 | playerId, seq, pos, rot, moveState |
 | 23 | PassengerState | 0 | playerId, vehicleId, seatIndex (0 front passenger, 1 rear left, 2 rear right, 255 none); re-broadcast every ~8 s while seated; same-seat races resolved by lowest player id |
-| 40 | FsmStateEnter | 0 | netId + state name; receiver replays via injected MP_* global transition (doors, ignitions, vehicle controls, engine run/stall on SORBET/CORRIS Starter FSMs) |
+| 40 | FsmStateEnter | 0 | netId + state name; receiver replays via injected MP_* global transition (doors, ignitions, vehicle controls, car parts Bolted/Unbolted/Stop/Install/Remove, shop Buy/CashRegister Purchase/Cashier/Add, engine run/stall on SORBET/CORRIS Starter FSMs) |
 | 41 | FsmRawEvent | 0 | netId + event name; receiver whitelists (TIGHTEN/UNTIGHTEN on bolts) |
 | 42 | ItemTransform | 1 (final: 0) | itemId, ownerPlayerId, seq, flags, pos, rot — items *and* vehicles |
-| 43 | TimeSync | 0 | host -> guests: hour (1-24), minutes, forecast temps, snowing, forecast index |
-| 60 | VehicleState | 1 | vehicleId, ownerPlayerId, seq, flags (bit 0 engine on, bit 1 ACC/electrics on, bit 2 blinker left, bit 3 blinker right), rpm, speedTenthsKmh, fuelLevel (0-255) — ~4 Hz from whoever is driving *or* left the engine/ACC running locally; receivers replay Electricity ON/OFF FSM, push rpm/speed/fuel into gauge variables (CORRIS angle gauges included), apply blinker stalk/events, and synthesize engine audio (pitch from RPM), stopping after 2 s without packets |
-| 61 | VehicleClimate | 1 | vehicleId, ownerPlayerId, seq, frost (0-255), flags (bit 0 window heater on, bit 1 glass defrosting), heaterTemp, heaterBlower, heaterDirection (each 0-255) — ~2 Hz from driver, passenger, or anyone near a parked car; receivers replay window-heater On/Off FSM, pulse GlassFrosting DEFROST + CarTemp Defrost, push frost into GlassFrosting/Freezing cutoffs every LateUpdate; included once per vehicle in join snapshot |
+| 43 | TimeSync | 0 | host -> guests: hour (1-24), minutes, forecast temps, snowing, forecast index, daysPassed, dayOfWeek (0=Mon..6=Sun, 255 unknown) |
+| 44 | BoltState | 0 | netId, boltTightness, screwInt — sent after each wrench turn settles (Set pos); receivers overwrite Screw FSM vars and replay Set pos |
+| 45 | PartState | 0 | netId, flags (bit 0 installed), tightness (0-255), wear (0-255) — sent when a car part settles (Stop/Bolted/Unbolted); receivers overwrite Data FSM Installed/Tightness/Wear |
+| 46 | ItemDespawn | 0 | itemId — pickable eaten/destroyed; receivers delete their local rigidbody |
+| 60 | VehicleState | 1 | vehicleId, ownerPlayerId, seq, flags (bit 0 engine on, bit 1 ACC/electrics on, bit 2 blinker left, bit 3 blinker right, bit 4 hazard), rpm, speedTenthsKmh, fuelLevel (0-255), coolantTemp (0-255 → 0-120 °C) — ~4 Hz from whoever is driving *or* left the engine/ACC running locally; receivers replay Electricity ON/OFF FSM, push rpm/speed/fuel/coolant into gauge variables (CORRIS angle gauges included), apply blinker/hazard stalk/events + hazard button replay, and synthesize engine audio (pitch from RPM), stopping after 2 s without packets |
+| 61 | VehicleClimate | 1 | vehicleId, ownerPlayerId, seq, frost (0-255 exterior ice), flags (bit 0 window heater, bit 1 glass defrosting, bit 2 player in cabin), heaterTemp, heaterBlower, heaterDirection, fog (0-255 interior condensation), cabinTemp (0-255 → 0-40 °C) — ~2 Hz; receivers split frost (Frost + Freezing cutoffs + color.a) from fog (SweatRate + color.rgb + InteriorTemp + PlayerIn), replay window-heater On/Off, pulse DEFROST; LateUpdate keeps visuals pinned; included in join snapshot |
+| 80 | WalletState | 0 | money (float mk), seq — host -> guests every ~2 s and on join; guests overwrite the PlayMaker global `Money` + HUD (host wins) |
+| 81 | PurchaseIntent | 0 | guest -> host only: playerId, netId (Buy/CashRegister FSM), eventName (USE/PURCHASE/DEPURCHASE), seq — guest aborts local buy guard and restores wallet; host fires the event and broadcasts resulting FsmStateEnter + WalletState |
 | 120 | WorldSnapshotRequest | 0 | guest -> host once its first world scan completes; carries the guest's id hash (diagnostic only) |
 | 121 | WorldDoorSnapshot | 0 | host -> guest: (netId, stateName) pairs for doors/ignitions/controls/starters the host saw change; chunked (≤60/message) |
 | 122 | WorldItemSnapshot | 0 | host -> guest: (itemId, pos, rot) for every item/vehicle; chunked (≤40/message); unknown ids are parked until scanned |
+| 123 | WorldBoltSnapshot | 0 | host -> guest: (netId, boltTightness, screwInt) for every non-loose bolt; chunked (≤80/message); unknown ids are parked until scanned |
+| 124 | WorldPartSnapshot | 0 | host -> guest: (netId, flags, tightness, wear) for every installed or non-default car part; chunked (≤80/message); unknown ids are parked until scanned |
 
 `ItemTransform.flags`: bit 0 = **final** (at-rest pose, sent reliable; receiver
 restores physics and sleeps the body), bit 1 = **driver** (sender's player sits
@@ -77,14 +87,16 @@ with ~2.5 Hz keepalives until the player leaves the seat, and receivers block
 the vehicle's drive trigger while a remote driver holds it.
 
 `TimeSync` semantics: guests jump their sun/cloud hour FSMs only when total
-drift exceeds 10 game-minutes; forecast variables are overwritten on every
-message (host's weather wins). Day-of-week is not yet synced.
+drift exceeds 10 game-minutes; forecast and `DaysPassed` variables are
+overwritten on every message (host wins). When `dayOfWeek` changes, guests
+broadcast the matching global weekday event (MONDAY…SUNDAY) so TV/HUD/job
+schedulers stay aligned.
 
 ### Reserved ranges
 
-- 44–59 world events (consumption/destruction, switches) — M3
+- 47–59 world events (switches, more consumption) — M3
 - 61–79 vehicles (attachment, fuel/damage) — M4/M5
-- 80–99 economy (wallet transactions, shop intents) — M5
+- 82–99 economy (phone orders, deliveries) — M5
 - 100–119 NPCs/jobs — M6
 - 123–139 snapshot/bulk transfer control (save data) — M3+
 

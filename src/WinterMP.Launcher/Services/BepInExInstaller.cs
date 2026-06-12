@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace WinterMP.Launcher.Services
@@ -19,14 +21,14 @@ namespace WinterMP.Launcher.Services
     /// </summary>
     public static class BepInExInstaller
     {
+        private const string BepInExZipName = "BepInEx_win_x64_5.4.23.5.zip";
+
         public static BepInExStatus GetStatus(string gameDir)
         {
             bool loaderPresent = File.Exists(Path.Combine(gameDir, "winhttp.dll"))
                                  && Directory.Exists(Path.Combine(gameDir, "BepInEx", "core"));
             if (!loaderPresent) return BepInExStatus.NotInstalled;
 
-            // Config only exists after the game ran once with BepInEx; treat a missing
-            // config as "fix missing" so Install/Repair explains the next step.
             string config = Path.Combine(gameDir, "BepInEx", "config", "BepInEx.cfg");
             if (!File.Exists(config) || !EntrypointIsFixed(File.ReadAllText(config)))
                 return BepInExStatus.MissingEntrypointFix;
@@ -51,44 +53,102 @@ namespace WinterMP.Launcher.Services
 
         public static string InstallOrRepair(string gameDir)
         {
+            var messages = new List<string>();
             var status = GetStatus(gameDir);
 
-            switch (status)
+            if (status == BepInExStatus.NotInstalled)
             {
-                case BepInExStatus.NotInstalled:
-                    // TODO(M8): bundle the BepInEx 5 x64 zip with the launcher and extract it
-                    // here, then deploy the mod DLLs from an embedded payload.
-                    throw new InvalidOperationException(
-                        "Automatic BepInEx installation is not implemented yet.\n\n" +
-                        "Manual steps:\n" +
-                        "1. Download BepInEx_x64 5.4.23+ from github.com/BepInEx/BepInEx/releases\n" +
-                        "2. Extract it into the game folder:\n   " + gameDir + "\n" +
-                        "3. Run the game once, then use Install / Repair again to apply the config fix.");
-
-                case BepInExStatus.MissingEntrypointFix:
-                    string config = Path.Combine(gameDir, "BepInEx", "config", "BepInEx.cfg");
-                    if (!File.Exists(config))
-                        return "BepInEx is installed but has not generated its config yet. " +
-                               "Run the game once, then click Install / Repair again.";
-
-                    string text = File.ReadAllText(config);
-                    string patched = PatchEntrypoint(text);
-                    if (patched != text)
-                    {
-                        File.Copy(config, config + ".wintermp.bak", overwrite: true);
-                        File.WriteAllText(config, patched);
-                        return "Applied [Preloader.Entrypoint] Type = MonoBehaviour fix to BepInEx.cfg.";
-                    }
-
-                    return "BepInEx.cfg already configured.";
-
-                case BepInExStatus.Ready:
-                    return "BepInEx is installed and configured. (Mod deployment from the launcher lands in M8 — " +
-                           "for now, build with MwcGamePath set to auto-deploy.)";
-
-                default:
-                    return "Nothing to do.";
+                ExtractBepInEx(gameDir);
+                messages.Add("Installed BepInEx 5 x64 into the game folder.");
+                status = GetStatus(gameDir);
             }
+
+            messages.Add(EnsureConfig(gameDir, status));
+            messages.Add(ModPayload.Deploy(gameDir));
+
+            return string.Join("\n", messages.Where(m => !string.IsNullOrWhiteSpace(m)));
+        }
+
+        private static string EnsureConfig(string gameDir, BepInExStatus status)
+        {
+            string configDir = Path.Combine(gameDir, "BepInEx", "config");
+            Directory.CreateDirectory(configDir);
+            string config = Path.Combine(configDir, "BepInEx.cfg");
+
+            if (!File.Exists(config))
+            {
+                string template = LoadEmbeddedConfigTemplate();
+                File.WriteAllText(config, template);
+                return "Wrote BepInEx.cfg with MonoBehaviour entrypoint.";
+            }
+
+            if (status == BepInExStatus.MissingEntrypointFix || !EntrypointIsFixed(File.ReadAllText(config)))
+            {
+                string text = File.ReadAllText(config);
+                string patched = PatchEntrypoint(text);
+                if (patched != text)
+                {
+                    File.Copy(config, config + ".wintermp.bak", overwrite: true);
+                    File.WriteAllText(config, patched);
+                    return "Applied [Preloader.Entrypoint] Type = MonoBehaviour fix to BepInEx.cfg.";
+                }
+            }
+
+            return "BepInEx.cfg already configured.";
+        }
+
+        private static void ExtractBepInEx(string gameDir)
+        {
+            string? zipPath = FindBepInExZip();
+            if (zipPath == null)
+            {
+                throw new InvalidOperationException(
+                    $"BepInEx package not found ({BepInExZipName}). Reinstall WinterMP or place the zip in vendor/.");
+            }
+
+            using var archive = ZipFile.OpenRead(zipPath);
+            foreach (var entry in archive.Entries)
+            {
+                string dest = Path.Combine(gameDir, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
+                if (string.IsNullOrEmpty(entry.Name))
+                {
+                    Directory.CreateDirectory(dest);
+                    continue;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                entry.ExtractToFile(dest, overwrite: true);
+            }
+        }
+
+        private static string? FindBepInExZip()
+        {
+            string[] candidates =
+            {
+                Path.Combine(AppContext.BaseDirectory, "vendor", BepInExZipName),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "vendor", BepInExZipName)),
+            };
+
+            foreach (string path in candidates)
+            {
+                if (File.Exists(path)) return path;
+            }
+
+            return null;
+        }
+
+        private static string LoadEmbeddedConfigTemplate()
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            string? resource = asm.GetManifestResourceNames()
+                .FirstOrDefault(n => n.EndsWith("BepInEx.cfg", StringComparison.OrdinalIgnoreCase));
+            if (resource == null)
+                throw new InvalidOperationException("Embedded BepInEx.cfg template missing from launcher build.");
+
+            using var stream = asm.GetManifestResourceStream(resource)
+                ?? throw new InvalidOperationException("Embedded BepInEx.cfg stream missing.");
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
         }
 
         private static bool EntrypointIsFixed(string config)
@@ -103,7 +163,6 @@ namespace WinterMP.Launcher.Services
             var section = Regex.Match(config, @"\[Preloader\.Entrypoint\]", RegexOptions.Singleline);
             if (!section.Success) return config;
 
-            // Replace the first "Type = ..." after the section header.
             return Regex.Replace(
                 config,
                 @"(\[Preloader\.Entrypoint\][^\[]*?^\s*Type\s*=\s*)[^\r\n]+",

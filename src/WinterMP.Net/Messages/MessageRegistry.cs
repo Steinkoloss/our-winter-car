@@ -22,11 +22,18 @@ namespace WinterMP.Net.Messages
                 { MessageId.FsmRawEvent, () => new FsmRawEvent() },
                 { MessageId.ItemTransform, () => new ItemTransform() },
                 { MessageId.TimeSync, () => new TimeSync() },
+                { MessageId.BoltState, () => new BoltState() },
+                { MessageId.PartState, () => new PartState() },
+                { MessageId.ItemDespawn, () => new ItemDespawn() },
                 { MessageId.VehicleState, () => new VehicleState() },
                 { MessageId.VehicleClimate, () => new VehicleClimate() },
+                { MessageId.WalletState, () => new WalletState() },
+                { MessageId.PurchaseIntent, () => new PurchaseIntent() },
                 { MessageId.WorldSnapshotRequest, () => new WorldSnapshotRequest() },
                 { MessageId.WorldDoorSnapshot, () => new WorldDoorSnapshot() },
                 { MessageId.WorldItemSnapshot, () => new WorldItemSnapshot() },
+                { MessageId.WorldBoltSnapshot, () => new WorldBoltSnapshot() },
+                { MessageId.WorldPartSnapshot, () => new WorldPartSnapshot() },
             };
 
         public static IEnumerable<MessageId> KnownIds => Factories.Keys;

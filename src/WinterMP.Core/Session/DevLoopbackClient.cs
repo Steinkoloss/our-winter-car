@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WinterMP.Core.Catalog;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
 using WinterMP.Net.Transport;
@@ -68,7 +69,7 @@ namespace WinterMP.Core.Session
                 ProtocolVersion = ProtocolInfo.Version,
                 ModVersion = MyPluginInfo.PLUGIN_VERSION,
                 GameVersion = Util.SafeApp.GameVersion,
-                CatalogHash = 0,
+                CatalogHash = SyncCatalog.Hash,
                 PlayerName = _name,
             };
             _transport.Send(hostPeer, PacketCodec.Encode(request), Channel.ReliableOrdered);

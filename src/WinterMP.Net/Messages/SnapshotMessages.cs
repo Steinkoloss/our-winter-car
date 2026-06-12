@@ -111,4 +111,97 @@ namespace WinterMP.Net.Messages
             }
         }
     }
+
+    /// <summary>
+    /// Host -> guest: bolt tightness values for every Screw FSM that is not fully
+    /// loose. Guests write the variables and replay Set pos so meshes match the host.
+    /// Chunked by the sender.
+    /// </summary>
+    public sealed class WorldBoltSnapshot : IMessage
+    {
+        public struct Entry
+        {
+            public uint NetId;
+            public ushort BoltTightness;
+            public ushort ScrewInt;
+        }
+
+        public List<Entry> Entries = new List<Entry>();
+
+        public MessageId Id => MessageId.WorldBoltSnapshot;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt16((ushort)Entries.Count);
+            foreach (var entry in Entries)
+            {
+                writer.WriteUInt32(entry.NetId);
+                writer.WriteUInt16(entry.BoltTightness);
+                writer.WriteUInt16(entry.ScrewInt);
+            }
+        }
+
+        public void Read(NetReader reader)
+        {
+            int count = reader.ReadUInt16();
+            Entries = new List<Entry>(count);
+            for (int i = 0; i < count; i++)
+            {
+                Entries.Add(new Entry
+                {
+                    NetId = reader.ReadUInt32(),
+                    BoltTightness = reader.ReadUInt16(),
+                    ScrewInt = reader.ReadUInt16(),
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Host -> guest: Installed/Tightness/Wear for every car part that is not in its
+    /// default uninstalled state. Guests write the variables on the part Data FSM.
+    /// Chunked by the sender.
+    /// </summary>
+    public sealed class WorldPartSnapshot : IMessage
+    {
+        public struct Entry
+        {
+            public uint NetId;
+            public byte Flags;
+            public byte Tightness;
+            public byte Wear;
+        }
+
+        public List<Entry> Entries = new List<Entry>();
+
+        public MessageId Id => MessageId.WorldPartSnapshot;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt16((ushort)Entries.Count);
+            foreach (var entry in Entries)
+            {
+                writer.WriteUInt32(entry.NetId);
+                writer.WriteByte(entry.Flags);
+                writer.WriteByte(entry.Tightness);
+                writer.WriteByte(entry.Wear);
+            }
+        }
+
+        public void Read(NetReader reader)
+        {
+            int count = reader.ReadUInt16();
+            Entries = new List<Entry>(count);
+            for (int i = 0; i < count; i++)
+            {
+                Entries.Add(new Entry
+                {
+                    NetId = reader.ReadUInt32(),
+                    Flags = reader.ReadByte(),
+                    Tightness = reader.ReadByte(),
+                    Wear = reader.ReadByte(),
+                });
+            }
+        }
+    }
 }

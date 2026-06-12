@@ -3,6 +3,8 @@ using System.IO.Compression;
 
 namespace WinterMP.Launcher.Services
 {
+    public sealed record SaveBackupEntry(string FilePath, DateTime CreatedUtc, long SizeBytes);
+
     /// <summary>
     /// Zips the game save folder before hosted sessions. Backups are the safety net for
     /// the "host owns the savefile" model (PLAN.md §4.6).
@@ -11,8 +13,6 @@ namespace WinterMP.Launcher.Services
     {
         private const int MaxBackups = 20;
 
-        // TODO(M1): verify the exact folder name on a real install; MSC used
-        // ...\LocalLow\Amistech\My Summer Car.
         private static string SaveDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "AppData", "LocalLow", "Amistech", "My Winter Car");
@@ -23,11 +23,17 @@ namespace WinterMP.Launcher.Services
 
         public static bool SaveDirExists() => Directory.Exists(SaveDir);
 
-        public static int CountBackups()
+        public static int CountBackups() => ListBackups().Count;
+
+        public static IReadOnlyList<SaveBackupEntry> ListBackups()
         {
-            return Directory.Exists(BackupDir)
-                ? Directory.GetFiles(BackupDir, "save-*.zip").Length
-                : 0;
+            if (!Directory.Exists(BackupDir)) return Array.Empty<SaveBackupEntry>();
+
+            return Directory.GetFiles(BackupDir, "save-*.zip")
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(f => f.CreationTimeUtc)
+                .Select(f => new SaveBackupEntry(f.FullName, f.CreationTimeUtc, f.Length))
+                .ToList();
         }
 
         /// <summary>Returns the backup path, or null when there is no save folder yet.</summary>
@@ -41,6 +47,38 @@ namespace WinterMP.Launcher.Services
 
             PruneOldBackups();
             return target;
+        }
+
+        public static string RestoreBackup(string zipPath)
+        {
+            if (!File.Exists(zipPath))
+                throw new FileNotFoundException("Backup file not found.", zipPath);
+
+            if (!SaveDirExists())
+                Directory.CreateDirectory(SaveDir);
+
+            string? safety = CreateBackup();
+            string safetyNote = safety != null
+                ? $"Current save backed up to {Path.GetFileName(safety)} before restore."
+                : "No existing save to back up before restore.";
+
+            foreach (string file in Directory.GetFiles(SaveDir, "*", SearchOption.AllDirectories))
+                File.Delete(file);
+            foreach (string dir in Directory.GetDirectories(SaveDir))
+                Directory.Delete(dir, recursive: true);
+
+            ZipFile.ExtractToDirectory(zipPath, SaveDir, overwriteFiles: true);
+            return $"Restored save from {Path.GetFileName(zipPath)}. {safetyNote}";
+        }
+
+        public static void OpenBackupFolder()
+        {
+            Directory.CreateDirectory(BackupDir);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = BackupDir,
+                UseShellExecute = true,
+            });
         }
 
         private static void PruneOldBackups()

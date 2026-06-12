@@ -14,6 +14,9 @@ Directory.Build.props.user
 
 # Vendored binaries (drop-ins, see libs/README.md)
 libs/*.dll
+vendor/*.zip
+tools/inno-setup/
+dist/
 
 # Runtime artifacts
 dumps/

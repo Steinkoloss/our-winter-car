@@ -10,7 +10,14 @@ namespace WinterMP.Net
         // v6: VehicleState gains speedTenthsKmh; ignition uses electricity FSM replay.
         // v7: vehicle climate stream (61) — frost + heater knobs.
         // v8: VehicleState gains fuelLevel + blinker flags.
-        public const ushort Version = 8;
+        // v9: VehicleClimate gains fog + cabinTemp (interior window fogging).
+        // v10: VehicleState gains hazard flag + coolantTemp gauge.
+        // v11: TimeSync gains daysPassed/dayOfWeek; bolt tightness snapshot + BoltState.
+        // v12: shared wallet (WalletState) + car part Bolted/Unbolted sync.
+        // v13: part assembly states (Stop/Install/Remove) + PartState + WorldPartSnapshot.
+        // v14: host-authoritative shop purchases (PurchaseIntent).
+        // v15: pickable food/consumables + ItemDespawn when eaten or destroyed.
+        public const ushort Version = 15;
     }
 
     /// <summary>

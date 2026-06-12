@@ -10,6 +10,7 @@
     <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
     <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>
     <BepInExPluginName>WinterMP</BepInExPluginName>
+    <Version>0.1.1</Version>
     <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
   </PropertyGroup>
 
@@ -54,11 +55,18 @@
     <ProjectReference Include="..\WinterMP.Net\WinterMP.Net.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\catalog\sync-catalog.json">
+      <Link>sync-catalog.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <!-- Auto-deploy into the game when MwcGamePath is configured (Directory.Build.props.user). -->
   <Target Name="DeployToGame" AfterTargets="Build"
           Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
     <ItemGroup>
-      <DeployFiles Include="$(TargetDir)WinterMP.Core.dll;$(TargetDir)WinterMP.Net.dll" />
+      <DeployFiles Include="$(TargetDir)WinterMP.Core.dll;$(TargetDir)WinterMP.Net.dll;$(TargetDir)sync-catalog.json" />
     </ItemGroup>
     <Copy SourceFiles="@(DeployFiles)" Condition="Exists('%(DeployFiles.Identity)')"
           DestinationFolder="$(MwcGamePath)\BepInEx\plugins\WinterMP" SkipUnchangedFiles="true" />

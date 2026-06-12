@@ -43,11 +43,14 @@ the game normally from Steam without WinterMP launch args).
 
 ## Updates
 
-When a new release is available, the launcher shows an update banner. If the
-release includes a **WinterMP-payload.zip** asset, click **Download update** or
-**Update mod** to patch without reinstalling the whole launcher.
+The launcher checks GitHub on startup and shows a yellow banner when a newer
+release is available.
 
-Otherwise download the latest installer from GitHub and run Install / Repair.
+- **Update mod** — downloads `WinterMP-payload.zip` and installs into your game.
+- **Update launcher** — downloads and runs `WinterMP-Setup.exe` (launcher closes).
+- **Check for updates** — manual check anytime.
+
+Use **Dismiss** to hide the banner for the current release.
 
 ## Save backups
 

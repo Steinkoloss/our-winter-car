@@ -45,6 +45,20 @@ and reference UnityEngine/Steamworks from the game install.
 - **T** in game: chat. **TAB** (hold): player list + session status.
 - Logs: `<game>\BepInEx\LogOutput.log`.
 
+## Launcher (release packaging)
+
+```powershell
+.\tools\build-launcher.ps1          # dev build → bin\Release\net8.0-windows\
+.\tools\publish-release.ps1         # self-contained win-x64 + dist\*.zip
+.\tools\build-installer.ps1         # publish + WinterMP-Setup.exe (installs Inno Setup via winget if needed)
+```
+
+Release zips land in `dist/`:
+`WinterMP-Launcher-win-x64.zip` (full launcher) and `WinterMP-payload.zip`
+(attach to GitHub releases for in-launcher mod updates).
+
+Player guide: [PLAYERS.md](PLAYERS.md).
+
 ## Testing real multiplayer
 
 Steam allows one running instance per account, so end-to-end tests need either

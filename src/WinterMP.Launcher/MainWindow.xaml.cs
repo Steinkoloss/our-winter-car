@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using WinterMP.Launcher.Services;
 
@@ -7,64 +8,311 @@ namespace WinterMP.Launcher
     public partial class MainWindow : Window
     {
         private GameInstall? _game;
+        private readonly System.Text.StringBuilder _log = new();
+        private LauncherSettings _settings = LauncherSettings.Load();
+        private UpdateCheckResult? _pendingUpdate;
+        private bool _updateBusy;
 
         public MainWindow()
         {
             InitializeComponent();
+            Title = $"WinterMP Launcher {ModPayload.LauncherVersion}";
+            SubtitleText.Text = $"Multiplayer for My Winter Car · protocol v{ModMeta.ProtocolVersion}";
+            AppendLog($"WinterMP Launcher {ModPayload.LauncherVersion}");
             RefreshStatus();
+            ShowWelcomeIfNeeded();
+            Loaded += async (_, _) => await CheckForUpdatesAsync(showUpToDate: false);
+        }
+
+        private void ShowWelcomeIfNeeded()
+        {
+            if (_settings.SeenWelcome) return;
+
+            MessageBox.Show(this,
+                "Welcome to WinterMP!\n\n" +
+                "1. Click Install / Repair\n" +
+                "2. HOST GAME opens a Steam lobby for friends\n" +
+                "3. Friends install WinterMP, then use Steam Join Game\n\n" +
+                "Never save the game as a guest.",
+                "WinterMP",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            _settings.SeenWelcome = true;
+            _settings.Save();
+        }
+
+        private async Task CheckForUpdatesAsync(bool showUpToDate)
+        {
+            try
+            {
+                AppendLog("Checking for updates...");
+                var result = await UpdateChecker.CheckAsync(_game?.GameDir);
+                _settings.LastUpdateCheckUtc = DateTime.UtcNow;
+                _settings.Save();
+
+                if (result == null)
+                {
+                    UpdateStatusText.Text = "Could not check (offline?)";
+                    AppendLog("Update check failed.");
+                    return;
+                }
+
+                _pendingUpdate = result;
+                ApplyUpdateUi();
+
+                if (result.AnyUpdateAvailable)
+                {
+                    AppendLog($"Update available: {result.StatusSummary} ({result.ReleaseUrl})");
+                    return;
+                }
+
+                UpdateStatusText.Text = $"Up to date ({result.Tag})";
+                AppendLog($"Up to date ({result.Tag}).");
+                if (showUpToDate)
+                {
+                    MessageBox.Show(this,
+                        $"WinterMP is up to date ({result.Tag}).",
+                        "No updates",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatusText.Text = "Update check failed";
+                AppendLog($"Update check failed: {ex.Message}");
+            }
+        }
+
+        private void ApplyUpdateUi()
+        {
+            if (_pendingUpdate == null)
+            {
+                UpdateBannerPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            bool dismissed = _settings.DismissedUpdateTag == _pendingUpdate.Tag;
+            bool showBanner = _pendingUpdate.AnyUpdateAvailable && !dismissed;
+
+            UpdateStatusText.Text = _pendingUpdate.AnyUpdateAvailable
+                ? _pendingUpdate.StatusSummary
+                : $"Up to date ({_pendingUpdate.Tag})";
+
+            UpdateBannerPanel.Visibility = showBanner ? Visibility.Visible : Visibility.Collapsed;
+            if (!showBanner) return;
+
+            UpdateBannerTitle.Text = $"Update available: {_pendingUpdate.Tag}";
+            var lines = new List<string>();
+            if (_pendingUpdate.LauncherUpdateAvailable)
+            {
+                lines.Add($"Launcher: {_pendingUpdate.LauncherVersion} → {_pendingUpdate.RemoteVersion}");
+            }
+            if (_pendingUpdate.ModUpdateAvailable)
+            {
+                Version from = _pendingUpdate.InstalledModVersion ?? _pendingUpdate.BundledModVersion;
+                lines.Add($"Mod: {from} → {_pendingUpdate.RemoteVersion}");
+            }
+            UpdateBannerText.Text = string.Join("\n", lines);
+
+            UpdateLauncherButton.IsEnabled = _pendingUpdate.LauncherUpdateAvailable
+                && _pendingUpdate.SetupDownloadUrl != null
+                && !_updateBusy;
+            UpdateModButton.IsEnabled = _pendingUpdate.ModUpdateAvailable
+                && _game != null
+                && _pendingUpdate.PayloadDownloadUrl != null
+                && !_updateBusy;
+            UpdateReleaseNotesButton.IsEnabled = !string.IsNullOrEmpty(_pendingUpdate.ReleaseUrl);
         }
 
         private void RefreshStatus()
         {
-            _game = GameLocator.FindSteamInstall();
+            _game = GameLocator.FindInstall(_settings.CustomGameDir);
+            WarningStatusText.Visibility = Visibility.Collapsed;
+            WarningStatusText.Text = string.Empty;
+
+            ushort protocol = ModMeta.ProtocolVersion;
+            BuildStatusText.Text = protocol > 0
+                ? $"launcher {ModPayload.LauncherVersion}, mod {ModMeta.ModVersion}, protocol v{protocol}"
+                : $"launcher {ModPayload.LauncherVersion} (rebuild launcher)";
 
             if (_game == null)
             {
-                GameStatusText.Text = "Not found — is My Winter Car installed via Steam?";
+                GameStatusText.Text = "Not found — set folder in Settings or install via Steam";
                 BepInExStatusText.Text = "—";
                 ModStatusText.Text = "—";
                 HostButton.IsEnabled = false;
                 PlayButton.IsEnabled = false;
-                AppendLog("Game not found. Install My Winter Car and click Refresh.");
+                InstallButton.IsEnabled = false;
+                OpenGameButton.IsEnabled = false;
+                ShowWarning("Game not found. Open Settings to browse to your install folder.");
+                ApplyUpdateUi();
                 return;
             }
 
             GameStatusText.Text = $"{_game.GameDir} (build {_game.BuildId ?? "?"})";
+            OpenGameButton.IsEnabled = true;
+            InstallButton.IsEnabled = true;
+
+            var compat = CompatManifest.Load();
+            compat?.ValidatePayload()?.Let(ShowWarning);
+            compat?.ValidateGameBuild(_game.BuildId)?.Let(ShowWarning);
 
             var bepStatus = BepInExInstaller.GetStatus(_game.GameDir);
             BepInExStatusText.Text = bepStatus switch
             {
                 BepInExStatus.NotInstalled => "Not installed",
-                BepInExStatus.MissingEntrypointFix => "Installed — entrypoint fix missing (run Install / Repair)",
-                BepInExStatus.Ready => "Installed",
+                BepInExStatus.MissingEntrypointFix => "Needs config fix",
+                BepInExStatus.Ready => "Ready",
                 _ => "Unknown",
             };
 
             string? modVersion = BepInExInstaller.GetInstalledModVersion(_game.GameDir);
             ModStatusText.Text = modVersion ?? "Not installed";
 
+            if (modVersion != null && modVersion != ModMeta.ModVersion)
+            {
+                ModStatusText.Text += $" (launcher bundle {ModMeta.ModVersion})";
+                ShowWarning("Installed mod differs from launcher bundle — use Update mod or Install / Repair.");
+            }
+
             int backups = SaveBackupService.CountBackups();
             BackupStatusText.Text = SaveBackupService.SaveDirExists()
-                ? $"{backups} backup(s) — save folder found"
-                : $"{backups} backup(s) — save folder not found yet";
+                ? $"{backups} backup(s)"
+                : $"{backups} backup(s) — no save yet";
 
             bool playable = bepStatus == BepInExStatus.Ready && modVersion != null;
             HostButton.IsEnabled = playable;
             PlayButton.IsEnabled = playable;
 
-            AppendLog($"Status refreshed. Game: OK, BepInEx: {bepStatus}, Mod: {modVersion ?? "missing"}.");
+            if (!ModPayload.PayloadPresent())
+                ShowWarning("Mod payload missing from launcher — reinstall WinterMP.");
+
+            ApplyUpdateUi();
         }
 
-        private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshStatus();
+        private void ShowWarning(string text)
+        {
+            WarningStatusText.Visibility = Visibility.Visible;
+            if (string.IsNullOrEmpty(WarningStatusText.Text))
+                WarningStatusText.Text = text;
+            else
+                WarningStatusText.Text += "\n" + text;
+        }
+
+        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshStatus();
+            await CheckForUpdatesAsync(showUpToDate: false);
+        }
+
+        private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e) =>
+            await CheckForUpdatesAsync(showUpToDate: true);
 
         private void InstallButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
+            RunInstall(() => BepInExInstaller.InstallOrRepair(_game.GameDir));
+        }
 
+        private async void UpdateModButton_Click(object sender, RoutedEventArgs e) => await RunModUpdateAsync();
+
+        private async void UpdateLauncherButton_Click(object sender, RoutedEventArgs e) => await RunLauncherUpdateAsync();
+
+        private async Task RunModUpdateAsync()
+        {
+            if (_game == null || _pendingUpdate?.PayloadDownloadUrl == null) return;
+            if (_updateBusy) return;
+
+            _updateBusy = true;
+            SetUpdateButtonsEnabled(false);
             try
             {
-                var result = BepInExInstaller.InstallOrRepair(_game.GameDir);
+                AppendLog($"Downloading mod update {_pendingUpdate.Tag}...");
+                string result = await UpdateChecker.DownloadAndApplyPayloadAsync(
+                    _pendingUpdate.PayloadDownloadUrl, _game.GameDir);
                 AppendLog(result);
+                MessageBox.Show(this, result, "Mod updated", MessageBoxButton.OK, MessageBoxImage.Information);
+                await CheckForUpdatesAsync(showUpToDate: false);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Mod update failed: {ex.Message}");
+                MessageBox.Show(this, ex.Message, "Mod update failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                _updateBusy = false;
+                RefreshStatus();
+            }
+        }
+
+        private async Task RunLauncherUpdateAsync()
+        {
+            if (_pendingUpdate?.SetupDownloadUrl == null) return;
+            if (_updateBusy) return;
+
+            var confirm = MessageBox.Show(this,
+                $"Download and install WinterMP {_pendingUpdate.Tag}?\n\n" +
+                "The launcher will close and the installer will run silently.",
+                "Update launcher",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            _updateBusy = true;
+            SetUpdateButtonsEnabled(false);
+            try
+            {
+                AppendLog($"Downloading launcher update {_pendingUpdate.Tag}...");
+                string setupPath = await UpdateChecker.DownloadLauncherSetupAsync(_pendingUpdate.SetupDownloadUrl);
+                AppendLog($"Running installer: {setupPath}");
+                UpdateChecker.RunLauncherSetup(setupPath);
+                Application.Current.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Launcher update failed: {ex.Message}");
+                MessageBox.Show(this, ex.Message, "Launcher update failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                _updateBusy = false;
+                RefreshStatus();
+            }
+        }
+
+        private void SetUpdateButtonsEnabled(bool enabled)
+        {
+            UpdateModButton.IsEnabled = enabled;
+            UpdateLauncherButton.IsEnabled = enabled;
+        }
+
+        private void DismissUpdateButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingUpdate == null) return;
+            _settings.DismissedUpdateTag = _pendingUpdate.Tag;
+            _settings.Save();
+            UpdateBannerPanel.Visibility = Visibility.Collapsed;
+            AppendLog($"Dismissed update banner for {_pendingUpdate.Tag}.");
+        }
+
+        private void UpdateReleaseNotesButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_pendingUpdate?.ReleaseUrl)) return;
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _pendingUpdate.ReleaseUrl,
+                UseShellExecute = true,
+            });
+        }
+
+        private void RunInstall(Func<string> action)
+        {
+            if (_game == null) return;
+            try
+            {
+                string result = action();
+                AppendLog(result.Replace("\n", "\n"));
+                MessageBox.Show(this, result, "Install / Repair", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -80,7 +328,7 @@ namespace WinterMP.Launcher
             try
             {
                 string? path = SaveBackupService.CreateBackup();
-                AppendLog(path != null ? $"Backup created: {path}" : "No save folder found — nothing to back up.");
+                AppendLog(path != null ? $"Backup created: {path}" : "No save folder found.");
             }
             catch (Exception ex)
             {
@@ -90,19 +338,71 @@ namespace WinterMP.Launcher
             RefreshStatus();
         }
 
+        private void RestoreButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new RestoreBackupWindow { Owner = this };
+            if (dialog.ShowDialog() == true && dialog.ResultMessage != null)
+                AppendLog(dialog.ResultMessage);
+            RefreshStatus();
+        }
+
+        private void DiagnosticsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string zip = DiagnosticsService.CreateBundle(_game, _log.ToString());
+                AppendLog($"Diagnostics saved: {zip}");
+                Process.Start(new ProcessStartInfo { FileName = zip, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "Diagnostics failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OpenGameButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_game == null) return;
+            Process.Start(new ProcessStartInfo { FileName = _game.GameDir, UseShellExecute = true });
+        }
+
+        private void HelpButton_Click(object sender, RoutedEventArgs e)
+        {
+            string help = Path.Combine(AppContext.BaseDirectory, "PLAYERS.md");
+            if (File.Exists(help))
+            {
+                Process.Start(new ProcessStartInfo { FileName = help, UseShellExecute = true });
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://github.com/Steinkoloss/our-winter-car/releases/latest",
+                UseShellExecute = true,
+            });
+        }
+
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new SettingsWindow(_settings, _game) { Owner = this };
+            if (dialog.ShowDialog() == true)
+            {
+                _settings = dialog.Settings;
+                RefreshStatus();
+            }
+        }
+
         private void HostButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
+            if (!ConfirmPlayable()) return;
 
             try
             {
                 string? backup = SaveBackupService.CreateBackup();
-                AppendLog(backup != null
-                    ? $"Save backed up: {backup}"
-                    : "No save folder found yet — starting without backup.");
-
+                AppendLog(backup != null ? $"Save backed up: {backup}" : "No save yet — hosting without backup.");
                 LaunchGame("-wintermp host");
-                AppendLog("Game starting as host. Invite friends via Shift+Tab → friends list once in game.");
+                AppendLog("Launching as HOST.");
             }
             catch (Exception ex)
             {
@@ -113,11 +413,12 @@ namespace WinterMP.Launcher
         private void PlayButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
+            if (!ConfirmPlayable()) return;
 
             try
             {
                 LaunchGame(string.Empty);
-                AppendLog("Game starting. To join a friend: accept their Steam invite or use \"Join Game\" in the friends list.");
+                AppendLog("Launching solo.");
             }
             catch (Exception ex)
             {
@@ -125,13 +426,19 @@ namespace WinterMP.Launcher
             }
         }
 
+        private bool ConfirmPlayable()
+        {
+            if (HostButton.IsEnabled) return true;
+            MessageBox.Show(this,
+                "Install / Repair first. Both BepInEx and the WinterMP mod must be ready.",
+                "Not ready",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return false;
+        }
+
         private void LaunchGame(string args)
         {
-            // Verified on the real game: launching mywintercar.exe directly leaves the
-            // process without a Steam app context (no steam_appid.txt ships with the
-            // game), so SteamAPI.Init fails and the overlay never attaches. Launching
-            // through steam.exe -applaunch gives the full Steam context and still
-            // forwards our -wintermp arguments to the game's command line.
             string? steamExe = GameLocator.FindSteamExe();
             if (steamExe != null)
             {
@@ -144,7 +451,7 @@ namespace WinterMP.Launcher
                 return;
             }
 
-            AppendLog("steam.exe not found — falling back to direct game launch (Steam features may not work).");
+            AppendLog("steam.exe not found — launching game directly (Steam MP may not work).");
             Process.Start(new ProcessStartInfo
             {
                 FileName = _game!.ExePath,
@@ -156,8 +463,14 @@ namespace WinterMP.Launcher
 
         private void AppendLog(string line)
         {
-            LogText.Text += $"[{DateTime.Now:HH:mm:ss}] {line}\n";
+            _log.AppendLine($"[{DateTime.Now:HH:mm:ss}] {line}");
+            LogText.Text = _log.ToString();
             LogScroll.ScrollToEnd();
         }
+    }
+
+    internal static class StringExtensions
+    {
+        public static void Let(this string value, Action<string> action) => action(value);
     }
 }

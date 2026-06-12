@@ -1,3 +1,4 @@
+using HutongGames.PlayMaker;
 using UnityEngine;
 using WinterMP.Net.Messages;
 
@@ -11,19 +12,29 @@ namespace WinterMP.Core.Sync
     /// hour and a float 'Minutes'. The weather forecast lives on
     /// MAP/WEATHER/Forecast :: Logic (OldTemp/NewTemp/Snowing/Index) and the cloud
     /// cycle on MAP/WEATHER/Clouds :: Weather (hour states '00','1'..'23').
+    /// Calendar day count lives on Systems/Statistics :: Data (DaysPassed).
     ///
     /// The host broadcasts <see cref="TimeSync"/> periodically; guests jump their
     /// hour states (via injected MP_* global transitions, same mechanism as doors)
     /// when drift exceeds <see cref="DriftThresholdMinutes"/> and overwrite the
-    /// forecast variables. Day-of-week is not synced yet (no verified variable).
+    /// forecast + calendar variables.
     /// </summary>
     internal sealed class TimeWeatherSync
     {
         private const float DriftThresholdMinutes = 10f;
 
+        private static readonly string[] WeekdayEvents =
+        {
+            "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY",
+        };
+
         private PlayMakerFSM? _sunColor;
         private PlayMakerFSM? _cloudsWeather;
         private PlayMakerFSM? _forecast;
+        private PlayMakerFSM? _statisticsData;
+        private HutongGames.PlayMaker.FsmInt? _daysPassedVar;
+        private ushort _lastAppliedDaysPassed = ushort.MaxValue;
+        private byte _lastAppliedDayOfWeek = TimeSync.DayUnknown;
         private float _nextSearchAt;
 
         public bool Ready => _sunColor != null;
@@ -33,13 +44,18 @@ namespace WinterMP.Core.Sync
             _sunColor = null;
             _cloudsWeather = null;
             _forecast = null;
+            _statisticsData = null;
+            _daysPassedVar = null;
+            _lastAppliedDaysPassed = ushort.MaxValue;
+            _lastAppliedDayOfWeek = TimeSync.DayUnknown;
             _nextSearchAt = 0f;
         }
 
         public void Locate()
         {
-            if (_sunColor != null || Time.unscaledTime < _nextSearchAt) return;
+            if (Time.unscaledTime < _nextSearchAt) return;
             _nextSearchAt = Time.unscaledTime + 5f;
+            if (_sunColor != null && _statisticsData != null) return;
 
             var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
             foreach (var obj in fsms)
@@ -58,6 +74,11 @@ namespace WinterMP.Core.Sync
                         _cloudsWeather = fsm;
                     else if (_forecast == null && name == "Forecast" && fsm.FsmName == "Logic" && parent == "WEATHER")
                         _forecast = fsm;
+                    else if (_statisticsData == null && name == "Statistics" && fsm.FsmName == "Data" && parent == "Systems")
+                    {
+                        _statisticsData = fsm;
+                        _daysPassedVar = fsm.FsmVariables.FindFsmInt("DaysPassed");
+                    }
                 }
                 catch
                 {
@@ -67,7 +88,8 @@ namespace WinterMP.Core.Sync
 
             if (_sunColor != null)
                 WinterMPPlugin.Log.LogInfo("TimeSync: found game clock"
-                    + (_forecast != null ? " and weather FSMs." : " (weather FSMs missing)."));
+                    + (_forecast != null ? " and weather FSMs." : " (weather FSMs missing).")
+                    + (_daysPassedVar != null ? " Calendar ready." : ""));
         }
 
         /// <summary>Host side: snapshot the clock + forecast. Null until the world is loaded.</summary>
@@ -84,7 +106,14 @@ namespace WinterMP.Core.Sync
             {
                 Hour = (byte)Mathf.Clamp(hourVar.Value, 0, 255),
                 Minutes = minutesVar != null ? minutesVar.Value : 0f,
+                DayOfWeek = TimeSync.DayUnknown,
             };
+
+            if (_daysPassedVar != null)
+            {
+                message.DaysPassed = (ushort)Mathf.Clamp(_daysPassedVar.Value, 0, ushort.MaxValue);
+                message.DayOfWeek = (byte)(message.DaysPassed % 7);
+            }
 
             if (_forecast != null)
             {
@@ -109,6 +138,7 @@ namespace WinterMP.Core.Sync
 
             ApplyClock(message);
             ApplyForecast(message);
+            ApplyCalendar(message);
         }
 
         private void ApplyClock(TimeSync message)
@@ -159,6 +189,46 @@ namespace WinterMP.Core.Sync
             if (newTemp != null) newTemp.Value = message.TempNew;
             if (snowing != null) snowing.Value = message.Snowing;
             if (index != null) index.Value = message.ForecastIndex;
+        }
+
+        private void ApplyCalendar(TimeSync message)
+        {
+            if (_daysPassedVar == null) return;
+
+            bool daysChanged = message.DaysPassed != _lastAppliedDaysPassed
+                || _daysPassedVar.Value != message.DaysPassed;
+            bool weekdayChanged = message.DayOfWeek <= 6
+                && message.DayOfWeek != _lastAppliedDayOfWeek;
+
+            if (!daysChanged && !weekdayChanged) return;
+
+            if (daysChanged)
+            {
+                WinterMPPlugin.Log.LogInfo(
+                    $"TimeSync: days passed {_daysPassedVar.Value} -> {message.DaysPassed} (weekday {message.DayOfWeek}).");
+                _daysPassedVar.Value = message.DaysPassed;
+                _lastAppliedDaysPassed = message.DaysPassed;
+            }
+
+            if (weekdayChanged)
+            {
+                _lastAppliedDayOfWeek = message.DayOfWeek;
+                BroadcastWeekday(message.DayOfWeek);
+            }
+        }
+
+        private static void BroadcastWeekday(byte dayOfWeek)
+        {
+            if (dayOfWeek > 6) return;
+
+            try
+            {
+                PlayMakerFSM.BroadcastEvent(WeekdayEvents[dayOfWeek]);
+            }
+            catch
+            {
+                // PlayMaker not ready yet.
+            }
         }
     }
 }

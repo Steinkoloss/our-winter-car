@@ -1,0 +1,28 @@
+<Window x:Class="WinterMP.Launcher.RestoreBackupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Restore save backup"
+        Width="520" Height="360"
+        MinWidth="420" MinHeight="300"
+        Background="{StaticResource BgBrush}"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12"
+                   Text="Select a backup to restore. Your current save is backed up automatically before restore." />
+
+        <ListBox Grid.Row="1" x:Name="BackupList" DisplayMemberPath="Display" />
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Open folder" Click="OpenFolder_Click" Margin="0,0,10,0" />
+            <Button Content="Cancel" Click="Cancel_Click" Margin="0,0,10,0" />
+            <Button Content="Restore selected" Click="Restore_Click" Background="#FF5A3A2C" />
+        </StackPanel>
+    </Grid>
+</Window>

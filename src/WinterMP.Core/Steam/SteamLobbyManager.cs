@@ -27,6 +27,16 @@ namespace WinterMP.Core.Steam
         private static bool _isOwner;
         private static SteamP2PTransport? _activeTransport;
 
+        /// <summary>
+        /// Register overlay / friends-list join handlers as soon as Steam is live.
+        /// Must happen before the first invite — not only when hosting/joining.
+        /// </summary>
+        public static void EnsureCallbacksRegistered()
+        {
+            if (!SteamBootstrap.EnsureInitialized()) return;
+            RegisterCallbacks();
+        }
+
         public static void HostLobby(Action<ITransport> onReady, Action<string> onFailure)
         {
             if (!SteamBootstrap.EnsureInitialized())
@@ -38,7 +48,7 @@ namespace WinterMP.Core.Steam
             _onReady = onReady;
             _onFailure = onFailure;
             _isOwner = true;
-            RegisterCallbacks();
+            EnsureCallbacksRegistered();
 
             WinterMPPlugin.Log.LogInfo("Creating friends-only Steam lobby...");
             SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, DefaultMaxPlayers);
@@ -55,7 +65,7 @@ namespace WinterMP.Core.Steam
             _onReady = onReady;
             _onFailure = onFailure;
             _isOwner = false;
-            RegisterCallbacks();
+            EnsureCallbacksRegistered();
 
             WinterMPPlugin.Log.LogInfo($"Joining Steam lobby {lobbyId}...");
             SteamMatchmaking.JoinLobby(new CSteamID(lobbyId));
@@ -145,6 +155,16 @@ namespace WinterMP.Core.Steam
             }
 
             _currentLobby = new CSteamID(data.m_ulSteamIDLobby);
+
+            string lobbyMod = SteamMatchmaking.GetLobbyData(_currentLobby, LobbyKeyModVersion);
+            if (!string.IsNullOrEmpty(lobbyMod)
+                && !string.Equals(lobbyMod, MyPluginInfo.PLUGIN_VERSION, StringComparison.Ordinal))
+            {
+                Fail($"Mod version mismatch (host {lobbyMod}, you {MyPluginInfo.PLUGIN_VERSION}). Update WinterMP.");
+                LeaveLobby();
+                return;
+            }
+
             string hostIdRaw = SteamMatchmaking.GetLobbyData(_currentLobby, LobbyKeyHostId);
             ulong hostId;
             if (!ulong.TryParse(hostIdRaw, out hostId) || hostId == 0)
@@ -166,15 +186,13 @@ namespace WinterMP.Core.Steam
             }
         }
 
-        /// <summary>Overlay invite accepted while the game is already running.</summary>
+        /// <summary>Overlay invite or friends-list join while the game is already running.</summary>
         private static void OnJoinRequested(GameLobbyJoinRequested_t data)
         {
-            WinterMPPlugin.Log.LogInfo($"Steam overlay join request for lobby {data.m_steamIDLobby.m_SteamID}.");
+            WinterMPPlugin.Log.LogInfo($"Steam join request for lobby {data.m_steamIDLobby.m_SteamID}.");
             var session = Session.SessionManager.Instance;
-            if (session != null && session.State == Session.SessionState.Idle)
-                session.StartJoin(data.m_steamIDLobby.m_SteamID);
-            else
-                WinterMPPlugin.Log.LogWarning("Ignored overlay join request: a session is already active.");
+            if (session != null)
+                session.RequestJoinFromSteam(data.m_steamIDLobby.m_SteamID);
         }
 
         private static void OnLobbyChatUpdate(LobbyChatUpdate_t data)

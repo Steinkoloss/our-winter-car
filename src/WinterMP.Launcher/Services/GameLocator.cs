@@ -11,6 +11,17 @@ namespace WinterMP.Launcher.Services
     {
         public const string AppId = "4164420";
 
+        public static GameInstall? FindInstall(string? customGameDir = null)
+        {
+            if (!string.IsNullOrWhiteSpace(customGameDir))
+            {
+                var manual = TryFromDirectory(customGameDir.Trim());
+                if (manual != null) return manual;
+            }
+
+            return FindSteamInstall();
+        }
+
         public static GameInstall? FindSteamInstall()
         {
             string? steamPath = GetSteamPath();
@@ -27,15 +38,21 @@ namespace WinterMP.Launcher.Services
                 if (installDir == null) continue;
 
                 string gameDir = Path.Combine(library, "steamapps", "common", installDir);
-                if (!Directory.Exists(gameDir)) continue;
-
-                string? exe = FindGameExe(gameDir);
-                if (exe == null) continue;
-
-                return new GameInstall(gameDir, exe, buildId);
+                var install = TryFromDirectory(gameDir, buildId);
+                if (install != null) return install;
             }
 
             return null;
+        }
+
+        public static GameInstall? TryFromDirectory(string gameDir, string? buildId = null)
+        {
+            if (!Directory.Exists(gameDir)) return null;
+
+            string? exe = FindGameExe(gameDir);
+            if (exe == null) return null;
+
+            return new GameInstall(gameDir, exe, buildId);
         }
 
         /// <summary>Full path to steam.exe, or null when Steam is not installed.</summary>

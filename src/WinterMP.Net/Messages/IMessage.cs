@@ -27,15 +27,24 @@ namespace WinterMP.Net.Messages
         FsmRawEvent = 41,
         ItemTransform = 42,
         TimeSync = 43,
+        BoltState = 44,
+        PartState = 45,
+        ItemDespawn = 46,
 
         // 60-79: vehicles — M4
         VehicleState = 60,
         VehicleClimate = 61,
 
+        // 80-99: economy — M5
+        WalletState = 80,
+        PurchaseIntent = 81,
+
         // 120-139: snapshots/bulk — M3 join snapshot
         WorldSnapshotRequest = 120,
         WorldDoorSnapshot = 121,
         WorldItemSnapshot = 122,
+        WorldBoltSnapshot = 123,
+        WorldPartSnapshot = 124,
 
         // Reserved ranges for future subsystems:
         //   61-79 vehicles (attachment, fuel/damage)

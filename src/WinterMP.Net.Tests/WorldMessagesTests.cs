@@ -62,10 +62,11 @@ namespace WinterMP.Net.Tests
                 OwnerPlayerId = 1,
                 Sequence = 1234,
                 Flags = VehicleState.FlagEngineOn | VehicleState.FlagAccOn
-                    | VehicleState.FlagBlinkerLeft,
+                    | VehicleState.FlagBlinkerLeft | VehicleState.FlagHazard,
                 Rpm = 3450,
                 SpeedTenthsKmh = 452,
                 FuelLevel = 192,
+                CoolantTemp = 128,
             };
 
             var decoded = Assert.IsType<VehicleState>(PacketCodec.Decode(PacketCodec.Encode(original)));
@@ -76,9 +77,11 @@ namespace WinterMP.Net.Tests
             Assert.True(decoded.AccOn);
             Assert.True(decoded.BlinkerLeft);
             Assert.False(decoded.BlinkerRight);
+            Assert.True(decoded.HazardOn);
             Assert.Equal(original.Rpm, decoded.Rpm);
             Assert.Equal(original.SpeedTenthsKmh, decoded.SpeedTenthsKmh);
             Assert.Equal(original.FuelLevel, decoded.FuelLevel);
+            Assert.Equal(original.CoolantTemp, decoded.CoolantTemp);
         }
 
         [Fact]
@@ -97,10 +100,13 @@ namespace WinterMP.Net.Tests
                 OwnerPlayerId = 2,
                 Sequence = 9001,
                 Frost = 200,
-                Flags = VehicleClimate.FlagWindowHeater | VehicleClimate.FlagGlassDefrosting,
+                Flags = VehicleClimate.FlagWindowHeater | VehicleClimate.FlagGlassDefrosting
+                    | VehicleClimate.FlagPlayerIn,
                 HeaterTemp = 180,
                 HeaterBlower = 64,
                 HeaterDirection = 128,
+                Fog = 150,
+                CabinTemp = 96,
             };
 
             var decoded = Assert.IsType<VehicleClimate>(PacketCodec.Decode(PacketCodec.Encode(original)));
@@ -110,9 +116,12 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Frost, decoded.Frost);
             Assert.True(decoded.WindowHeaterOn);
             Assert.True(decoded.GlassDefrosting);
+            Assert.True(decoded.PlayerIn);
             Assert.Equal(original.HeaterTemp, decoded.HeaterTemp);
             Assert.Equal(original.HeaterBlower, decoded.HeaterBlower);
             Assert.Equal(original.HeaterDirection, decoded.HeaterDirection);
+            Assert.Equal(original.Fog, decoded.Fog);
+            Assert.Equal(original.CabinTemp, decoded.CabinTemp);
         }
 
         [Fact]
@@ -126,6 +135,8 @@ namespace WinterMP.Net.Tests
                 TempNew = -11f,
                 Snowing = true,
                 ForecastIndex = 4,
+                DaysPassed = 42,
+                DayOfWeek = 3,
             };
 
             var decoded = Assert.IsType<TimeSync>(PacketCodec.Decode(PacketCodec.Encode(original)));
@@ -135,6 +146,77 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.TempNew, decoded.TempNew);
             Assert.True(decoded.Snowing);
             Assert.Equal(original.ForecastIndex, decoded.ForecastIndex);
+            Assert.Equal(original.DaysPassed, decoded.DaysPassed);
+            Assert.Equal(original.DayOfWeek, decoded.DayOfWeek);
+        }
+
+        [Fact]
+        public void WalletState_RoundTrips()
+        {
+            var original = new WalletState { Money = 1234.5f, Sequence = 99 };
+            var decoded = Assert.IsType<WalletState>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.Money, decoded.Money);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+        }
+
+        [Fact]
+        public void PurchaseIntent_RoundTrips()
+        {
+            var original = new PurchaseIntent
+            {
+                PlayerId = 2,
+                NetId = 0xCAFEBABE,
+                EventName = "USE",
+                Sequence = 7,
+            };
+
+            var decoded = Assert.IsType<PurchaseIntent>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.PlayerId, decoded.PlayerId);
+            Assert.Equal(original.NetId, decoded.NetId);
+            Assert.Equal(original.EventName, decoded.EventName);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+        }
+
+        [Fact]
+        public void ItemDespawn_RoundTrips()
+        {
+            var original = new ItemDespawn { ItemId = 0xAABBCCDD };
+            var decoded = Assert.IsType<ItemDespawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.ItemId, decoded.ItemId);
+        }
+
+        [Fact]
+        public void BoltState_RoundTrips()
+        {
+            var original = new BoltState
+            {
+                NetId = 0x12345678,
+                BoltTightness = 7,
+                ScrewInt = 14,
+            };
+
+            var decoded = Assert.IsType<BoltState>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.NetId, decoded.NetId);
+            Assert.Equal(original.BoltTightness, decoded.BoltTightness);
+            Assert.Equal(original.ScrewInt, decoded.ScrewInt);
+        }
+
+        [Fact]
+        public void PartState_RoundTrips()
+        {
+            var original = new PartState
+            {
+                NetId = 0xDEADBEEF,
+                Flags = PartState.FlagInstalled,
+                Tightness = 200,
+                Wear = 42,
+            };
+
+            var decoded = Assert.IsType<PartState>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.NetId, decoded.NetId);
+            Assert.Equal(original.Flags, decoded.Flags);
+            Assert.Equal(original.Tightness, decoded.Tightness);
+            Assert.Equal(original.Wear, decoded.Wear);
         }
 
         [Fact]
@@ -202,6 +284,44 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Entries[0].ItemId, decoded.Entries[0].ItemId);
             Assert.Equal(original.Entries[0].Position.X, decoded.Entries[0].Position.X);
             Assert.Equal(original.Entries[0].Rotation.Z, decoded.Entries[0].Rotation.Z);
+        }
+
+        [Fact]
+        public void WorldBoltSnapshot_RoundTrips()
+        {
+            var original = new WorldBoltSnapshot();
+            original.Entries.Add(new WorldBoltSnapshot.Entry
+            {
+                NetId = 0xAABBCCDD,
+                BoltTightness = 5,
+                ScrewInt = 10,
+            });
+
+            var decoded = Assert.IsType<WorldBoltSnapshot>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Single(decoded.Entries);
+            Assert.Equal(original.Entries[0].NetId, decoded.Entries[0].NetId);
+            Assert.Equal(original.Entries[0].BoltTightness, decoded.Entries[0].BoltTightness);
+            Assert.Equal(original.Entries[0].ScrewInt, decoded.Entries[0].ScrewInt);
+        }
+
+        [Fact]
+        public void WorldPartSnapshot_RoundTrips()
+        {
+            var original = new WorldPartSnapshot();
+            original.Entries.Add(new WorldPartSnapshot.Entry
+            {
+                NetId = 0x11223344,
+                Flags = PartState.FlagInstalled,
+                Tightness = 128,
+                Wear = 10,
+            });
+
+            var decoded = Assert.IsType<WorldPartSnapshot>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Single(decoded.Entries);
+            Assert.Equal(original.Entries[0].NetId, decoded.Entries[0].NetId);
+            Assert.Equal(original.Entries[0].Flags, decoded.Entries[0].Flags);
+            Assert.Equal(original.Entries[0].Tightness, decoded.Entries[0].Tightness);
+            Assert.Equal(original.Entries[0].Wear, decoded.Entries[0].Wear);
         }
     }
 }

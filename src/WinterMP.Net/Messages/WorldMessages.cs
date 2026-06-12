@@ -115,6 +115,7 @@ namespace WinterMP.Net.Messages
         public const byte FlagAccOn = 2;
         public const byte FlagBlinkerLeft = 4;
         public const byte FlagBlinkerRight = 8;
+        public const byte FlagHazard = 16;
 
         public uint VehicleId;
         public byte OwnerPlayerId;
@@ -125,11 +126,14 @@ namespace WinterMP.Net.Messages
         public ushort SpeedTenthsKmh;
         /// <summary>Fuel gauge fill, 0 = empty, 255 = full.</summary>
         public byte FuelLevel;
+        /// <summary>Coolant temp gauge, 0-255 maps to 0-120 °C.</summary>
+        public byte CoolantTemp;
 
         public bool EngineOn => (Flags & FlagEngineOn) != 0;
         public bool AccOn => (Flags & FlagAccOn) != 0;
         public bool BlinkerLeft => (Flags & FlagBlinkerLeft) != 0;
         public bool BlinkerRight => (Flags & FlagBlinkerRight) != 0;
+        public bool HazardOn => (Flags & FlagHazard) != 0;
 
         public MessageId Id => MessageId.VehicleState;
 
@@ -142,6 +146,7 @@ namespace WinterMP.Net.Messages
             writer.WriteUInt16(Rpm);
             writer.WriteUInt16(SpeedTenthsKmh);
             writer.WriteByte(FuelLevel);
+            writer.WriteByte(CoolantTemp);
         }
 
         public void Read(NetReader reader)
@@ -153,33 +158,41 @@ namespace WinterMP.Net.Messages
             Rpm = reader.ReadUInt16();
             SpeedTenthsKmh = reader.ReadUInt16();
             FuelLevel = reader.ReadByte();
+            CoolantTemp = reader.ReadByte();
         }
     }
 
     /// <summary>
-    /// Window frost and heater knob settings, streamed at ~2 Hz by whoever is
-    /// near or driving the vehicle. Receivers write the values into the car's
-    /// GlassFrosting and HeaterUnit FSMs (and dashboard knob variables for the
-    /// visible dial positions).
+    /// Window frost, interior fogging, and heater knob settings, streamed at ~2 Hz
+    /// by whoever is near or driving the vehicle. Receivers write the values into
+    /// the car's GlassFrosting / Freezing / HeaterUnit FSMs (and dashboard knob
+    /// variables for the visible dial positions).
     /// </summary>
     public sealed class VehicleClimate : IMessage
     {
         public const byte FlagWindowHeater = 1;
         public const byte FlagGlassDefrosting = 2;
+        /// <summary>Someone is in the cabin (drives interior sweat/fog sim).</summary>
+        public const byte FlagPlayerIn = 4;
 
         public uint VehicleId;
         public byte OwnerPlayerId;
         public ushort Sequence;
-        /// <summary>Frost amount, 0 = clear glass, 255 = fully frosted.</summary>
+        /// <summary>Exterior ice, 0 = clear, 255 = fully frosted.</summary>
         public byte Frost;
         public byte Flags;
         /// <summary>Heater temp / blower / direction, each 0-255 (game-specific scale).</summary>
         public byte HeaterTemp;
         public byte HeaterBlower;
         public byte HeaterDirection;
+        /// <summary>Interior window fog / condensation, 0 = clear, 255 = fully fogged.</summary>
+        public byte Fog;
+        /// <summary>Cabin air temperature, 0-255 maps to 0-40 °C.</summary>
+        public byte CabinTemp;
 
         public bool WindowHeaterOn => (Flags & FlagWindowHeater) != 0;
         public bool GlassDefrosting => (Flags & FlagGlassDefrosting) != 0;
+        public bool PlayerIn => (Flags & FlagPlayerIn) != 0;
 
         public MessageId Id => MessageId.VehicleClimate;
 
@@ -193,6 +206,8 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(HeaterTemp);
             writer.WriteByte(HeaterBlower);
             writer.WriteByte(HeaterDirection);
+            writer.WriteByte(Fog);
+            writer.WriteByte(CabinTemp);
         }
 
         public void Read(NetReader reader)
@@ -205,7 +220,85 @@ namespace WinterMP.Net.Messages
             HeaterTemp = reader.ReadByte();
             HeaterBlower = reader.ReadByte();
             HeaterDirection = reader.ReadByte();
+            Fog = reader.ReadByte();
+            CabinTemp = reader.ReadByte();
         }
+    }
+
+    /// <summary>
+    /// Authoritative car-part variables after install/bolt settles (Stop/Bolted/
+    /// Unbolted). Receivers overwrite Installed/Tightness/Wear on the part Data FSM.
+    /// </summary>
+    public sealed class PartState : IMessage
+    {
+        public const byte FlagInstalled = 1;
+
+        public uint NetId;
+        public byte Flags;
+        /// <summary>0-255 encoding of the part's Tightness float (0-1 range).</summary>
+        public byte Tightness;
+        /// <summary>0-255 encoding of the part's Wear float (0-1 range).</summary>
+        public byte Wear;
+
+        public MessageId Id => MessageId.PartState;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(NetId);
+            writer.WriteByte(Flags);
+            writer.WriteByte(Tightness);
+            writer.WriteByte(Wear);
+        }
+
+        public void Read(NetReader reader)
+        {
+            NetId = reader.ReadUInt32();
+            Flags = reader.ReadByte();
+            Tightness = reader.ReadByte();
+            Wear = reader.ReadByte();
+        }
+    }
+
+    /// <summary>
+    /// Authoritative bolt tightness after a wrench turn settles (Set pos). Receivers
+    /// overwrite Screw FSM variables and replay Set pos for the visual.
+    /// </summary>
+    public sealed class BoltState : IMessage
+    {
+        public uint NetId;
+        public ushort BoltTightness;
+        public ushort ScrewInt;
+
+        public MessageId Id => MessageId.BoltState;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(NetId);
+            writer.WriteUInt16(BoltTightness);
+            writer.WriteUInt16(ScrewInt);
+        }
+
+        public void Read(NetReader reader)
+        {
+            NetId = reader.ReadUInt32();
+            BoltTightness = reader.ReadUInt16();
+            ScrewInt = reader.ReadUInt16();
+        }
+    }
+
+    /// <summary>
+    /// A tracked pickable was eaten or otherwise destroyed. Receivers remove their
+    /// local copy of the rigidbody.
+    /// </summary>
+    public sealed class ItemDespawn : IMessage
+    {
+        public uint ItemId;
+
+        public MessageId Id => MessageId.ItemDespawn;
+
+        public void Write(NetWriter writer) => writer.WriteUInt32(ItemId);
+
+        public void Read(NetReader reader) => ItemId = reader.ReadUInt32();
     }
 
     /// <summary>
@@ -215,6 +308,9 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class TimeSync : IMessage
     {
+        /// <summary>Unknown / not yet probed.</summary>
+        public const byte DayUnknown = 255;
+
         /// <summary>Game hour, 1-24 (the SUN clock FSM's own convention).</summary>
         public byte Hour;
         public float Minutes;
@@ -222,6 +318,10 @@ namespace WinterMP.Net.Messages
         public float TempNew;
         public bool Snowing;
         public int ForecastIndex;
+        /// <summary>Total in-game days elapsed (Systems/Statistics :: DaysPassed).</summary>
+        public ushort DaysPassed;
+        /// <summary>0 = Monday … 6 = Sunday; <see cref="DayUnknown"/> when unavailable.</summary>
+        public byte DayOfWeek;
 
         public MessageId Id => MessageId.TimeSync;
 
@@ -233,6 +333,8 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(TempNew);
             writer.WriteBool(Snowing);
             writer.WriteInt32(ForecastIndex);
+            writer.WriteUInt16(DaysPassed);
+            writer.WriteByte(DayOfWeek);
         }
 
         public void Read(NetReader reader)
@@ -243,6 +345,8 @@ namespace WinterMP.Net.Messages
             TempNew = reader.ReadSingle();
             Snowing = reader.ReadBool();
             ForecastIndex = reader.ReadInt32();
+            DaysPassed = reader.ReadUInt16();
+            DayOfWeek = reader.ReadByte();
         }
     }
 }

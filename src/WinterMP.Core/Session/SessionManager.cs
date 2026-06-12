@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using WinterMP.Core.Catalog;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
 using WinterMP.Net.Transport;
@@ -58,6 +59,9 @@ namespace WinterMP.Core.Session
 
         private LaunchMode _pendingMode = LaunchMode.None;
         private ulong _pendingLobbyId;
+        private bool _steamCallbacksRegistered;
+        private float _failedAt = -1f;
+        private const float FailedRecoverySeconds = 45f;
 
         public void Initialize(LaunchOptions launch)
         {
@@ -92,20 +96,38 @@ namespace WinterMP.Core.Session
             Util.BootTrace.Crumb("SessionManager.Initialize: done");
         }
 
-        private void RunPendingLaunchMode()
+        private static bool IsMainMenuReady()
         {
-            if (_pendingMode == LaunchMode.None || State != SessionState.Idle) return;
-
-            bool menuReady;
             try
             {
-                menuReady = Application.loadedLevelName == "MainMenu";
+                return Application.loadedLevelName == "MainMenu";
             }
             catch
             {
-                menuReady = false;
+                return false;
             }
+        }
 
+        private void EnsureSteamInviteHandlers()
+        {
+#if STEAMWORKS
+            if (_steamCallbacksRegistered) return;
+            if (!IsMainMenuReady() && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds) return;
+
+            Steam.SteamBootstrap.EnsureInitialized();
+            Steam.SteamLobbyManager.EnsureCallbacksRegistered();
+            Steam.SteamBootstrap.SelfPump = true;
+            _steamCallbacksRegistered = true;
+#endif
+        }
+
+        private void RunPendingLaunchMode()
+        {
+            EnsureSteamInviteHandlers();
+
+            if (_pendingMode == LaunchMode.None || State != SessionState.Idle) return;
+
+            bool menuReady = IsMainMenuReady();
             if (!menuReady && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds) return;
 
             var mode = _pendingMode;
@@ -163,6 +185,8 @@ namespace WinterMP.Core.Session
                 LocalPlayerId = 0;
                 _steamOpStartedAt = Time.unscaledTime;
                 RefreshPlayerNameFromSteam();
+                Steam.SteamBootstrap.SelfPump = true;
+                Steam.SteamLobbyManager.LeaveLobby();
                 SetState(SessionState.Hosting, "Creating Steam lobby...");
                 Steam.SteamLobbyManager.HostLobby(OnSteamTransportReady, OnSteamFailure);
             }
@@ -176,6 +200,39 @@ namespace WinterMP.Core.Session
                 "Steam transport not compiled in (drop Steamworks.NET.dll into libs/ and rebuild). " +
                 "Starting a loopback dev session instead.");
             StartDevLoopback();
+#endif
+        }
+
+        /// <summary>
+        /// Steam overlay / friends-list join while the game is running (or cold-start
+        /// <c>+connect_lobby</c> queued until the main menu).
+        /// </summary>
+        public void RequestJoinFromSteam(ulong lobbyId)
+        {
+            if (lobbyId == 0) return;
+
+#if STEAMWORKS
+            Steam.SteamLobbyManager.EnsureCallbacksRegistered();
+
+            if (State == SessionState.Failed)
+                SetState(SessionState.Idle, "Idle");
+
+            if (State != SessionState.Idle)
+            {
+                WinterMPPlugin.Log.LogInfo($"Leaving current session to join lobby {lobbyId}...");
+                Shutdown("Switching to friend's lobby.");
+            }
+
+            if (IsMainMenuReady())
+                StartJoin(lobbyId);
+            else
+            {
+                _pendingMode = LaunchMode.Join;
+                _pendingLobbyId = lobbyId;
+                SetState(SessionState.Idle, $"Queued Steam join to lobby {lobbyId}...");
+            }
+#else
+            WinterMPPlugin.Log.LogWarning($"Steam join to lobby {lobbyId} ignored: Steam transport not compiled in.");
 #endif
         }
 
@@ -193,6 +250,8 @@ namespace WinterMP.Core.Session
                 IsHost = false;
                 _steamOpStartedAt = Time.unscaledTime;
                 RefreshPlayerNameFromSteam();
+                Steam.SteamBootstrap.SelfPump = true;
+                Steam.SteamLobbyManager.LeaveLobby();
                 SetState(SessionState.Connecting, $"Joining lobby {lobbyId}...");
                 Steam.SteamLobbyManager.JoinLobby(lobbyId, OnSteamTransportReady, OnSteamFailure);
             }
@@ -332,6 +391,7 @@ namespace WinterMP.Core.Session
             }
 #endif
             RunPendingLaunchMode();
+            RecoverFromFailed();
 
             _transport?.Update();
             _devClient?.Update();
@@ -339,16 +399,28 @@ namespace WinterMP.Core.Session
             if (State == SessionState.Hosting || State == SessionState.Connected)
                 PingLoop();
 
-            if (WinterMPPlugin.DevKeysEnabled.Value && State == SessionState.Idle)
+            if (WinterMPPlugin.DevKeysEnabled.Value)
             {
-                if (UnityEngine.Input.GetKeyDown(KeyCode.F8))
+                if (State == SessionState.Idle && UnityEngine.Input.GetKeyDown(KeyCode.F8))
                     StartDevLoopback();
-                else if (UnityEngine.Input.GetKeyDown(KeyCode.F10))
+                else if ((State == SessionState.Idle || State == SessionState.Failed)
+                         && UnityEngine.Input.GetKeyDown(KeyCode.F10))
                 {
+                    if (State == SessionState.Failed)
+                        SetState(SessionState.Idle, "Idle");
                     WinterMPPlugin.Log.LogInfo("F10 pressed — hosting a real Steam lobby.");
                     StartHost();
                 }
             }
+        }
+
+        private void RecoverFromFailed()
+        {
+            if (State != SessionState.Failed || _failedAt < 0f) return;
+            if (Time.unscaledTime - _failedAt < FailedRecoverySeconds) return;
+
+            SetState(SessionState.Idle, "Idle — join via Steam or press F10 to host");
+            AddChatLine("* Session reset — try joining again.");
         }
 
         private void OnDestroy()
@@ -389,7 +461,7 @@ namespace WinterMP.Core.Session
                     ProtocolVersion = ProtocolInfo.Version,
                     ModVersion = MyPluginInfo.PLUGIN_VERSION,
                     GameVersion = Util.SafeApp.GameVersion,
-                    CatalogHash = 0, // TODO(M3): hash of the loaded sync catalog
+                    CatalogHash = SyncCatalog.Hash,
                     PlayerName = LocalPlayerName,
                 };
                 SendTo(peer, request, Channel.ReliableOrdered);
@@ -510,6 +582,24 @@ namespace WinterMP.Core.Session
                         Broadcast(rawEvent, Channel.ReliableOrdered, except: peer);
                     break;
 
+                case BoltState boltState:
+                    Sync.WorldSyncManager.Instance?.OnRemoteBoltState(boltState);
+                    if (IsHost)
+                        Broadcast(boltState, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case PartState partState:
+                    Sync.WorldSyncManager.Instance?.OnRemotePartState(partState);
+                    if (IsHost)
+                        Broadcast(partState, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case ItemDespawn itemDespawn:
+                    Sync.WorldSyncManager.Instance?.OnRemoteItemDespawn(itemDespawn);
+                    if (IsHost)
+                        Broadcast(itemDespawn, Channel.ReliableOrdered, except: peer);
+                    break;
+
                 case ItemTransform itemTransform:
                     Sync.WorldSyncManager.Instance?.OnRemoteItemTransform(itemTransform);
                     if (IsHost)
@@ -534,6 +624,14 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteTimeSync(timeSync);
                     break;
 
+                case WalletState walletState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteWalletState(walletState);
+                    break;
+
+                case PurchaseIntent purchaseIntent when IsHost:
+                    Sync.WorldSyncManager.Instance?.OnHostPurchaseIntent(purchaseIntent);
+                    break;
+
                 case WorldSnapshotRequest snapshotRequest when IsHost:
                     HandleSnapshotRequest(peer, snapshotRequest);
                     break;
@@ -544,6 +642,14 @@ namespace WinterMP.Core.Session
 
                 case WorldItemSnapshot itemSnapshot when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteItemSnapshot(itemSnapshot);
+                    break;
+
+                case WorldBoltSnapshot boltSnapshot when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteBoltSnapshot(boltSnapshot);
+                    break;
+
+                case WorldPartSnapshot partSnapshot when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemotePartSnapshot(partSnapshot);
                     break;
 
                 case DisconnectMessage disconnect:
@@ -566,6 +672,8 @@ namespace WinterMP.Core.Session
                 refusal = $"Mod version mismatch (host {MyPluginInfo.PLUGIN_VERSION}, you {request.ModVersion}).";
             else if (request.GameVersion != hostGameVersion)
                 refusal = $"Game version mismatch (host {hostGameVersion}, you {request.GameVersion}).";
+            else if (SyncCatalog.Loaded && request.CatalogHash != SyncCatalog.Hash)
+                refusal = $"Sync catalog mismatch (host {SyncCatalog.Hash:X8}, you {request.CatalogHash:X8}). Reinstall WinterMP.";
 
             if (refusal != null)
             {
@@ -641,6 +749,13 @@ namespace WinterMP.Core.Session
                 messages++;
             }
 
+            var wallet = world.BuildWalletState();
+            if (wallet != null)
+            {
+                SendTo(peer, wallet, Channel.ReliableOrdered);
+                messages++;
+            }
+
             WinterMPPlugin.Log.LogInfo($"Sent world snapshot to {peer} ({messages} messages).");
         }
 
@@ -648,8 +763,10 @@ namespace WinterMP.Core.Session
         {
             if (!response.Accepted)
             {
-                SetState(SessionState.Failed, $"Join refused: {response.Reason}");
-                WinterMPPlugin.Log.LogWarning($"Join refused by host: {response.Reason}");
+                string reason = response.Reason ?? "unknown reason";
+                AddChatLine($"* Join refused: {reason}");
+                SetState(SessionState.Failed, $"Join refused: {reason}");
+                WinterMPPlugin.Log.LogWarning($"Join refused by host: {reason}");
                 Shutdown("Refused by host.");
                 return;
             }
@@ -798,6 +915,7 @@ namespace WinterMP.Core.Session
         {
             State = state;
             StatusText = status;
+            _failedAt = state == SessionState.Failed ? Time.unscaledTime : -1f;
             WinterMPPlugin.Log.LogInfo($"Session: {state} — {status}");
         }
     }

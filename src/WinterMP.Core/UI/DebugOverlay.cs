@@ -1,4 +1,5 @@
 using UnityEngine;
+using WinterMP.Core.Catalog;
 using WinterMP.Core.Session;
 
 namespace WinterMP.Core.UI
@@ -20,11 +21,35 @@ namespace WinterMP.Core.UI
             if (session == null) return;
 
             HandleChatKeys(session);
+            DrawSessionBadge(session);
 
             if (Input.GetKey(KeyCode.Tab))
                 DrawPlayerList(session);
 
             DrawChat(session);
+        }
+
+        private static void DrawSessionBadge(SessionManager session)
+        {
+            if (session.State == SessionState.Idle) return;
+
+            string color = session.State switch
+            {
+                SessionState.Connected => "#88FF88",
+                SessionState.Hosting => "#88CCFF",
+                SessionState.Connecting => "#FFDD88",
+                SessionState.Failed => "#FF8888",
+                _ => "#FFFFFF",
+            };
+
+            GUILayout.BeginArea(new Rect(Screen.width - 268f, 8f, 256f, 44f), GUI.skin.box);
+            GUILayout.Label(
+                $"<color={color}><b>{session.State}</b></color> — {session.StatusText}",
+                RichLabel());
+            GUILayout.Label(
+                $"WinterMP {MyPluginInfo.PLUGIN_VERSION} · protocol v{WinterMP.Net.ProtocolInfo.Version}",
+                RichLabel());
+            GUILayout.EndArea();
         }
 
         private void HandleChatKeys(SessionManager session)
@@ -55,12 +80,15 @@ namespace WinterMP.Core.UI
 
         private void DrawPlayerList(SessionManager session)
         {
-            const float width = 320f;
-            float height = 106f + session.PlayerCount * 22f;
+            const float width = 340f;
+            float height = 128f + session.PlayerCount * 22f;
             GUILayout.BeginArea(new Rect(12f, 12f, width, height), GUI.skin.box);
 
-            GUILayout.Label($"<b>WinterMP</b> — {session.StatusText}", RichLabel());
+            GUILayout.Label($"<b>WinterMP</b> {MyPluginInfo.PLUGIN_VERSION} (proto v{WinterMP.Net.ProtocolInfo.Version})", RichLabel());
+            GUILayout.Label(session.StatusText);
             GUILayout.Label($"You: {session.LocalPlayerName} (id {session.LocalPlayerId})");
+            if (session.State == SessionState.Failed)
+                GUILayout.Label("<color=#FFAAAA>F10 = host · Join Game = Steam friend</color>", RichLabel());
 
             foreach (var player in session.Players)
             {
@@ -69,12 +97,14 @@ namespace WinterMP.Core.UI
             }
 
             var world = Sync.WorldSyncManager.Instance;
-            if (world != null && (world.DoorCount > 0 || world.BoltCount > 0 || world.ItemCount > 0))
+            if (world != null && (world.DoorCount > 0 || world.BuyCount > 0 || world.ItemCount > 0))
             {
-                // Same id hash on both machines = identical sync catalogs.
+                string catalog = SyncCatalog.Loaded
+                    ? $" cat {SyncCatalog.Hash:X8}"
+                    : " cat MISSING";
                 GUILayout.Label(
-                    $"World: {world.DoorCount} doors, {world.BoltCount} bolts, " +
-                    $"{world.ItemCount} items [{world.IdHash:X8}]");
+                    $"World: {world.DoorCount} doors, {world.BuyCount} shops, {world.BoltCount} bolts, " +
+                    $"{world.ItemCount} items [{world.IdHash:X8}]{catalog}");
             }
 
             GUILayout.EndArea();

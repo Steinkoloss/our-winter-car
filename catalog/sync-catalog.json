@@ -1,0 +1,124 @@
+{
+  "gameBuild": "curated",
+  "controls": [
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "ButtonLightModes",
+      "fsmName": "Use",
+      "states": ["Drive", "Park", "Off 2", "Hi Beam On", "Hi Beam Off"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "ButtonWipers",
+      "fsmName": "Use",
+      "states": ["Fast", "Slow", "Off"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "ButtonHazard",
+      "fsmName": "Use",
+      "states": ["On", "Off"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "TriggerLeft",
+      "fsmName": "Use",
+      "states": ["Up", "Down"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "TriggerRight",
+      "fsmName": "Use",
+      "states": ["Up", "Down"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "pathContains": "/Functions/HandBrake/",
+      "objectName": "LeverPivot",
+      "fsmName": "Use",
+      "states": ["INCREASE", "DECREASE"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "ButtonWindowHeater",
+      "fsmName": "Use",
+      "states": ["On", "Off"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "TurnSignalsX",
+      "fsmName": "Use",
+      "states": ["On", "On 2", "Check player"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "ButtonHeaterTemp",
+      "fsmName": "Use",
+      "states": ["Set"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "ButtonHeaterDirection",
+      "fsmName": "Use",
+      "states": ["Set"]
+    },
+    {
+      "pathPrefix": "SORBET(190-200psi)/",
+      "objectName": "ButtonHeaterBlower",
+      "fsmName": "Use",
+      "states": ["Set angle"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "objectName": "ButtonWindowHeater",
+      "fsmName": "Use",
+      "states": ["On", "Off"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "objectName": "ButtonHazard",
+      "fsmName": "Use",
+      "states": ["On", "Off"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "objectName": "TurnSignalsX",
+      "fsmName": "Use",
+      "states": ["On", "On 2", "Check player"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "objectName": "ButtonHeaterTemp",
+      "fsmName": "Use",
+      "states": ["Set"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "objectName": "ButtonHeaterDirection",
+      "fsmName": "Use",
+      "states": ["Set"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "objectName": "ButtonHeaterBlower",
+      "fsmName": "Use",
+      "states": ["Set"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "pathContains": "/HandBrake/",
+      "fsmName": "Brake",
+      "states": ["Brake ON", "Brake OFF"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "fsmName": "LightModes",
+      "states": ["Driving", "Park", "Off", "Hi Beam"]
+    },
+    {
+      "pathPrefix": "CORRIS/",
+      "fsmName": "WiperModes",
+      "states": ["Fast", "Slow", "Off"]
+    }
+  ]
+}
