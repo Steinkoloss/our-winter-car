@@ -1,4 +1,4 @@
-; Our Winter Car installer ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â build with:  .\tools\build-installer.ps1
+; Our Winter Car installer ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â build with:  .\tools\build-installer.ps1
 
 #ifexist "..\src\WinterMP.Launcher\bin\publish\win-x64\WinterMPLauncher.exe"
   #define SourceDir "..\src\WinterMP.Launcher\bin\publish\win-x64"
@@ -9,8 +9,8 @@
 [Setup]
 AppId={{A7B3C4D5-E6F7-4890-ABCD-EF1234567890}
 AppName=Our Winter Car
-AppVersion=0.1.10
-AppVerName=Our Winter Car 0.1.10
+AppVersion=0.1.11
+AppVerName=Our Winter Car 0.1.11
 AppPublisher=Our Winter Car
 DefaultDirName={autopf}\Our Winter Car
 DefaultGroupName=Our Winter Car

@@ -1,9 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher
@@ -16,7 +14,6 @@ namespace WinterMP.Launcher
         private UpdateCheckResult? _pendingUpdate;
         private bool _updateBusy;
         private bool _installInProgress;
-        private bool _loadingGamePath;
         private DateTime _lastAutoInstallAttempt = DateTime.MinValue;
         private readonly DispatcherTimer _statusTimer;
 
@@ -35,7 +32,6 @@ namespace WinterMP.Launcher
                 TryAutoInstallIfNeeded();
             };
 
-            InitializeGamePath();
             RefreshStatus();
             ShowLastInstallFailureIfAny();
             ShowWelcomeIfNeeded();
@@ -54,65 +50,6 @@ namespace WinterMP.Launcher
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WinterMP", "last-install.log");
 
-        private void InitializeGamePath()
-        {
-            _loadingGamePath = true;
-            try
-            {
-                GamePathBox.Text = _settings.CustomGameDir ?? string.Empty;
-            }
-            finally
-            {
-                _loadingGamePath = false;
-            }
-        }
-
-        private void SaveGamePath()
-        {
-            if (_loadingGamePath) return;
-
-            string text = GamePathBox.Text.Trim();
-            string? dir = string.IsNullOrEmpty(text) ? null : text;
-            if (dir == _settings.CustomGameDir) return;
-
-            _settings.CustomGameDir = dir;
-            _settings.Save();
-            AppendLog(dir == null
-                ? "Game folder cleared — auto-detecting via Steam."
-                : $"Game folder set: {dir}");
-            RefreshStatus();
-            TryAutoInstallIfNeeded();
-        }
-
-        private void GamePathBox_LostFocus(object sender, RoutedEventArgs e) => SaveGamePath();
-
-        private void GamePathBox_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
-            {
-                SaveGamePath();
-                Keyboard.ClearFocus();
-            }
-        }
-
-        private void BrowseGamePath_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFolderDialog { Title = "Select My Winter Car folder" };
-            if (dialog.ShowDialog() != true) return;
-
-            _loadingGamePath = true;
-            try
-            {
-                GamePathBox.Text = dialog.FolderName;
-            }
-            finally
-            {
-                _loadingGamePath = false;
-            }
-
-            SaveGamePath();
-        }
-
         private void ShowLastInstallFailureIfAny()
         {
             if (!File.Exists(LastInstallLogPath)) return;
@@ -123,7 +60,7 @@ namespace WinterMP.Launcher
                 {
                     ShowWarning(
                         "The last automatic install failed (often because the game was not found yet). " +
-                        "The launcher will retry when the game folder is set.");
+                        "Open Settings and set the game folder if needed.");
                 }
             }
             catch
@@ -243,12 +180,13 @@ namespace WinterMP.Launcher
             BuildStatusText.Text = protocol > 0
                 ? $"launcher {ModPayload.LauncherVersion}, mod {ModMeta.ModVersion}, protocol v{protocol}"
                 : $"launcher {ModPayload.LauncherVersion} (rebuild launcher)";
+            BuildStatusText.ToolTip = null;
 
             if (_game == null)
             {
-                GameDetectText.Text = string.IsNullOrWhiteSpace(_settings.CustomGameDir)
-                    ? "Not detected — install My Winter Car via Steam or browse to the folder."
-                    : "Folder not found — check the path above.";
+                GameStatusText.Text = string.IsNullOrWhiteSpace(_settings.CustomGameDir)
+                    ? "Not found — install via Steam or set folder in Settings"
+                    : "Folder not found — check path in Settings";
                 BepInExStatusText.Text = "—";
                 ModStatusText.Text = "—";
                 HostButton.IsEnabled = false;
@@ -258,7 +196,8 @@ namespace WinterMP.Launcher
                 return;
             }
 
-            GameDetectText.Text = $"Detected · build {_game.BuildId ?? "?"}";
+            GameStatusText.Text = $"Found · build {_game.BuildId ?? "?"}";
+            BuildStatusText.ToolTip = _game.GameDir;
             OpenGameButton.IsEnabled = true;
 
             var compat = CompatManifest.Load();
@@ -345,7 +284,7 @@ namespace WinterMP.Launcher
             error = null;
             if (_game == null)
             {
-                error = "Game folder not found. Browse to your My Winter Car folder above.";
+                error = "Game folder not found. Open Settings and browse to your My Winter Car folder.";
                 return false;
             }
 
@@ -492,6 +431,7 @@ namespace WinterMP.Launcher
             {
                 _settings = dialog.Settings;
                 RefreshStatus();
+                TryAutoInstallIfNeeded();
             }
         }
 

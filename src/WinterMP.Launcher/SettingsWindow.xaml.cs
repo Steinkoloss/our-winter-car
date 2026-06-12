@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
 using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher
@@ -16,7 +17,15 @@ namespace WinterMP.Launcher
             InitializeComponent();
             Settings = settings;
             _game = game;
+            GamePathBox.Text = settings.CustomGameDir ?? string.Empty;
             InitializeDisplaySettings();
+        }
+
+        private void Browse_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog { Title = "Select My Winter Car folder" };
+            if (dialog.ShowDialog() == true)
+                GamePathBox.Text = dialog.FolderName;
         }
 
         private void InitializeDisplaySettings()
@@ -108,7 +117,12 @@ namespace WinterMP.Launcher
                 ? MonitorCombo.SelectedIndex
                 : UnityDisplayPrefs.DefaultMonitor;
             Settings.DisplaySettingsSaved = true;
-            Settings.Save();
+        }
+
+        private void SaveGamePath()
+        {
+            string text = GamePathBox.Text.Trim();
+            Settings.CustomGameDir = string.IsNullOrEmpty(text) ? null : text;
         }
 
         private void RemoveMod_Click(object sender, RoutedEventArgs e)
@@ -140,7 +154,9 @@ namespace WinterMP.Launcher
 
         private void Done_Click(object sender, RoutedEventArgs e)
         {
+            SaveGamePath();
             SaveDisplaySettings();
+            Settings.Save();
             DialogResult = true;
             Close();
         }
