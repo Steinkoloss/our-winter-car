@@ -3,14 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Name="RootWindow"
         Title="Our Winter Car Launcher"
-        Width="720" Height="780"
-        MinWidth="640" MinHeight="680"
+        Width="720" Height="620"
+        MinWidth="640" MinHeight="520"
         Background="{StaticResource BgBrush}"
         FontSize="14"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="28">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -25,56 +24,13 @@
                 <TextBlock x:Name="SubtitleText" Text="Co-op multiplayer only · host or join via Steam"
                            FontSize="15" Foreground="{StaticResource SubtleBrush}" Margin="0,6,0,0" />
             </StackPanel>
-            <Button Content="Settings" HorizontalAlignment="Right" VerticalAlignment="Top"
-                    Click="SettingsButton_Click" Padding="18,9" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                <Button Content="Info" Click="InfoButton_Click" Padding="18,9" Margin="0,0,10,0" />
+                <Button Content="Settings" Click="SettingsButton_Click" Padding="18,9" />
+            </StackPanel>
         </Grid>
 
-        <Border Grid.Row="1" Style="{StaticResource SectionBorderStyle}" Margin="0,0,0,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="32" />
-                    <RowDefinition Height="32" />
-                    <RowDefinition Height="32" />
-                    <RowDefinition Height="32" />
-                    <RowDefinition Height="32" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
-                           Text="Info" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,12" />
-
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Game" Style="{StaticResource LabelStyle}" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="GameStatusText"
-                           Style="{StaticResource ValueStyle}" Text="Searching…" TextWrapping="Wrap" />
-
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="BepInEx" Style="{StaticResource LabelStyle}" />
-                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="BepInExStatusText" Style="{StaticResource ValueStyle}" Text="—" />
-
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Mod" Style="{StaticResource LabelStyle}" />
-                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="ModStatusText" Style="{StaticResource ValueStyle}" Text="—" />
-
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="Backups" Style="{StaticResource LabelStyle}" />
-                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="BackupStatusText" Style="{StaticResource ValueStyle}" Text="—" />
-
-                <TextBlock Grid.Row="5" Grid.Column="0" Text="Versions" Style="{StaticResource LabelStyle}" />
-                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="BuildStatusText" Style="{StaticResource ValueStyle}"
-                           Text="—" TextTrimming="CharacterEllipsis" ToolTipService.ShowOnDisabled="True" />
-
-                <TextBlock Grid.Row="6" Grid.Column="0" Text="Updates" Style="{StaticResource LabelStyle}" Margin="0,8,0,0" />
-                <TextBlock Grid.Row="6" Grid.Column="1" x:Name="UpdateStatusText" Style="{StaticResource ValueStyle}"
-                           Text="Not checked yet" Margin="0,8,0,0" TextWrapping="Wrap" />
-                <Button Grid.Row="6" Grid.Column="2" Content="Check" Click="CheckUpdatesButton_Click"
-                        Margin="10,8,0,0" Padding="14,6" VerticalAlignment="Top" />
-            </Grid>
-        </Border>
-
-        <Border Grid.Row="2" x:Name="UpdateBannerPanel" Background="#FF2A2418" CornerRadius="8"
+        <Border Grid.Row="1" x:Name="UpdateBannerPanel" Background="#FF2A2418" CornerRadius="8"
                 Padding="14" Margin="0,0,0,12" Visibility="Collapsed"
                 BorderBrush="#FFE8C547" BorderThickness="1">
             <StackPanel>
@@ -88,21 +44,20 @@
                             Margin="0,0,8,0" IsEnabled="False" />
                     <Button x:Name="UpdateReleaseNotesButton" Content="Release notes" Click="UpdateReleaseNotesButton_Click"
                             Margin="0,0,8,0" />
-                    <Button x:Name="DismissUpdateButton" Content="Dismiss" Click="DismissUpdateButton_Click" />
                 </WrapPanel>
             </StackPanel>
         </Border>
 
-        <TextBlock Grid.Row="3" x:Name="WarningStatusText" Foreground="{StaticResource WarnBrush}"
+        <TextBlock Grid.Row="2" x:Name="WarningStatusText" Foreground="{StaticResource WarnBrush}"
                    FontSize="14" TextWrapping="Wrap" Margin="0,0,0,12" Visibility="Collapsed" />
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,12">
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,12">
             <Button Content="Backup save" Click="BackupButton_Click" Margin="0,0,10,0" />
             <Button Content="Restore save…" Click="RestoreButton_Click" Margin="0,0,10,0" />
             <Button x:Name="OpenGameButton" Content="Open game folder" Click="OpenGameButton_Click" IsEnabled="False" />
         </StackPanel>
 
-        <Border Grid.Row="5" Style="{StaticResource SectionBorderStyle}" MinHeight="100">
+        <Border Grid.Row="4" Style="{StaticResource SectionBorderStyle}" MinHeight="100">
             <DockPanel LastChildFill="True">
                 <TextBlock DockPanel.Dock="Top" Text="Activity" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,10" />
                 <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
@@ -112,7 +67,7 @@
             </DockPanel>
         </Border>
 
-        <Grid Grid.Row="6" Margin="0,20,0,0">
+        <Grid Grid.Row="5" Margin="0,20,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="16" />

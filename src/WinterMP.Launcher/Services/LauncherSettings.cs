@@ -10,8 +10,6 @@ namespace WinterMP.Launcher.Services
             "WinterMP", "launcher-settings.json");
 
         public bool SeenWelcome { get; set; }
-        /// <summary>Hide the update banner for this release tag until a newer one ships.</summary>
-        public string? DismissedUpdateTag { get; set; }
         public DateTime? LastUpdateCheckUtc { get; set; }
         /// <summary>GitHub PAT with repo read access — required for updates while the repo is private.</summary>
         public string? GitHubToken { get; set; }

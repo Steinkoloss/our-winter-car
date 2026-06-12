@@ -16,6 +16,11 @@ namespace WinterMP.Launcher
         private bool _installInProgress;
         private DateTime _lastAutoInstallAttempt = DateTime.MinValue;
         private readonly DispatcherTimer _statusTimer;
+        private InfoWindow? _openInfoWindow;
+        private string _updateStatusText = "Not checked yet";
+
+        internal UpdateCheckResult? PendingUpdate => _pendingUpdate;
+        internal bool IsUpdateBusy => _updateBusy;
 
         public MainWindow()
         {
@@ -41,6 +46,8 @@ namespace WinterMP.Launcher
                 _statusTimer.Start();
                 TryAutoInstallIfNeeded();
                 await CheckForUpdatesAsync(showUpToDate: false);
+                if (_pendingUpdate?.AnyUpdateAvailable == true)
+                    await PromptForUpdateAsync(required: false);
             };
 
             Closed += (_, _) => _statusTimer.Stop();
@@ -88,7 +95,7 @@ namespace WinterMP.Launcher
             _settings.Save();
         }
 
-        private async Task CheckForUpdatesAsync(bool showUpToDate)
+        internal async Task CheckForUpdatesAsync(bool showUpToDate)
         {
             try
             {
@@ -102,18 +109,23 @@ namespace WinterMP.Launcher
 
                 if (!result.IsSuccess)
                 {
-                    UpdateStatusText.Text = result.ErrorMessage ?? "Update check failed";
+                    _updateStatusText = result.ErrorMessage ?? "Update check failed";
                     AppendLog($"Update check failed: {result.ErrorMessage}");
+                    RefreshOpenInfoWindow();
                     return;
                 }
 
                 if (result.AnyUpdateAvailable)
                 {
+                    _updateStatusText = result.StatusSummary;
                     AppendLog($"Update available: {result.StatusSummary} ({result.ReleaseUrl})");
+                    RefreshOpenInfoWindow();
+                    if (showUpToDate)
+                        await PromptForUpdateAsync(required: false);
                     return;
                 }
 
-                UpdateStatusText.Text = $"Up to date ({result.Tag})";
+                _updateStatusText = $"Up to date ({result.Tag})";
                 AppendLog($"Up to date ({result.Tag}).");
                 if (showUpToDate)
                 {
@@ -126,8 +138,9 @@ namespace WinterMP.Launcher
             }
             catch (Exception ex)
             {
-                UpdateStatusText.Text = "Update check failed";
+                _updateStatusText = "Update check failed";
                 AppendLog($"Update check failed: {ex.Message}");
+                RefreshOpenInfoWindow();
             }
         }
 
@@ -139,10 +152,9 @@ namespace WinterMP.Launcher
                 return;
             }
 
-            bool dismissed = _settings.DismissedUpdateTag == _pendingUpdate.Tag;
-            bool showBanner = _pendingUpdate.AnyUpdateAvailable && !dismissed;
+            bool showBanner = _pendingUpdate.AnyUpdateAvailable;
 
-            UpdateStatusText.Text = _pendingUpdate.AnyUpdateAvailable
+            _updateStatusText = _pendingUpdate.AnyUpdateAvailable
                 ? _pendingUpdate.StatusSummary
                 : $"Up to date ({_pendingUpdate.Tag})";
 
@@ -168,44 +180,33 @@ namespace WinterMP.Launcher
                 && _pendingUpdate.PayloadDownloadUrl != null
                 && !_updateBusy;
             UpdateReleaseNotesButton.IsEnabled = !string.IsNullOrEmpty(_pendingUpdate.ReleaseUrl);
+            RefreshOpenInfoWindow();
         }
 
-        private void RefreshStatus()
+        internal LauncherInfoSnapshot BuildInfoSnapshot()
         {
-            _game = GameLocator.FindInstall(_settings.CustomGameDir);
-            WarningStatusText.Visibility = Visibility.Collapsed;
-            WarningStatusText.Text = string.Empty;
-
             ushort protocol = ModMeta.ProtocolVersion;
-            BuildStatusText.Text = protocol > 0
+            string buildStatus = protocol > 0
                 ? $"launcher {ModPayload.LauncherVersion}, mod {ModMeta.ModVersion}, protocol v{protocol}"
                 : $"launcher {ModPayload.LauncherVersion} (rebuild launcher)";
-            BuildStatusText.ToolTip = null;
 
             if (_game == null)
             {
-                GameStatusText.Text = string.IsNullOrWhiteSpace(_settings.CustomGameDir)
-                    ? "Not found — install via Steam or set folder in Settings"
-                    : "Folder not found — check path in Settings";
-                BepInExStatusText.Text = "—";
-                ModStatusText.Text = "—";
-                HostButton.IsEnabled = false;
-                JoinButton.IsEnabled = false;
-                OpenGameButton.IsEnabled = false;
-                ApplyUpdateUi();
-                return;
+                return new LauncherInfoSnapshot
+                {
+                    GameStatus = string.IsNullOrWhiteSpace(_settings.CustomGameDir)
+                        ? "Not found — install via Steam or set folder in Settings"
+                        : "Folder not found — check path in Settings",
+                    BepInExStatus = "—",
+                    ModStatus = "—",
+                    BackupStatus = "—",
+                    BuildStatus = buildStatus,
+                    UpdateStatus = _updateStatusText,
+                };
             }
 
-            GameStatusText.Text = $"Found · build {_game.BuildId ?? "?"}";
-            BuildStatusText.ToolTip = _game.GameDir;
-            OpenGameButton.IsEnabled = true;
-
-            var compat = CompatManifest.Load();
-            compat?.ValidatePayload()?.Let(ShowWarning);
-            compat?.ValidateGameBuild(_game.BuildId)?.Let(ShowWarning);
-
             var bepStatus = BepInExInstaller.GetStatus(_game.GameDir);
-            BepInExStatusText.Text = bepStatus switch
+            string bepInExStatus = bepStatus switch
             {
                 BepInExStatus.NotInstalled => "Not installed",
                 BepInExStatus.MissingEntrypointFix => "Needs config fix",
@@ -214,18 +215,113 @@ namespace WinterMP.Launcher
             };
 
             string? modVersion = BepInExInstaller.GetInstalledModVersion(_game.GameDir);
-            ModStatusText.Text = modVersion ?? "Not installed";
-
+            string modStatus = modVersion ?? "Not installed";
             if (modVersion != null && modVersion != ModMeta.ModVersion)
-            {
-                ModStatusText.Text += $" (bundle {ModMeta.ModVersion})";
-                ShowWarning("Installed mod differs from launcher bundle — use Update mod in the banner.");
-            }
+                modStatus += $" (bundle {ModMeta.ModVersion})";
 
             int backups = SaveBackupService.CountBackups();
-            BackupStatusText.Text = SaveBackupService.SaveDirExists()
+            string backupStatus = SaveBackupService.SaveDirExists()
                 ? $"{backups} backup(s)"
                 : $"{backups} backup(s) — no save yet";
+
+            return new LauncherInfoSnapshot
+            {
+                GameStatus = $"Found · build {_game.BuildId ?? "?"}",
+                GameDirTooltip = _game.GameDir,
+                BepInExStatus = bepInExStatus,
+                ModStatus = modStatus,
+                BackupStatus = backupStatus,
+                BuildStatus = buildStatus,
+                UpdateStatus = _updateStatusText,
+            };
+        }
+
+        private void RefreshOpenInfoWindow()
+        {
+            _openInfoWindow?.ApplySnapshot(BuildInfoSnapshot(), _pendingUpdate);
+        }
+
+        private string BuildUpdatePromptMessage(bool required)
+        {
+            if (_pendingUpdate == null) return string.Empty;
+
+            var lines = new List<string> { $"{_pendingUpdate.Tag} is available.\n" };
+            if (_pendingUpdate.LauncherUpdateAvailable)
+                lines.Add($"Launcher: {_pendingUpdate.LauncherVersion} → {_pendingUpdate.RemoteVersion}");
+            if (_pendingUpdate.ModUpdateAvailable)
+            {
+                Version from = _pendingUpdate.InstalledModVersion ?? _pendingUpdate.BundledModVersion;
+                lines.Add($"Mod: {from} → {_pendingUpdate.RemoteVersion}");
+            }
+
+            lines.Add("\nUpdate now? Everyone in a session needs the same version.");
+            if (required)
+                lines.Add("\nYou can't host or join until you're up to date.");
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>
+        /// Shows the update prompt. Returns true when play/setup may continue.
+        /// </summary>
+        private async Task<bool> PromptForUpdateAsync(bool required)
+        {
+            if (_updateBusy || _pendingUpdate == null || !_pendingUpdate.IsSuccess) return true;
+            if (!_pendingUpdate.AnyUpdateAvailable) return true;
+
+            var answer = MessageBox.Show(this,
+                BuildUpdatePromptMessage(required),
+                "Update?",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (answer != MessageBoxResult.Yes)
+                return !required;
+
+            await ApplyPendingUpdatesAsync(skipConfirm: true);
+            return !_pendingUpdate.AnyUpdateAvailable;
+        }
+
+        private async Task ApplyPendingUpdatesAsync(bool skipConfirm)
+        {
+            if (_pendingUpdate == null || !_pendingUpdate.AnyUpdateAvailable) return;
+
+            if (_pendingUpdate.LauncherUpdateAvailable && _pendingUpdate.SetupDownloadUrl != null)
+            {
+                await RunLauncherUpdateAsync(skipConfirm);
+                return;
+            }
+
+            if (_pendingUpdate.ModUpdateAvailable && _game != null && _pendingUpdate.PayloadDownloadUrl != null)
+                await RunModUpdateAsync();
+        }
+
+        private void RefreshStatus()
+        {
+            _game = GameLocator.FindInstall(_settings.CustomGameDir);
+            WarningStatusText.Visibility = Visibility.Collapsed;
+            WarningStatusText.Text = string.Empty;
+
+            if (_game == null)
+            {
+                HostButton.IsEnabled = false;
+                JoinButton.IsEnabled = false;
+                OpenGameButton.IsEnabled = false;
+                ApplyUpdateUi();
+                RefreshOpenInfoWindow();
+                return;
+            }
+
+            OpenGameButton.IsEnabled = true;
+
+            var compat = CompatManifest.Load();
+            compat?.ValidatePayload()?.Let(ShowWarning);
+            compat?.ValidateGameBuild(_game.BuildId)?.Let(ShowWarning);
+
+            var bepStatus = BepInExInstaller.GetStatus(_game.GameDir);
+            string? modVersion = BepInExInstaller.GetInstalledModVersion(_game.GameDir);
+
+            if (modVersion != null && modVersion != ModMeta.ModVersion)
+                ShowWarning("Installed mod differs from launcher bundle — use Update mod in the banner.");
 
             bool playable = bepStatus == BepInExStatus.Ready && modVersion != null;
             HostButton.IsEnabled = playable && !_installInProgress;
@@ -241,6 +337,7 @@ namespace WinterMP.Launcher
                 ShowWarning("Mod not installed yet — installing automatically when possible.");
 
             ApplyUpdateUi();
+            RefreshOpenInfoWindow();
         }
 
         private void ShowWarning(string text)
@@ -252,8 +349,14 @@ namespace WinterMP.Launcher
                 WarningStatusText.Text += "\n" + text;
         }
 
-        private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e) =>
-            await CheckForUpdatesAsync(showUpToDate: true);
+        private void InfoButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new InfoWindow(this) { Owner = this };
+            dialog.ApplySnapshot(BuildInfoSnapshot(), _pendingUpdate);
+            _openInfoWindow = dialog;
+            dialog.Closed += (_, _) => _openInfoWindow = null;
+            dialog.ShowDialog();
+        }
 
         private void TryAutoInstallIfNeeded()
         {
@@ -337,18 +440,21 @@ namespace WinterMP.Launcher
             }
         }
 
-        private async Task RunLauncherUpdateAsync()
+        private async Task RunLauncherUpdateAsync(bool skipConfirm = false)
         {
             if (_pendingUpdate?.SetupDownloadUrl == null) return;
             if (_updateBusy) return;
 
-            var confirm = MessageBox.Show(this,
-                $"Download and install {_pendingUpdate.Tag}?\n\n" +
-                "The launcher will close and restart when the update finishes.",
-                "Update launcher",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (confirm != MessageBoxResult.Yes) return;
+            if (!skipConfirm)
+            {
+                var confirm = MessageBox.Show(this,
+                    $"Download and install {_pendingUpdate.Tag}?\n\n" +
+                    "The launcher will close and restart when the update finishes.",
+                    "Update launcher",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (confirm != MessageBoxResult.Yes) return;
+            }
 
             _updateBusy = true;
             SetUpdateButtonsEnabled(false);
@@ -374,15 +480,6 @@ namespace WinterMP.Launcher
         {
             UpdateModButton.IsEnabled = enabled;
             UpdateLauncherButton.IsEnabled = enabled;
-        }
-
-        private void DismissUpdateButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_pendingUpdate == null) return;
-            _settings.DismissedUpdateTag = _pendingUpdate.Tag;
-            _settings.Save();
-            UpdateBannerPanel.Visibility = Visibility.Collapsed;
-            AppendLog($"Dismissed update banner for {_pendingUpdate.Tag}.");
         }
 
         private void UpdateReleaseNotesButton_Click(object sender, RoutedEventArgs e)
@@ -435,9 +532,10 @@ namespace WinterMP.Launcher
             }
         }
 
-        private void HostButton_Click(object sender, RoutedEventArgs e)
+        private async void HostButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
+            if (!await PromptForUpdateAsync(required: true)) return;
             if (!EnsureReadyForLaunch()) return;
 
             try
@@ -453,9 +551,10 @@ namespace WinterMP.Launcher
             }
         }
 
-        private void JoinButton_Click(object sender, RoutedEventArgs e)
+        private async void JoinButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
+            if (!await PromptForUpdateAsync(required: true)) return;
             if (!EnsureReadyForLaunch()) return;
 
             MessageBox.Show(this,
