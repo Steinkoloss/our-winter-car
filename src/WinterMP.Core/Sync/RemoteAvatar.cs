@@ -3,8 +3,8 @@ using UnityEngine;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Visible body for a remote player: cloned NPC mesh with look yaw driven
-    /// entirely by the streamed camera rotation on the avatar root.
+    /// Visible body for a remote player: cloned NPC mesh with look yaw on the avatar
+    /// root and skeletal walk cycles from a hidden Move-FSM driver.
     /// </summary>
     public sealed class RemoteAvatar : MonoBehaviour
     {
@@ -21,6 +21,8 @@ namespace WinterMP.Core.Sync
         private const float CrouchHeightFactor = 2f / 3f;
         private const float NameTagClearance = 0.25f;
 
+        private static readonly Vector3 LookTargetLocalOffset = new Vector3(0f, 1.2f, 2f);
+
         private Vector3 _targetPosition;
         private float _targetYaw;
         private Renderer? _bodyRenderer;
@@ -29,7 +31,12 @@ namespace WinterMP.Core.Sync
         private Transform? _nameTagTransform;
         private RemoteCharacterAnimator? _characterAnimator;
         private Transform? _rigRoot;
+        private Transform? _moveDriver;
+        private Transform? _driverPivot;
+        private Transform? _lookTarget;
         private Vector3 _rigFootOffset;
+        private Vector3 _driverPivotBaseLocalPos;
+        private Quaternion _driverPivotBaseLocalRot = Quaternion.identity;
         private float _modelYawOffset;
         private bool _hasTarget;
         private bool _crouching;
@@ -53,6 +60,26 @@ namespace WinterMP.Core.Sync
                 avatar._modelYawOffset = rig.ModelYawOffset;
                 avatar._rigRoot.localPosition = avatar._rigFootOffset;
                 avatar._rigRoot.localRotation = Quaternion.Euler(0f, avatar._modelYawOffset, 0f);
+
+                if (rig.MoveDriver != null)
+                {
+                    rig.MoveDriver.transform.parent = root.transform;
+                    avatar._moveDriver = rig.MoveDriver.transform;
+                    avatar._driverPivot = rig.DriverPivot;
+                    avatar._driverPivotBaseLocalPos = rig.DriverPivotBaseLocalPos;
+                    avatar._driverPivotBaseLocalRot = rig.DriverPivotBaseLocalRot;
+                    avatar._moveDriver.localPosition = avatar._rigFootOffset;
+                    avatar._moveDriver.localRotation = Quaternion.Euler(0f, avatar._modelYawOffset, 0f);
+
+                    avatar._lookTarget = rig.LookTarget;
+                    if (avatar._lookTarget != null)
+                    {
+                        avatar._lookTarget.parent = root.transform;
+                        avatar._lookTarget.localPosition = LookTargetLocalOffset;
+                        NpcCharacterFactory.BindMoveTarget(rig.MoveFsm, avatar._lookTarget.gameObject);
+                    }
+                }
+
                 avatar._characterAnimator = new RemoteCharacterAnimator(rig);
                 avatar._bodyTransform = rig.BodyPivot;
             }
@@ -186,11 +213,16 @@ namespace WinterMP.Core.Sync
             }
 
             PinRigRoot();
-            _characterAnimator?.Tick();
 
             var camera = Camera.main;
             if (camera != null && _nameTagTransform != null)
                 _nameTagTransform.rotation = Quaternion.LookRotation(_nameTagTransform.position - camera.transform.position);
+        }
+
+        private void LateUpdate()
+        {
+            if (!_hasTarget) return;
+            _characterAnimator?.Tick();
         }
 
         private void ApplyLookYaw(float yawDegrees)
@@ -200,9 +232,23 @@ namespace WinterMP.Core.Sync
 
         private void PinRigRoot()
         {
-            if (_rigRoot == null) return;
-            _rigRoot.localPosition = _rigFootOffset;
-            _rigRoot.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
+            if (_rigRoot != null)
+            {
+                _rigRoot.localPosition = _rigFootOffset;
+                _rigRoot.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
+            }
+
+            if (_moveDriver != null)
+            {
+                _moveDriver.localPosition = _rigFootOffset;
+                _moveDriver.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
+
+                if (_driverPivot != null)
+                {
+                    _driverPivot.localPosition = _driverPivotBaseLocalPos;
+                    _driverPivot.localRotation = _driverPivotBaseLocalRot;
+                }
+            }
         }
 
         private static float YawFromRotation(Quaternion rotation)

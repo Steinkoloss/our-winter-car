@@ -10,6 +10,7 @@ namespace WinterMP.Launcher.Services
         {
             "WinterMP.Core.dll",
             "WinterMP.Net.dll",
+            "WinterMP.FastBoot.dll",
             "sync-catalog.json",
             "wintermp-compat.json",
         };

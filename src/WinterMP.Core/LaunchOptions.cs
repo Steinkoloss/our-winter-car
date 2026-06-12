@@ -32,10 +32,11 @@ namespace WinterMP.Core
         public string LocalAddress { get; private set; } = "127.0.0.1";
         /// <summary>Optional display-name override; wins over config and Steam persona (test tooling).</summary>
         public string? PlayerName { get; private set; }
-        /// <summary>Test tooling: auto-click Continue at the main menu once the session is up.</summary>
-        public bool AutoLoadSave { get; private set; }
-        /// <summary>Test tooling (host only): auto open/close a door N seconds after world sync is ready. 0 = off.</summary>
+        /// <summary>Test tooling: auto open/close a door N seconds after world sync is ready. 0 = off.</summary>
         public float DoorTestDelaySeconds { get; private set; }
+
+        /// <summary>Deprecated: auto-load is handled by WinterMP FastBoot. Flag is ignored.</summary>
+        public bool AutoLoadSave { get; private set; }
 
         public static LaunchOptions FromCommandLine(string[] args)
         {

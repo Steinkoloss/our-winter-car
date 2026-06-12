@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using UnityEngine;
 using WinterMP.Net;
@@ -35,6 +36,8 @@ namespace WinterMP.Tools
 
         internal static ManualLogSource Log = null!;
 
+        private ConfigEntry<bool> _autoDumpEnabled = null!;
+
         private readonly Dictionary<string, bool> _dumpedLevels = new Dictionary<string, bool>();
         private string _lastLevel = string.Empty;
         private float _scheduledDumpAt = -1f;
@@ -43,8 +46,15 @@ namespace WinterMP.Tools
         private void Awake()
         {
             Log = Logger;
+
+            _autoDumpEnabled = Config.Bind(
+                "Catalog", "AutoDumpOnLevelLoad", false,
+                "Schedule an FSM catalog dump ~20s after each new level. F9 always dumps manually.");
             Log.LogInfo($"WinterMP Tools {MyPluginInfo.PLUGIN_VERSION} loaded. " +
-                        $"Auto-dump {AutoDumpDelaySeconds}s after each level load; F9 = manual dump.");
+                        (_autoDumpEnabled.Value
+                            ? $"Auto-dump {AutoDumpDelaySeconds}s after each level load; "
+                            : string.Empty)
+                        + "F9 = manual dump.");
         }
 
         private void Update()
@@ -79,6 +89,8 @@ namespace WinterMP.Tools
             if (level.Length == 0 || _dumpedLevels.ContainsKey(level)) return;
 
             _dumpedLevels[level] = true;
+            if (!_autoDumpEnabled.Value) return;
+
             _scheduledLevel = level;
             _scheduledDumpAt = Time.realtimeSinceStartup + AutoDumpDelaySeconds;
             Log.LogInfo($"Level '{level}' loaded — catalog dump scheduled in {AutoDumpDelaySeconds}s.");

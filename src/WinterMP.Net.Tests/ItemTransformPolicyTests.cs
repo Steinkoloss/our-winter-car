@@ -99,6 +99,24 @@ namespace WinterMP.Net.Tests
             Assert.True(ItemTransformPolicy.IsStaleSequence(100, 50));
         }
 
+        [Theory]
+        [InlineData(false, true, false, true)]
+        [InlineData(false, true, true, false)]
+        [InlineData(false, false, false, false)]
+        [InlineData(true, true, false, false)]
+        public void VehicleCargoPolicy_BlocksClaimAndMovingStreams(
+            bool isVehicle,
+            bool insideActivelyDrivenVehicle,
+            bool messageIsFinal,
+            bool ignoreStream)
+        {
+            Assert.Equal(insideActivelyDrivenVehicle && !isVehicle,
+                ItemTransformPolicy.ShouldBlockClaimForVehicleCargo(isVehicle, insideActivelyDrivenVehicle));
+            Assert.Equal(ignoreStream,
+                ItemTransformPolicy.ShouldIgnoreRemoteItemTransformForVehicleCargo(
+                    isVehicle, insideActivelyDrivenVehicle, messageIsFinal));
+        }
+
         [Fact]
         public void ItemTransform_Flags_RoundTrip()
         {

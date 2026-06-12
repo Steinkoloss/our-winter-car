@@ -90,5 +90,19 @@ namespace WinterMP.Net.Sync
             ushort diff = (ushort)(newSequence - lastSequence);
             return diff == 0 || diff > short.MaxValue;
         }
+
+        /// <summary>Loose items inside an actively driven vehicle are not proximity-claimable.</summary>
+        public static bool ShouldBlockClaimForVehicleCargo(bool isVehicle, bool insideActivelyDrivenVehicle) =>
+            !isVehicle && insideActivelyDrivenVehicle;
+
+        /// <summary>
+        /// Per-item streams are ignored while cargo rides a moving vehicle; only the
+        /// vehicle transform (and a resting final) matter.
+        /// </summary>
+        public static bool ShouldIgnoreRemoteItemTransformForVehicleCargo(
+            bool isVehicle,
+            bool insideActivelyDrivenVehicle,
+            bool messageIsFinal) =>
+            !isVehicle && insideActivelyDrivenVehicle && !messageIsFinal;
     }
 }

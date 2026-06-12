@@ -25,7 +25,8 @@ Re-run **Install / Repair** after an update or if the game moved.
 2. Click **HOST GAME**.
    - Your save is backed up automatically before launch.
    - The game starts through Steam with a friends-only lobby.
-3. Wait until you reach the main menu in-game. Friends can join once the lobby is up.
+3. Wait on the main menu until a friend joins via Steam **Join Game**. You cannot
+   load your save until someone is in the lobby.
 
 **Important:** Only the host should save the game. Guests must **never** save.
 
@@ -34,12 +35,11 @@ Re-run **Install / Repair** after an update or if the game moved.
 1. Install **Our Winter Car** the same way (run the setup exe).
 2. In Steam, right-click your friend who is hosting → **Join Game**.
 
-You do not need to click anything in the launcher to join. Steam overlay join
-works from the main menu.
+You can also click **JOIN GAME** in the launcher first (it opens the game without
+hosting), then use Steam **Join Game** on your friend's profile.
 
-To play without hosting a session, use **LAUNCH GAME** in the launcher (or start
-the game normally from Steam). Friends who are joining a host use Steam
-**Join Game** — they do not need to host.
+**Our Winter Car is not for single player.** Launch **My Winter Car** from Steam
+directly if you want to play alone.
 
 ## Updates
 

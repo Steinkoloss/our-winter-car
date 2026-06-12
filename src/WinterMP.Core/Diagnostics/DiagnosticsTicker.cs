@@ -12,6 +12,7 @@ namespace WinterMP.Core.Diagnostics
         private const float DelayedReportAfterSeconds = 30f;
 
         private float _startedAt;
+        private bool _startupDone;
         private bool _delayedDone;
         private string _lastLevel = string.Empty;
 
@@ -22,6 +23,12 @@ namespace WinterMP.Core.Diagnostics
 
         private void Update()
         {
+            if (!_startupDone)
+            {
+                _startupDone = true;
+                EnvironmentReport.Write("startup", includeSteam: false);
+            }
+
             if (!_delayedDone && Time.realtimeSinceStartup - _startedAt > DelayedReportAfterSeconds)
             {
                 _delayedDone = true;

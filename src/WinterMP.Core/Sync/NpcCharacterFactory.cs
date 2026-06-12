@@ -4,8 +4,8 @@ using UnityEngine;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Visual-only NPC mesh for remote players. Clones the walker <c>Pivot</c>
-    /// subtree only — no Move/AI FSMs, which fight network look rotation.
+    /// Visual NPC mesh plus a hidden Move-FSM driver walker. The visible Pivot
+    /// clone keeps network look rotation; the driver supplies skeletal walk cycles.
     /// </summary>
     internal static class NpcCharacterFactory
     {
@@ -17,15 +17,24 @@ namespace WinterMP.Core.Sync
             "Kristian", "Alpo", "Julli", "Kale", "Rauno", "Unto",
         };
 
+        private static readonly string[] KeepFsmNames = { "Move" };
+
         private static Transform? _walkersRoot;
 
         public sealed class CharacterRig
         {
             public GameObject Root = null!;
+            public GameObject? MoveDriver;
+            public Transform? DriverPivot;
+            public Vector3 DriverPivotBaseLocalPos;
+            public Quaternion DriverPivotBaseLocalRot = Quaternion.identity;
+            public Transform? DriverSkeleton;
+            public Transform? Skeleton;
+            public Transform? LookTarget;
             public Transform BodyPivot = null!;
+            public PlayMakerFSM? MoveFsm;
             public float ModelHeight = 1.8f;
             public float FootOffsetY;
-            /// <summary>Local Y rotation so the mesh faces avatar +Z at yaw 0.</summary>
             public float ModelYawOffset;
             public string TemplateName = string.Empty;
         }
@@ -49,7 +58,7 @@ namespace WinterMP.Core.Sync
             clone.transform.rotation = Quaternion.identity;
             clone.SetActive(true);
 
-            StripSimulation(clone);
+            StripVisualSimulation(clone);
             TryApplyStandingPose(clone.transform);
 
             var renderers = clone.GetComponentsInChildren<Renderer>(true);
@@ -63,8 +72,15 @@ namespace WinterMP.Core.Sync
             {
                 Root = clone,
                 BodyPivot = FindBodyPivot(clone.transform) ?? clone.transform,
+                Skeleton = clone.transform.Find("Char/skeleton"),
                 TemplateName = template.name,
             };
+
+            if (!TryCreateMoveDriver(template, playerId, rig))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"PlayerSync: walker '{template.name}' has no Move FSM — legs will stay idle.");
+            }
 
             MeasureFootAndHeight(clone.transform, out rig.ModelHeight, out rig.FootOffsetY);
             rig.ModelYawOffset = ComputeModelYawOffset(clone.transform);
@@ -72,9 +88,71 @@ namespace WinterMP.Core.Sync
 
             WinterMPPlugin.Log.LogInfo(
                 $"PlayerSync: avatar rig '{rig.TemplateName}' for player {playerId} " +
-                $"(h={rig.ModelHeight:F2}m foot={rig.FootOffsetY:F2}m yaw={rig.ModelYawOffset:F0}°).");
+                $"(h={rig.ModelHeight:F2}m foot={rig.FootOffsetY:F2}m yaw={rig.ModelYawOffset:F0}° " +
+                $"driver={(rig.MoveFsm != null ? "yes" : "no")}).");
 
             return rig;
+        }
+
+        internal static void CopySkeletonPose(Transform source, Transform dest)
+        {
+            if (source == null || dest == null) return;
+            CopyBonePose(source, dest);
+        }
+
+        internal static void BindMoveTarget(PlayMakerFSM? moveFsm, GameObject lookTarget)
+        {
+            if (moveFsm == null) return;
+
+            try
+            {
+                var targetVar = moveFsm.FsmVariables.FindFsmGameObject("Target");
+                if (targetVar != null)
+                    targetVar.Value = lookTarget;
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogWarning($"PlayerSync: could not bind Move target: {e.Message}");
+            }
+        }
+
+        private static bool TryCreateMoveDriver(GameObject template, byte playerId, CharacterRig rig)
+        {
+            var driver = UnityEngine.Object.Instantiate(template);
+            driver.name = $"WinterMP_Driver_{playerId}";
+            driver.transform.position = Vector3.zero;
+            driver.transform.rotation = Quaternion.identity;
+            driver.SetActive(true);
+
+            StripDriverSimulation(driver);
+            SetRenderersEnabled(driver, false);
+
+            var driverPivot = driver.transform.Find("Pivot");
+            rig.MoveDriver = driver;
+            rig.DriverPivot = driverPivot;
+            rig.DriverPivotBaseLocalPos = driverPivot != null ? driverPivot.localPosition : Vector3.zero;
+            rig.DriverPivotBaseLocalRot = driverPivot != null ? driverPivot.localRotation : Quaternion.identity;
+            rig.DriverSkeleton = driver.transform.Find("Pivot/Char/skeleton");
+            rig.MoveFsm = FindMoveFsm(driver);
+
+            if (rig.MoveFsm == null || rig.DriverSkeleton == null || rig.Skeleton == null)
+            {
+                UnityEngine.Object.Destroy(driver);
+                rig.MoveDriver = null;
+                rig.MoveFsm = null;
+                rig.DriverSkeleton = null;
+                rig.LookTarget = null;
+                return false;
+            }
+
+            var lookTarget = new GameObject("WinterMP_LookTarget");
+            lookTarget.transform.parent = driver.transform;
+            lookTarget.transform.localPosition = new Vector3(0f, 1.2f, 2f);
+            rig.LookTarget = lookTarget.transform;
+
+            NeutralizeMoveFsm(rig);
+            CopySkeletonPose(rig.DriverSkeleton, rig.Skeleton);
+            return true;
         }
 
         private static GameObject? FindTemplate(byte playerId)
@@ -118,14 +196,78 @@ namespace WinterMP.Core.Sync
             return body != null ? body : root;
         }
 
-        private static void StripSimulation(GameObject root)
+        private static PlayMakerFSM? FindMoveFsm(GameObject root)
+        {
+            foreach (var fsm in root.GetComponents<PlayMakerFSM>())
+            {
+                if (fsm.FsmName == "Move")
+                    return fsm;
+            }
+
+            return null;
+        }
+
+        private static void NeutralizeMoveFsm(CharacterRig rig)
+        {
+            var fsm = rig.MoveFsm;
+            if (fsm == null) return;
+
+            try
+            {
+                var skeletonVar = fsm.FsmVariables.FindFsmGameObject("Skeleton");
+                if (skeletonVar != null && rig.DriverSkeleton != null)
+                    skeletonVar.Value = rig.DriverSkeleton.gameObject;
+
+                if (rig.LookTarget != null)
+                    BindMoveTarget(fsm, rig.LookTarget.gameObject);
+
+                var distanceVar = fsm.FsmVariables.FindFsmFloat("Distance");
+                if (distanceVar != null)
+                    distanceVar.Value = 0f;
+
+                fsm.SendEvent("STAND");
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogWarning($"PlayerSync: could not neutralize Move FSM: {e.Message}");
+            }
+        }
+
+        private static void StripVisualSimulation(GameObject root)
         {
             DestroyChild(root.transform, "RagDoll");
             DestroyChild(root.transform, "HumanTriggerCrime");
+            StripComponents(root, destroyAllFsms: true);
+        }
 
+        private static void StripDriverSimulation(GameObject root)
+        {
+            DestroyChild(root.transform, "Pivot/RagDoll");
+            DestroyChild(root.transform, "Pivot/HumanTriggerCrime");
+
+            for (int i = root.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = root.transform.GetChild(i);
+                string name = child.name;
+                if (name.StartsWith("HeadTarget", StringComparison.Ordinal)
+                    || name == "TargetPoint")
+                {
+                    UnityEngine.Object.Destroy(child.gameObject);
+                }
+            }
+
+            StripComponents(root, destroyAllFsms: false);
+        }
+
+        private static void StripComponents(GameObject root, bool destroyAllFsms)
+        {
             var fsms = root.GetComponentsInChildren<PlayMakerFSM>(true);
             for (int i = 0; i < fsms.Length; i++)
+            {
+                if (!destroyAllFsms && Array.IndexOf(KeepFsmNames, fsms[i].FsmName) >= 0)
+                    continue;
                 UnityEngine.Object.Destroy(fsms[i]);
+            }
 
             var colliders = root.GetComponentsInChildren<Collider>(true);
             for (int i = 0; i < colliders.Length; i++)
@@ -146,6 +288,16 @@ namespace WinterMP.Core.Sync
             var animations = root.GetComponentsInChildren<Animation>(true);
             for (int i = 0; i < animations.Length; i++)
                 UnityEngine.Object.Destroy(animations[i]);
+        }
+
+        private static void SetRenderersEnabled(GameObject root, bool enabled)
+        {
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null)
+                    renderers[i].enabled = enabled;
+            }
         }
 
         private static float ComputeModelYawOffset(Transform rigRoot)
@@ -207,14 +359,19 @@ namespace WinterMP.Core.Sync
 
         private static bool IsWalkerStanding(GameObject walker)
         {
+            return GetWalkerMoveState(walker) == "Standing";
+        }
+
+        private static string? GetWalkerMoveState(GameObject walker)
+        {
             foreach (var fsm in walker.GetComponents<PlayMakerFSM>())
             {
                 if (fsm.FsmName != "Move" || fsm.Fsm == null) continue;
-                try { return fsm.Fsm.ActiveStateName == "Standing"; }
-                catch { return false; }
+                try { return fsm.Fsm.ActiveStateName; }
+                catch { return null; }
             }
 
-            return false;
+            return null;
         }
 
         private static void CopyBonePose(Transform source, Transform dest)
@@ -232,9 +389,9 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        private static void DestroyChild(Transform root, string childName)
+        private static void DestroyChild(Transform root, string path)
         {
-            var child = root.Find(childName);
+            var child = root.Find(path);
             if (child != null)
                 UnityEngine.Object.Destroy(child.gameObject);
         }

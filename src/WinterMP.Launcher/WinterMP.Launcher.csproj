@@ -9,8 +9,9 @@
     <RootNamespace>WinterMP.Launcher</RootNamespace>
     <AssemblyName>WinterMPLauncher</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>0.1.8</Version>
+    <Version>0.1.9</Version>
     <WinterMPCoreOut>$(MSBuildThisFileDirectory)..\WinterMP.Core\bin\$(Configuration)\net35</WinterMPCoreOut>
+    <WinterMPFastBootOut>$(MSBuildThisFileDirectory)..\WinterMP.FastBoot\bin\$(Configuration)\net35</WinterMPFastBootOut>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +28,7 @@
       <LauncherStageDir Condition="'$(LauncherStageDir)' == ''">$(TargetDir)</LauncherStageDir>
     </PropertyGroup>
     <ItemGroup>
-      <ModPayloadFiles Include="$(WinterMPCoreOut)\WinterMP.Core.dll;$(WinterMPCoreOut)\WinterMP.Net.dll;$(WinterMPCoreOut)\sync-catalog.json" />
+      <ModPayloadFiles Include="$(WinterMPCoreOut)\WinterMP.Core.dll;$(WinterMPCoreOut)\WinterMP.Net.dll;$(WinterMPCoreOut)\sync-catalog.json;$(WinterMPFastBootOut)\WinterMP.FastBoot.dll" />
       <BepInExZip Include="$(MSBuildThisFileDirectory)..\..\vendor\BepInEx_win_x64_5.4.23.5.zip" />
     </ItemGroup>
     <MakeDir Directories="$(LauncherStageDir)payload" />
@@ -38,9 +39,11 @@
           DestinationFolder="$(LauncherStageDir)payload" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(BepInExZip)" DestinationFolder="$(LauncherStageDir)vendor" SkipUnchangedFiles="true"
           Condition="Exists('%(BepInExZip.Identity)')" />
-    <Warning Text="WinterMP.Core Release build not found Ã¢â‚¬â€ run 'dotnet build src/WinterMP.Core -c Release' before the launcher."
+    <Warning Text="WinterMP.Core Release build not found â€” run 'dotnet build src/WinterMP.Core -c Release' before the launcher."
              Condition="!Exists('$(WinterMPCoreOut)\WinterMP.Core.dll')" />
-    <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing Ã¢â‚¬â€ run tools/fetch-vendor.ps1"
+    <Warning Text="WinterMP.FastBoot Release build not found â€” run 'dotnet build src/WinterMP.FastBoot -c Release' before the launcher."
+             Condition="!Exists('$(WinterMPFastBootOut)\WinterMP.FastBoot.dll')" />
+    <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â run tools/fetch-vendor.ps1"
              Condition="!Exists('@(BepInExZip)')" />
   </Target>
 

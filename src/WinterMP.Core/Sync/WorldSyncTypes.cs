@@ -33,6 +33,13 @@ namespace WinterMP.Core.Sync
     public Vector3 LastPosition;
     public float LastMovedAt = -999f;
 
+    // Guests parent cargo to a remote-driven vehicle instead of lerping independent
+    // world-space item streams (which desync from the vehicle and fight physics).
+    public bool CargoFollowActive;
+    public uint CargoFollowVehicleId;
+    public Vector3 CargoFollowLocalPos;
+    public Quaternion CargoFollowLocalRot = Quaternion.identity;
+
     // Vehicles only: the game's drive trigger (seat). Blocked while a
     // remote driver holds the vehicle; also anchors the driver's avatar.
     public bool SeatSearched;

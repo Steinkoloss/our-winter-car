@@ -49,11 +49,8 @@ namespace WinterMP.Core.Sync
         private ushort _outChecksumSequence;
         private bool _snapshotRequested;
         private bool _wasSessionActive;
-        private bool _autoLoad;
         private float _doorTestDelay;
         private bool _selfTest;
-        private int _autoLoadStep;
-        private float _autoLoadNextAt;
         private bool _readyAnnounced;
         private bool _worldSyncDisabled;
         private int _syncErrorCount;
@@ -78,7 +75,6 @@ namespace WinterMP.Core.Sync
 
         public void Configure(LaunchOptions launch)
         {
-            _autoLoad = launch.AutoLoadSave;
             _doorTestDelay = launch.DoorTestDelaySeconds;
             _selfTest = launch.DoorTestDelaySeconds > 0f;
         }
@@ -160,9 +156,6 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             bool sessionActive = session != null
                 && (session.State == SessionState.Hosting || session.State == SessionState.Connected);
-
-            if (_autoLoad)
-                RunAutoLoad(session, sessionActive);
 
             if (!sessionActive)
             {
@@ -697,43 +690,6 @@ namespace WinterMP.Core.Sync
                 session.SendChat($"[ws] nearest id {netId.Value:X8} (host has authority)");
             else
                 RequestObjectState(netId.Value);
-        }
-
-        private void RunAutoLoad(SessionManager? session, bool sessionActive)
-        {
-            if (_autoLoadStep >= 3 || session == null || !sessionActive) return;
-            if (_lastLevel != "MainMenu") return;
-            if (session.IsHost && session.PlayerCount == 0) return;
-            if (Time.unscaledTime < _autoLoadNextAt) return;
-
-            var button = GameObject.Find("Interface/Buttons/ButtonContinue");
-            if (button == null) return;
-
-            PlayMakerFSM? fsm = null;
-            foreach (var component in button.GetComponents<PlayMakerFSM>())
-            {
-                if (component.FsmName == "SetSize") { fsm = component; break; }
-            }
-            if (fsm == null) return;
-
-            switch (_autoLoadStep)
-            {
-                case 0:
-                    WinterMPPlugin.Log.LogInfo("WorldSync: auto-loading save (Continue).");
-                    fsm.SendEvent("OVER");
-                    _autoLoadStep = 1;
-                    _autoLoadNextAt = Time.unscaledTime + 0.4f;
-                    break;
-                case 1:
-                    fsm.SendEvent("DOWN");
-                    _autoLoadStep = 2;
-                    _autoLoadNextAt = Time.unscaledTime + 5f;
-                    break;
-                case 2:
-                    WinterMPPlugin.Log.LogInfo("WorldSync: auto-load retry.");
-                    _autoLoadStep = 0;
-                    break;
-            }
         }
     }
 }

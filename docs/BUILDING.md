@@ -76,5 +76,5 @@ first — that's the loop that runs in CI.
 | `-wintermp hostlocal [port]` | Host a localhost UDP test session (no Steam) |
 | `-wintermp joinlocal [addr:port]` | Join a localhost UDP test session |
 | `-wintermp-playername <name>` | Display-name override (test tooling) |
-| `-wintermp-autoload` | Auto-click Continue at the main menu once the session is up |
+| `-wintermp-autoload` | **Deprecated** — auto-load is always on via WinterMP FastBoot when a save exists |
 | `-wintermp-doortest <sec>` | Self-test: auto open/close the WC door N seconds after world sync is ready; acks via chat |

@@ -18,18 +18,49 @@ namespace WinterMP.Launcher.Services
         /// <summary>Manual override when Steam library detection fails.</summary>
         public string? CustomGameDir { get; set; }
 
+        public int DisplayWidth { get; set; } = UnityDisplayPrefs.DefaultWidth;
+        public int DisplayHeight { get; set; } = UnityDisplayPrefs.DefaultHeight;
+        public bool Windowed { get; set; } = true;
+        public int GraphicsQuality { get; set; } = UnityDisplayPrefs.DefaultQuality;
+        public int MonitorIndex { get; set; } = UnityDisplayPrefs.DefaultMonitor;
+        /// <summary>When false, display fields are seeded from the game's registry prefs on first load.</summary>
+        public bool DisplaySettingsSaved { get; set; }
+
         public static LauncherSettings Load()
         {
             try
             {
-                if (!File.Exists(SettingsPath)) return new LauncherSettings();
+                if (!File.Exists(SettingsPath)) return SeedFromRegistry(new LauncherSettings());
                 string json = File.ReadAllText(SettingsPath);
-                return JsonSerializer.Deserialize<LauncherSettings>(json) ?? new LauncherSettings();
+                var settings = JsonSerializer.Deserialize<LauncherSettings>(json) ?? new LauncherSettings();
+                if (!settings.DisplaySettingsSaved)
+                    SeedFromRegistry(settings);
+                return settings;
             }
             catch
             {
-                return new LauncherSettings();
+                return SeedFromRegistry(new LauncherSettings());
             }
+        }
+
+        private static LauncherSettings SeedFromRegistry(LauncherSettings settings)
+        {
+            if (!UnityDisplayPrefs.TryRead(
+                    out int width,
+                    out int height,
+                    out bool windowed,
+                    out int quality,
+                    out int monitor))
+            {
+                return settings;
+            }
+
+            settings.DisplayWidth = width;
+            settings.DisplayHeight = height;
+            settings.Windowed = windowed;
+            settings.GraphicsQuality = quality;
+            settings.MonitorIndex = monitor;
+            return settings;
         }
 
         public void Save()

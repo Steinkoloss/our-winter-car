@@ -23,6 +23,7 @@ function Sync-CompatManifest {
 Sync-CompatManifest
 & (Join-Path $PSScriptRoot "fetch-vendor.ps1")
 
+dotnet build (Join-Path $root "src\WinterMP.FastBoot\WinterMP.FastBoot.csproj") -c Release
 dotnet build (Join-Path $root "src\WinterMP.Core\WinterMP.Core.csproj") -c Release
 
 $launcherProj = Join-Path $root "src\WinterMP.Launcher\WinterMP.Launcher.csproj"

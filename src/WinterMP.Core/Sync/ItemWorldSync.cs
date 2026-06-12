@@ -62,6 +62,8 @@ namespace WinterMP.Core.Sync
                 item.LocalDriveActive = false;
                 item.LocallyOwned = false;
                 item.LastRemoteAt = -999f;
+                item.CargoFollowActive = false;
+                item.CargoFollowVehicleId = 0;
                 item.RemoteEngineUntil = -999f;
                 item.RemoteClimateUntil = -999f;
                 item.RemoteEngineOn = false;
@@ -101,10 +103,10 @@ namespace WinterMP.Core.Sync
         /// <summary>Remote pose smoothing (same feel as RemoteAvatar).</summary>
         private const float RemoteLerpSpeed = 12f;
         private const float RemoteSnapDistance = 15f;
-        /// <summary>Items inside a remote-driven vehicle are never claimed locally —
-        /// the vehicle's owner streams them; claiming them here would create the
-        /// kinematic-battering-ram feedback loop that dragged cars around in v1.</summary>
-        private const float VehicleInteriorRadius = 3.5f;
+        /// <summary>Items inside a driven vehicle are never claimed locally —
+        /// cargo rides with the driver's physics / vehicle stream, not independent
+        /// world-space item packets (which desync and fight the car).</summary>
+        private const float VehicleInteriorRadius = 7f;
         
 
         internal int ScanItems()
@@ -480,6 +482,21 @@ namespace WinterMP.Core.Sync
         {
             if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null) return;
 
+            float now = Time.unscaledTime;
+            if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
+                && cargoVehicle != null)
+            {
+                // Driver simulates cargo with the vehicle — never apply guest item streams.
+                if (IsLocalVehicleOperator(cargoVehicle))
+                    return;
+
+                if (ItemTransformPolicy.ShouldIgnoreRemoteItemTransformForVehicleCargo(
+                        item.IsVehicle,
+                        IsVehicleInMotion(cargoVehicle, now),
+                        message.IsFinal))
+                    return;
+            }
+
             // Stale unreliable packets from the same owner are dropped (wrap-aware).
             if (message.OwnerPlayerId == item.RemoteOwner)
             {
@@ -571,7 +588,6 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        private readonly List<Vector3> _remoteVehiclePositions = new List<Vector3>();
         private readonly List<uint> _deadItemIds = new List<uint>();
 
         internal void UpdateItems(SessionManager session)
@@ -580,17 +596,6 @@ namespace WinterMP.Core.Sync
 
             _bridge.FindLocalPlayer();
             float now = Time.unscaledTime;
-            // Remote-driven vehicles first: items inside them must not be claimed
-            // locally (their owner streams them), so collect cabin positions.
-            _remoteVehiclePositions.Clear();
-            foreach (var item in _items.Values)
-            {
-                if (item.IsVehicle && item.Body != null
-                    && item.RemoteOwner != WorldSyncIds.NoOwner
-                    && ItemTransformPolicy.IsRemoteStreamLive(
-                        item.LastRemoteAt, now, item.RemoteIsDriver, item.RemoteVehicleStream))
-                    _remoteVehiclePositions.Add(item.Body.transform.position);
-            }
 
             foreach (var pair in _items)
             {
@@ -623,9 +628,35 @@ namespace WinterMP.Core.Sync
 
                 if (remoteDriven && !item.LocallyOwned)
                 {
+                    if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
+                        && cargoVehicle != null
+                        && ShouldFollowVehicleCargo(item, cargoVehicle, now))
+                    {
+                        item.RemoteOwner = WorldSyncIds.NoOwner;
+                        item.RemoteIsDriver = false;
+                        item.RemoteVehicleStream = false;
+                        item.LastRemoteAt = -999f;
+                        ApplyVehicleCargoFollow(item, cargoVehicle, body);
+                        continue;
+                    }
+
                     ApplyRemoteSmoothing(item, body);
                     continue;
                 }
+
+                if (TryGetContainingVehicle(item, out SyncedItem? localCargoVehicle)
+                    && localCargoVehicle != null
+                    && IsLocalVehicleOperator(localCargoVehicle)
+                    && IsVehicleInMotion(localCargoVehicle, now))
+                {
+                    ClearCargoFollow(item);
+                    ReleaseLocalCargoOwnership(item, body);
+                    item.LastPosition = body.transform.position;
+                    item.LastMovedAt = now;
+                    continue;
+                }
+
+                ClearCargoFollow(item);
 
                 if (item.RemoteOwner != WorldSyncIds.NoOwner && !remoteDriven)
                 {
@@ -735,16 +766,12 @@ namespace WinterMP.Core.Sync
             if ((position - _bridge.LocalPlayer.position).sqrMagnitude >= item.ClaimRadius * item.ClaimRadius)
                 return false;
 
-            // Loose items riding inside someone else's moving vehicle belong to that
-            // vehicle's owner — never fight over them from the passenger side.
-            if (!item.IsVehicle)
-            {
-                foreach (var vehiclePosition in _remoteVehiclePositions)
-                {
-                    if ((position - vehiclePosition).sqrMagnitude < VehicleInteriorRadius * VehicleInteriorRadius)
-                        return false;
-                }
-            }
+            if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
+                && cargoVehicle != null
+                && ItemTransformPolicy.ShouldBlockClaimForVehicleCargo(
+                    item.IsVehicle,
+                    IsVehicleInMotion(cargoVehicle, now)))
+                return false;
 
             return true;
         }
@@ -797,6 +824,105 @@ namespace WinterMP.Core.Sync
             }
 
             item.LastPosition = transform.position;
+        }
+
+        private static void ClearCargoFollow(SyncedItem item)
+        {
+            item.CargoFollowActive = false;
+            item.CargoFollowVehicleId = 0;
+        }
+
+        private static void ReleaseLocalCargoOwnership(SyncedItem item, Rigidbody body)
+        {
+            if (item.RemoteOwner != WorldSyncIds.NoOwner)
+            {
+                body.isKinematic = item.KinematicSaved ? item.OriginalKinematic : body.isKinematic;
+                item.RemoteOwner = WorldSyncIds.NoOwner;
+                item.RemoteIsDriver = false;
+                item.RemoteVehicleStream = false;
+                item.LastRemoteAt = -999f;
+            }
+
+            if (item.KinematicSaved)
+                body.isKinematic = item.OriginalKinematic;
+
+            item.LocallyOwned = false;
+        }
+
+        private void ApplyVehicleCargoFollow(SyncedItem item, SyncedItem vehicle, Rigidbody body)
+        {
+            if (vehicle.Body == null) return;
+
+            var vehicleTransform = vehicle.Body.transform;
+            if (!item.CargoFollowActive || item.CargoFollowVehicleId != vehicle.Id)
+            {
+                item.CargoFollowVehicleId = vehicle.Id;
+                item.CargoFollowLocalPos = vehicleTransform.InverseTransformPoint(body.transform.position);
+                item.CargoFollowLocalRot = Quaternion.Inverse(vehicleTransform.rotation) * body.transform.rotation;
+                item.CargoFollowActive = true;
+            }
+
+            if (!item.KinematicSaved)
+            {
+                item.OriginalKinematic = body.isKinematic;
+                item.KinematicSaved = true;
+            }
+
+            body.isKinematic = true;
+            body.transform.position = vehicleTransform.TransformPoint(item.CargoFollowLocalPos);
+            body.transform.rotation = vehicleTransform.rotation * item.CargoFollowLocalRot;
+            body.velocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+            item.LastPosition = body.transform.position;
+        }
+
+        private bool ShouldFollowVehicleCargo(SyncedItem item, SyncedItem vehicle, float now)
+        {
+            if (item.IsVehicle || IsPlayerHeldItem(item) || vehicle.Body == null) return false;
+            if (vehicle.RemoteOwner == WorldSyncIds.NoOwner) return false;
+            if (!ItemTransformPolicy.IsRemoteStreamLive(
+                    vehicle.LastRemoteAt, now, vehicle.RemoteIsDriver, vehicle.RemoteVehicleStream))
+                return false;
+
+            return IsVehicleInMotion(vehicle, now);
+        }
+
+        private bool IsVehicleInMotion(SyncedItem vehicle, float now)
+        {
+            if (vehicle.Body == null) return false;
+            if (vehicle.LocalDriveActive) return true;
+            return now - vehicle.LastMovedAt < vehicle.StillSeconds;
+        }
+
+        private bool TryGetContainingVehicle(SyncedItem item, out SyncedItem? vehicle)
+        {
+            vehicle = null;
+            if (item.IsVehicle || item.Body == null) return false;
+
+            float radiusSqr = VehicleInteriorRadius * VehicleInteriorRadius;
+            Vector3 position = item.Body.transform.position;
+            float bestSqr = float.MaxValue;
+
+            foreach (var candidate in _items.Values)
+            {
+                if (!candidate.IsVehicle || candidate.Body == null) continue;
+
+                float sqr = (position - candidate.Body.transform.position).sqrMagnitude;
+                if (sqr > radiusSqr || sqr >= bestSqr) continue;
+
+                bestSqr = sqr;
+                vehicle = candidate;
+            }
+
+            return vehicle != null;
+        }
+
+        private bool IsPlayerHeldItem(SyncedItem item)
+        {
+            if (item.Body == null) return false;
+
+            _bridge.FindLocalPlayer();
+            return _bridge.LocalPlayer != null && item.Body.transform.IsChildOf(_bridge.LocalPlayer);
         }
 
         private static Transform GetVehicleSceneRoot(Transform bodyTransform)

@@ -37,9 +37,13 @@ namespace WinterMP.Core
 
             Util.BootTrace.Crumb("Awake step 2: parsing command line");
             var launch = LaunchOptions.FromCommandLine(Environment.GetCommandLineArgs());
+            Util.BootTrace.Crumb("Awake step 2b: mode=" + launch.Mode);
 
-            Util.BootTrace.Crumb("Awake step 3: startup environment report");
-            Diagnostics.EnvironmentReport.Write("startup", includeSteam: false);
+            if (launch.Mode == LaunchMode.HostLocal)
+            {
+                Util.BootTrace.Crumb("Awake step 3: hostlocal single-instance unlock");
+                TryReleaseHostLocalMutex("early");
+            }
 
             Util.BootTrace.Crumb("Awake step 4: creating WinterMP GameObject");
             var root = new GameObject("WinterMP");
@@ -50,6 +54,7 @@ namespace WinterMP.Core
             root.AddComponent<Diagnostics.DiagnosticsTicker>();
             Util.BootTrace.Crumb("Awake step 6: adding SessionManager");
             var session = root.AddComponent<SessionManager>();
+            root.AddComponent<UI.MainMenuHostGate>();
             root.AddComponent<Sync.PlayerSyncManager>();
             var worldSync = root.AddComponent<Sync.WorldSyncManager>();
             worldSync.Configure(launch);
@@ -58,7 +63,20 @@ namespace WinterMP.Core
             session.Initialize(launch);
 
             Util.BootTrace.Crumb("Awake done");
+            if (launch.Mode == LaunchMode.HostLocal)
+                TryReleaseHostLocalMutex("late");
+
             Log.LogInfo($"WinterMP {MyPluginInfo.PLUGIN_VERSION} loaded (mode: {launch.Mode}, protocol v{WinterMP.Net.ProtocolInfo.Version}).");
+        }
+
+        private static void TryReleaseHostLocalMutex(string phase)
+        {
+            if (Util.HostLocalReadySignal.IsPresent()) return;
+
+            if (Util.SingleInstanceUnlocker.Release())
+                Util.HostLocalReadySignal.MarkReady();
+            else
+                Log.LogWarning($"HostLocal mutex release ({phase}) did not find the lock yet.");
         }
     }
 }

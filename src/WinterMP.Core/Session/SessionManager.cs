@@ -61,6 +61,23 @@ namespace WinterMP.Core.Session
         private LaunchMode _pendingMode = LaunchMode.None;
         private ulong _pendingLobbyId;
         private bool _steamCallbacksRegistered;
+        private bool _bypassHostPlayerGate;
+
+        /// <summary>Steam host on the main menu with no guests — load/resume is blocked.</summary>
+        public bool ShouldBlockHostMainMenuLoad =>
+            IsHost
+            && !_bypassHostPlayerGate
+            && PlayerCount == 0
+            && (State == SessionState.Hosting || State == SessionState.Connected);
+
+        /// <summary>Show lobby roster on the main menu while hosting a real session.</summary>
+        public bool ShowHostLobbyRoster =>
+            IsHost
+            && !_bypassHostPlayerGate
+            && (State == SessionState.Hosting || State == SessionState.Connected);
+
+        /// <summary>Alias kept for world-sync auto-load gating.</summary>
+        public bool IsHostWaitingForPlayers => ShouldBlockHostMainMenuLoad;
         private float _failedAt = -1f;
         private const float FailedRecoverySeconds = 45f;
 
@@ -86,11 +103,6 @@ namespace WinterMP.Core.Session
             _pendingMode = launch.Mode;
             _pendingLobbyId = launch.LobbyId;
 
-            // Test mode only: drop Unity's single-instance guard immediately (does
-            // not touch Steam, so it's safe this early) so the second test instance
-            // can launch within seconds rather than after the host reaches the menu.
-            if (launch.Mode == LaunchMode.HostLocal)
-                Util.SingleInstanceUnlocker.Release();
             if (_pendingMode != LaunchMode.None)
                 SetState(SessionState.Idle, $"Waiting for game to boot before '{_pendingMode}'...");
 
@@ -182,6 +194,7 @@ namespace WinterMP.Core.Session
 #if STEAMWORKS
             try
             {
+                _bypassHostPlayerGate = false;
                 IsHost = true;
                 LocalPlayerId = 0;
                 _steamOpStartedAt = Time.unscaledTime;
@@ -278,6 +291,7 @@ namespace WinterMP.Core.Session
 
             try
             {
+                _bypassHostPlayerGate = true;
                 IsHost = true;
                 LocalPlayerId = 0;
                 ConnectionQuality.Instance.TransportName = $"UDP :{port}";
@@ -319,6 +333,7 @@ namespace WinterMP.Core.Session
         {
             if (State != SessionState.Idle) return;
 
+            _bypassHostPlayerGate = true;
             ConnectionQuality.Instance.TransportName = "Loopback";
             var pair = LoopbackTransport.CreatePair();
             IsHost = true;
@@ -345,6 +360,7 @@ namespace WinterMP.Core.Session
             _playersByPeer.Clear();
             _pendingPings.Clear();
             _steamOpStartedAt = -1f;
+            _bypassHostPlayerGate = false;
             IsHost = false;
             ConnectionQuality.Instance.Reset();
             SetState(SessionState.Idle, "Idle");
@@ -384,7 +400,7 @@ namespace WinterMP.Core.Session
             AttachTransport(transport);
             if (IsHost)
             {
-                SetState(SessionState.Hosting, "Hosting — friends can join via Steam");
+                SetState(SessionState.Hosting, "Waiting for a friend — Steam → Join Game");
             }
             // As client: handshake is sent from OnPeerConnected when the connection to the host opens.
         }
@@ -764,6 +780,9 @@ namespace WinterMP.Core.Session
 
             AddChatLine($"* {player.Name} joined");
             PlayerJoined?.Invoke(player);
+
+            if (IsHost && PlayerCount == 1)
+                StatusText = $"{player.Name} joined — click Continue";
 
             // World snapshot is request-driven: the guest asks once its own world
             // scan completes (see WorldSnapshotRequest), not at handshake time —

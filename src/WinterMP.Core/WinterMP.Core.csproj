@@ -10,7 +10,7 @@
     <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
     <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>
     <BepInExPluginName>Our Winter Car</BepInExPluginName>
-    <Version>0.1.8</Version>
+    <Version>0.1.9</Version>
     <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
   </PropertyGroup>
 
@@ -26,7 +26,7 @@
       <HintPath>$(MwcManaged)\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- PlayMaker 1.7.7.6 Ã¢â‚¬â€ the game's FSM engine; the world-sync layer hooks it directly. -->
+    <!-- PlayMaker 1.7.7.6 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the game's FSM engine; the world-sync layer hooks it directly. -->
     <Reference Include="PlayMaker">
       <HintPath>$(MwcManaged)\PlayMaker.dll</HintPath>
       <Private>false</Private>
@@ -39,7 +39,7 @@
 
   <!--
     The game embeds Steamworks.NET (classic API + CSteamworks.dll) inside
-    Assembly-CSharp-firstpass.dll Ã¢â‚¬â€ referencing it gives us the same Steam callback
+    Assembly-CSharp-firstpass.dll ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â referencing it gives us the same Steam callback
     state as the game itself. When present, the Steam transport compiles in.
   -->
   <PropertyGroup Condition="Exists('$(MwcManaged)\Assembly-CSharp-firstpass.dll')">
@@ -67,6 +67,8 @@
           Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
     <ItemGroup>
       <DeployFiles Include="$(TargetDir)WinterMP.Core.dll;$(TargetDir)WinterMP.Net.dll;$(TargetDir)sync-catalog.json" />
+      <DeployFiles Include="$(MSBuildThisFileDirectory)..\WinterMP.FastBoot\bin\$(Configuration)\net35\WinterMP.FastBoot.dll"
+                    Condition="Exists('$(MSBuildThisFileDirectory)..\WinterMP.FastBoot\bin\$(Configuration)\net35\WinterMP.FastBoot.dll')" />
     </ItemGroup>
     <Copy SourceFiles="@(DeployFiles)" Condition="Exists('%(DeployFiles.Identity)')"
           DestinationFolder="$(MwcGamePath)\BepInEx\plugins\WinterMP" SkipUnchangedFiles="true" />

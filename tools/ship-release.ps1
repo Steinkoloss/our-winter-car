@@ -73,6 +73,7 @@ function Set-ProjectVersion([string]$Version) {
 
     $issText = Get-Content $iss -Raw
     $issText = [regex]::Replace($issText, '(AppVersion=)[\d.]+', "`${1}$Version")
+    $issText = [regex]::Replace($issText, '(AppVerName=Our Winter Car )[\d.]+', "`${1}$Version")
     [System.IO.File]::WriteAllText($iss, $issText)
 
     $compat = Get-Content $compatFile -Raw | ConvertFrom-Json

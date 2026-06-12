@@ -12,15 +12,17 @@ namespace WinterMP.Launcher
         private LauncherSettings _settings = LauncherSettings.Load();
         private UpdateCheckResult? _pendingUpdate;
         private bool _updateBusy;
+        private bool _loadingDisplaySettings;
 
         public MainWindow()
         {
             InitializeComponent();
             Title = $"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}";
             SubtitleText.Text =
-                $"Install the mod · host co-op · open the game · protocol v{ModMeta.ProtocolVersion}";
+                $"Co-op multiplayer only · protocol v{ModMeta.ProtocolVersion}";
             AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
             RefreshStatus();
+            InitializeDisplaySettings();
             ShowLastInstallFailureIfAny();
             ShowWelcomeIfNeeded();
             Loaded += async (_, _) =>
@@ -59,9 +61,10 @@ namespace WinterMP.Launcher
 
             MessageBox.Show(this,
                 $"Welcome to {Branding.ProductName}!\n\n" +
-                "The launcher installs BepInEx and the mod into your My Winter Car folder automatically.\n\n" +
-                "1. HOST GAME — backs up your save and opens a friends-only Steam lobby\n" +
-                "2. LAUNCH GAME — open the game without hosting (practice alone, or join a friend via Steam Join Game)\n\n" +
+                "This launcher is for multiplayer co-op only — not single player.\n\n" +
+                "• HOST GAME — backs up your save and opens a Steam lobby. You cannot start until a friend joins.\n" +
+                "• JOIN GAME — launch so you can join a host via Steam → right-click them → Join Game.\n\n" +
+                "For single player, launch My Winter Car from Steam directly (without this launcher).\n\n" +
                 "Never save the game as a guest.",
                 Branding.ProductName,
                 MessageBoxButton.OK,
@@ -172,7 +175,7 @@ namespace WinterMP.Launcher
                 BepInExStatusText.Text = "—";
                 ModStatusText.Text = "—";
                 HostButton.IsEnabled = false;
-                PlayButton.IsEnabled = false;
+                JoinButton.IsEnabled = false;
                 InstallButton.IsEnabled = false;
                 OpenGameButton.IsEnabled = false;
                 ShowWarning("Game not found. Open Settings to browse to your install folder.");
@@ -213,7 +216,7 @@ namespace WinterMP.Launcher
 
             bool playable = bepStatus == BepInExStatus.Ready && modVersion != null;
             HostButton.IsEnabled = playable;
-            PlayButton.IsEnabled = playable;
+            JoinButton.IsEnabled = playable;
 
             if (!ModPayload.PayloadPresent())
                 ShowWarning($"Mod payload missing from launcher — reinstall {Branding.ProductName}.");
@@ -499,19 +502,27 @@ namespace WinterMP.Launcher
             }
         }
 
-        private void PlayButton_Click(object sender, RoutedEventArgs e)
+        private void JoinButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
             if (!EnsureReadyForLaunch()) return;
 
+            MessageBox.Show(this,
+                "Our Winter Car is for multiplayer only.\n\n" +
+                "To join a friend: in Steam, right-click the host → Join Game.\n\n" +
+                "For single player, launch My Winter Car from Steam (not this launcher).",
+                "Join Game",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
             try
             {
                 LaunchGame(string.Empty);
-                AppendLog("Launching game (no lobby).");
+                AppendLog("Launching to join via Steam (not hosting).");
             }
             catch (Exception ex)
             {
-                AppendLog($"Launch failed: {ex.Message}");
+                AppendLog($"Join launch failed: {ex.Message}");
             }
         }
 
@@ -538,13 +549,17 @@ namespace WinterMP.Launcher
 
         private void LaunchGame(string args)
         {
+            SaveDisplaySettingsFromUi();
+            string launchArgs = UnityDisplayPrefs.WithScreenArgs(_settings, args);
+            UnityDisplayPrefs.Apply(_settings, launchArgs);
+
             string? steamExe = GameLocator.FindSteamExe();
             if (steamExe != null)
             {
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = steamExe,
-                    Arguments = $"-applaunch {GameLocator.AppId} {args}".TrimEnd(),
+                    Arguments = $"-applaunch {GameLocator.AppId} {launchArgs}".TrimEnd(),
                     UseShellExecute = false,
                 });
                 return;
@@ -554,7 +569,7 @@ namespace WinterMP.Launcher
             Process.Start(new ProcessStartInfo
             {
                 FileName = _game!.ExePath,
-                Arguments = args,
+                Arguments = launchArgs,
                 WorkingDirectory = _game.GameDir,
                 UseShellExecute = false,
             });
@@ -565,6 +580,98 @@ namespace WinterMP.Launcher
             _log.AppendLine($"[{DateTime.Now:HH:mm:ss}] {line}");
             LogText.Text = _log.ToString();
             LogScroll.ScrollToEnd();
+        }
+
+        private void InitializeDisplaySettings()
+        {
+            _loadingDisplaySettings = true;
+            try
+            {
+                QualityCombo.ItemsSource = MwcDisplayOptions.QualityNames;
+                QualityCombo.SelectedIndex = Math.Clamp(
+                    _settings.GraphicsQuality,
+                    0,
+                    MwcDisplayOptions.QualityNames.Length - 1);
+
+                MonitorCombo.ItemsSource = MwcDisplayOptions.GetMonitorLabels();
+                MonitorCombo.SelectedIndex = Math.Clamp(
+                    _settings.MonitorIndex,
+                    0,
+                    Math.Max(0, MonitorCombo.Items.Count - 1));
+
+                RefreshResolutionCombo(_settings.DisplayWidth, _settings.DisplayHeight);
+                WindowedCheck.IsChecked = _settings.Windowed;
+            }
+            finally
+            {
+                _loadingDisplaySettings = false;
+            }
+        }
+
+        private void RefreshResolutionCombo(int preferredWidth, int preferredHeight)
+        {
+            int monitorIndex = MonitorCombo.SelectedIndex >= 0 ? MonitorCombo.SelectedIndex : _settings.MonitorIndex;
+            IReadOnlyList<ResolutionOption> options = MwcDisplayOptions.GetResolutionsForMonitor(monitorIndex);
+
+            ResolutionOption? selected = MwcDisplayOptions.FindResolution(options, preferredWidth, preferredHeight);
+            if (selected == null)
+            {
+                selected = new ResolutionOption(preferredWidth, preferredHeight);
+                options = options.Prepend(selected).ToList();
+            }
+
+            ResolutionCombo.ItemsSource = options;
+            ResolutionCombo.SelectedItem = selected;
+        }
+
+        private void MonitorCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_loadingDisplaySettings) return;
+
+            int width = _settings.DisplayWidth;
+            int height = _settings.DisplayHeight;
+            if (ResolutionCombo.SelectedItem is ResolutionOption current)
+            {
+                width = current.Width;
+                height = current.Height;
+            }
+
+            _loadingDisplaySettings = true;
+            try
+            {
+                RefreshResolutionCombo(width, height);
+            }
+            finally
+            {
+                _loadingDisplaySettings = false;
+            }
+
+            DisplaySetting_Changed(sender, e);
+        }
+
+        private void DisplaySetting_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_loadingDisplaySettings) return;
+            SaveDisplaySettingsFromUi();
+        }
+
+        private void SaveDisplaySettingsFromUi()
+        {
+            if (ResolutionCombo.SelectedItem is ResolutionOption resolution)
+            {
+                _settings.DisplayWidth = resolution.Width;
+                _settings.DisplayHeight = resolution.Height;
+            }
+
+            _settings.Windowed = WindowedCheck.IsChecked == true;
+            _settings.GraphicsQuality = QualityCombo.SelectedIndex >= 0
+                ? QualityCombo.SelectedIndex
+                : UnityDisplayPrefs.DefaultQuality;
+            _settings.MonitorIndex = MonitorCombo.SelectedIndex >= 0
+                ? MonitorCombo.SelectedIndex
+                : UnityDisplayPrefs.DefaultMonitor;
+            _settings.DisplaySettingsSaved = true;
+            _settings.Save();
         }
     }
 
