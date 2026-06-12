@@ -179,12 +179,55 @@ namespace WinterMP.Launcher.Services
             if (!File.Exists(setupPath))
                 throw new FileNotFoundException("Installer not found.", setupPath);
 
+            string launcherExe = ResolveLauncherExePath();
+            string helper = WritePostUpdateRestartScript(setupPath, launcherExe);
             Process.Start(new ProcessStartInfo
             {
-                FileName = setupPath,
-                Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART",
+                FileName = helper,
                 UseShellExecute = true,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
             });
+        }
+
+        /// <summary>Starts a fresh launcher instance and returns — caller should shut down.</summary>
+        public static void RestartApplication()
+        {
+            string launcherExe = ResolveLauncherExePath();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = launcherExe,
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(launcherExe) ?? AppContext.BaseDirectory,
+            });
+        }
+
+        private static string ResolveLauncherExePath()
+        {
+            return Environment.ProcessPath
+                ?? Process.GetCurrentProcess().MainModule?.FileName
+                ?? throw new InvalidOperationException("Could not resolve launcher executable path.");
+        }
+
+        private static string WritePostUpdateRestartScript(string setupPath, string launcherExe)
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WinterMP", "updates");
+            Directory.CreateDirectory(dir);
+
+            string scriptPath = Path.Combine(dir, $"restart-{Guid.NewGuid():N}.cmd");
+            const string setupArgs = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS";
+
+            string content =
+                "@echo off\r\n" +
+                "timeout /t 2 /nobreak >nul\r\n" +
+                $"call \"{setupPath}\" {setupArgs}\r\n" +
+                $"if exist \"{launcherExe}\" start \"\" \"{launcherExe}\"\r\n" +
+                "del \"%~f0\"\r\n";
+
+            File.WriteAllText(scriptPath, content);
+            return scriptPath;
         }
 
         private static async Task<string> DownloadAssetAsync(

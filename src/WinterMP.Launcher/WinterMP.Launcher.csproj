@@ -9,7 +9,7 @@
     <RootNamespace>WinterMP.Launcher</RootNamespace>
     <AssemblyName>WinterMPLauncher</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>0.1.9</Version>
+    <Version>0.1.10</Version>
     <WinterMPCoreOut>$(MSBuildThisFileDirectory)..\WinterMP.Core\bin\$(Configuration)\net35</WinterMPCoreOut>
     <WinterMPFastBootOut>$(MSBuildThisFileDirectory)..\WinterMP.FastBoot\bin\$(Configuration)\net35</WinterMPFastBootOut>
   </PropertyGroup>
@@ -39,11 +39,11 @@
           DestinationFolder="$(LauncherStageDir)payload" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(BepInExZip)" DestinationFolder="$(LauncherStageDir)vendor" SkipUnchangedFiles="true"
           Condition="Exists('%(BepInExZip.Identity)')" />
-    <Warning Text="WinterMP.Core Release build not found â€” run 'dotnet build src/WinterMP.Core -c Release' before the launcher."
+    <Warning Text="WinterMP.Core Release build not found Ã¢â‚¬â€ run 'dotnet build src/WinterMP.Core -c Release' before the launcher."
              Condition="!Exists('$(WinterMPCoreOut)\WinterMP.Core.dll')" />
-    <Warning Text="WinterMP.FastBoot Release build not found â€” run 'dotnet build src/WinterMP.FastBoot -c Release' before the launcher."
+    <Warning Text="WinterMP.FastBoot Release build not found Ã¢â‚¬â€ run 'dotnet build src/WinterMP.FastBoot -c Release' before the launcher."
              Condition="!Exists('$(WinterMPFastBootOut)\WinterMP.FastBoot.dll')" />
-    <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â run tools/fetch-vendor.ps1"
+    <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â run tools/fetch-vendor.ps1"
              Condition="!Exists('@(BepInExZip)')" />
   </Target>
 

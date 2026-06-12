@@ -1,5 +1,5 @@
 using System.Windows;
-using Microsoft.Win32;
+using System.Windows.Controls;
 using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher
@@ -7,6 +7,8 @@ namespace WinterMP.Launcher
     public partial class SettingsWindow : Window
     {
         private readonly GameInstall? _game;
+        private bool _loadingDisplaySettings;
+
         public LauncherSettings Settings { get; private set; }
 
         public SettingsWindow(LauncherSettings settings, GameInstall? game)
@@ -14,20 +16,99 @@ namespace WinterMP.Launcher
             InitializeComponent();
             Settings = settings;
             _game = game;
-            GamePathBox.Text = settings.CustomGameDir ?? string.Empty;
-            if (!string.IsNullOrEmpty(settings.GitHubToken))
-                GitHubTokenBox.Password = settings.GitHubToken;
+            InitializeDisplaySettings();
         }
 
-        private void Browse_Click(object sender, RoutedEventArgs e)
+        private void InitializeDisplaySettings()
         {
-            var dialog = new OpenFolderDialog
+            _loadingDisplaySettings = true;
+            try
             {
-                Title = "Select My Winter Car folder",
-            };
+                QualityCombo.ItemsSource = MwcDisplayOptions.QualityNames;
+                QualityCombo.SelectedIndex = Math.Clamp(
+                    Settings.GraphicsQuality,
+                    0,
+                    MwcDisplayOptions.QualityNames.Length - 1);
 
-            if (dialog.ShowDialog() == true)
-                GamePathBox.Text = dialog.FolderName;
+                MonitorCombo.ItemsSource = MwcDisplayOptions.GetMonitorLabels();
+                MonitorCombo.SelectedIndex = Math.Clamp(
+                    Settings.MonitorIndex,
+                    0,
+                    Math.Max(0, MonitorCombo.Items.Count - 1));
+
+                RefreshResolutionCombo(Settings.DisplayWidth, Settings.DisplayHeight);
+                WindowedCheck.IsChecked = Settings.Windowed;
+            }
+            finally
+            {
+                _loadingDisplaySettings = false;
+            }
+        }
+
+        private void RefreshResolutionCombo(int preferredWidth, int preferredHeight)
+        {
+            int monitorIndex = MonitorCombo.SelectedIndex >= 0 ? MonitorCombo.SelectedIndex : Settings.MonitorIndex;
+            IReadOnlyList<ResolutionOption> options = MwcDisplayOptions.GetResolutionsForMonitor(monitorIndex);
+
+            ResolutionOption? selected = MwcDisplayOptions.FindResolution(options, preferredWidth, preferredHeight);
+            if (selected == null)
+            {
+                selected = new ResolutionOption(preferredWidth, preferredHeight);
+                options = options.Prepend(selected).ToList();
+            }
+
+            ResolutionCombo.ItemsSource = options;
+            ResolutionCombo.SelectedItem = selected;
+        }
+
+        private void MonitorCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingDisplaySettings) return;
+
+            int width = Settings.DisplayWidth;
+            int height = Settings.DisplayHeight;
+            if (ResolutionCombo.SelectedItem is ResolutionOption current)
+            {
+                width = current.Width;
+                height = current.Height;
+            }
+
+            _loadingDisplaySettings = true;
+            try
+            {
+                RefreshResolutionCombo(width, height);
+            }
+            finally
+            {
+                _loadingDisplaySettings = false;
+            }
+
+            DisplaySetting_Changed(sender, e);
+        }
+
+        private void DisplaySetting_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_loadingDisplaySettings) return;
+            SaveDisplaySettings();
+        }
+
+        private void SaveDisplaySettings()
+        {
+            if (ResolutionCombo.SelectedItem is ResolutionOption resolution)
+            {
+                Settings.DisplayWidth = resolution.Width;
+                Settings.DisplayHeight = resolution.Height;
+            }
+
+            Settings.Windowed = WindowedCheck.IsChecked == true;
+            Settings.GraphicsQuality = QualityCombo.SelectedIndex >= 0
+                ? QualityCombo.SelectedIndex
+                : UnityDisplayPrefs.DefaultQuality;
+            Settings.MonitorIndex = MonitorCombo.SelectedIndex >= 0
+                ? MonitorCombo.SelectedIndex
+                : UnityDisplayPrefs.DefaultMonitor;
+            Settings.DisplaySettingsSaved = true;
+            Settings.Save();
         }
 
         private void RemoveMod_Click(object sender, RoutedEventArgs e)
@@ -57,19 +138,9 @@ namespace WinterMP.Launcher
             }
         }
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
+        private void Done_Click(object sender, RoutedEventArgs e)
         {
-            DialogResult = false;
-            Close();
-        }
-
-        private void Save_Click(object sender, RoutedEventArgs e)
-        {
-            string text = GamePathBox.Text.Trim();
-            Settings.CustomGameDir = string.IsNullOrEmpty(text) ? null : text;
-            if (GitHubTokenBox.Password.Length > 0)
-                Settings.GitHubToken = GitHubTokenBox.Password;
-            Settings.Save();
+            SaveDisplaySettings();
             DialogResult = true;
             Close();
         }

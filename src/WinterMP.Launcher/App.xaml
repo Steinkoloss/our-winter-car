@@ -11,6 +11,25 @@
         <SolidColorBrush x:Key="OkBrush" Color="#FF5CCB7E" />
         <SolidColorBrush x:Key="WarnBrush" Color="#FFE5A84B" />
 
+        <Style x:Key="SectionBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="BorderBrush" Value="#FF2A3240" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
         </Style>
@@ -47,6 +66,27 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FF161A20" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="BorderBrush" Value="#FF3A4250" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#FF161A20" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="BorderBrush" Value="#FF3A4250" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
         </Style>
 
         <Style TargetType="Button">

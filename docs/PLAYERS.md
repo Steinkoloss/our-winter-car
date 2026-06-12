@@ -14,10 +14,10 @@ game's title. One player hosts with their savefile; friends join through Steam
 ## First-time setup
 
 1. Run **OurWinterCar-Setup.exe** (installs the launcher and mod automatically).
-2. If setup could not find the game, open **Our Winter Car** → **Settings** and
-   browse to your My Winter Car folder, then click **Install / Repair**.
+2. If setup could not find the game, browse to your My Winter Car folder on the
+   main launcher screen. The mod installs automatically once the game is detected.
 
-Re-run **Install / Repair** after an update or if the game moved.
+If the game moved, update the folder path — install/repair runs automatically.
 
 ## Hosting a session
 
@@ -48,7 +48,7 @@ is available.
 
 - **Update mod** — downloads the payload zip and installs into your game.
 - **Update launcher** — downloads and runs the setup exe (launcher closes).
-- **Check for updates** — manual check anytime.
+- **Check** (in the Info section) — manual update check anytime.
 
 ## Save backups
 
@@ -62,11 +62,11 @@ Backups are stored in `%LOCALAPPDATA%\WinterMP\backups`.
 
 | Problem | What to try |
 |--------|-------------|
-| Game not found | Settings → browse to game folder |
+| Game not found | Browse to game folder on the main screen |
 | Friends cannot join | Same mod version; host used **HOST GAME** |
-| Version mismatch in-game | **Install / Repair** on both PCs |
+| Version mismatch in-game | **Update mod** in the launcher banner on both PCs |
 | Guests must not save | Host saves only |
-| Need help | **Diagnostics zip** → GitHub issue |
+| Need help | Open a GitHub issue on the project repo |
 
 In-game: press **TAB** for session status and version info.
 

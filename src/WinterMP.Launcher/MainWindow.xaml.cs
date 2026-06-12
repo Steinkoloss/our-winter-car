@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
+using Microsoft.Win32;
 using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher
@@ -12,7 +15,10 @@ namespace WinterMP.Launcher
         private LauncherSettings _settings = LauncherSettings.Load();
         private UpdateCheckResult? _pendingUpdate;
         private bool _updateBusy;
-        private bool _loadingDisplaySettings;
+        private bool _installInProgress;
+        private bool _loadingGamePath;
+        private DateTime _lastAutoInstallAttempt = DateTime.MinValue;
+        private readonly DispatcherTimer _statusTimer;
 
         public MainWindow()
         {
@@ -21,20 +27,91 @@ namespace WinterMP.Launcher
             SubtitleText.Text =
                 $"Co-op multiplayer only · protocol v{ModMeta.ProtocolVersion}";
             AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
+
+            _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _statusTimer.Tick += (_, _) =>
+            {
+                RefreshStatus();
+                TryAutoInstallIfNeeded();
+            };
+
+            InitializeGamePath();
             RefreshStatus();
-            InitializeDisplaySettings();
             ShowLastInstallFailureIfAny();
             ShowWelcomeIfNeeded();
+
             Loaded += async (_, _) =>
             {
+                _statusTimer.Start();
                 TryAutoInstallIfNeeded();
                 await CheckForUpdatesAsync(showUpToDate: false);
             };
+
+            Closed += (_, _) => _statusTimer.Stop();
         }
 
         private static string LastInstallLogPath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WinterMP", "last-install.log");
+
+        private void InitializeGamePath()
+        {
+            _loadingGamePath = true;
+            try
+            {
+                GamePathBox.Text = _settings.CustomGameDir ?? string.Empty;
+            }
+            finally
+            {
+                _loadingGamePath = false;
+            }
+        }
+
+        private void SaveGamePath()
+        {
+            if (_loadingGamePath) return;
+
+            string text = GamePathBox.Text.Trim();
+            string? dir = string.IsNullOrEmpty(text) ? null : text;
+            if (dir == _settings.CustomGameDir) return;
+
+            _settings.CustomGameDir = dir;
+            _settings.Save();
+            AppendLog(dir == null
+                ? "Game folder cleared — auto-detecting via Steam."
+                : $"Game folder set: {dir}");
+            RefreshStatus();
+            TryAutoInstallIfNeeded();
+        }
+
+        private void GamePathBox_LostFocus(object sender, RoutedEventArgs e) => SaveGamePath();
+
+        private void GamePathBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                SaveGamePath();
+                Keyboard.ClearFocus();
+            }
+        }
+
+        private void BrowseGamePath_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog { Title = "Select My Winter Car folder" };
+            if (dialog.ShowDialog() != true) return;
+
+            _loadingGamePath = true;
+            try
+            {
+                GamePathBox.Text = dialog.FolderName;
+            }
+            finally
+            {
+                _loadingGamePath = false;
+            }
+
+            SaveGamePath();
+        }
 
         private void ShowLastInstallFailureIfAny()
         {
@@ -45,8 +122,8 @@ namespace WinterMP.Launcher
                 if (File.ReadAllText(LastInstallLogPath).Contains("ERROR", StringComparison.Ordinal))
                 {
                     ShowWarning(
-                        "The last automatic mod install failed (often because the game was not found yet). " +
-                        "The launcher will retry now, or click Install / Repair.");
+                        "The last automatic install failed (often because the game was not found yet). " +
+                        "The launcher will retry when the game folder is set.");
                 }
             }
             catch
@@ -138,9 +215,7 @@ namespace WinterMP.Launcher
             UpdateBannerTitle.Text = $"Update available: {_pendingUpdate.Tag}";
             var lines = new List<string>();
             if (_pendingUpdate.LauncherUpdateAvailable)
-            {
                 lines.Add($"Launcher: {_pendingUpdate.LauncherVersion} → {_pendingUpdate.RemoteVersion}");
-            }
             if (_pendingUpdate.ModUpdateAvailable)
             {
                 Version from = _pendingUpdate.InstalledModVersion ?? _pendingUpdate.BundledModVersion;
@@ -171,21 +246,20 @@ namespace WinterMP.Launcher
 
             if (_game == null)
             {
-                GameStatusText.Text = "Not found — set folder in Settings or install via Steam";
+                GameDetectText.Text = string.IsNullOrWhiteSpace(_settings.CustomGameDir)
+                    ? "Not detected — install My Winter Car via Steam or browse to the folder."
+                    : "Folder not found — check the path above.";
                 BepInExStatusText.Text = "—";
                 ModStatusText.Text = "—";
                 HostButton.IsEnabled = false;
                 JoinButton.IsEnabled = false;
-                InstallButton.IsEnabled = false;
                 OpenGameButton.IsEnabled = false;
-                ShowWarning("Game not found. Open Settings to browse to your install folder.");
                 ApplyUpdateUi();
                 return;
             }
 
-            GameStatusText.Text = $"{_game.GameDir} (build {_game.BuildId ?? "?"})";
+            GameDetectText.Text = $"Detected · build {_game.BuildId ?? "?"}";
             OpenGameButton.IsEnabled = true;
-            InstallButton.IsEnabled = true;
 
             var compat = CompatManifest.Load();
             compat?.ValidatePayload()?.Let(ShowWarning);
@@ -205,8 +279,8 @@ namespace WinterMP.Launcher
 
             if (modVersion != null && modVersion != ModMeta.ModVersion)
             {
-                ModStatusText.Text += $" (launcher bundle {ModMeta.ModVersion})";
-                ShowWarning("Installed mod differs from launcher bundle — use Update mod or Install / Repair.");
+                ModStatusText.Text += $" (bundle {ModMeta.ModVersion})";
+                ShowWarning("Installed mod differs from launcher bundle — use Update mod in the banner.");
             }
 
             int backups = SaveBackupService.CountBackups();
@@ -215,8 +289,8 @@ namespace WinterMP.Launcher
                 : $"{backups} backup(s) — no save yet";
 
             bool playable = bepStatus == BepInExStatus.Ready && modVersion != null;
-            HostButton.IsEnabled = playable;
-            JoinButton.IsEnabled = playable;
+            HostButton.IsEnabled = playable && !_installInProgress;
+            JoinButton.IsEnabled = playable && !_installInProgress;
 
             if (!ModPayload.PayloadPresent())
                 ShowWarning($"Mod payload missing from launcher — reinstall {Branding.ProductName}.");
@@ -224,8 +298,8 @@ namespace WinterMP.Launcher
             if (!BepInExInstaller.VendorPackagePresent())
                 ShowWarning("BepInEx package missing from launcher (vendor folder). Reinstall from GitHub.");
 
-            if (_game != null && !BepInExInstaller.IsFullyInstalled(_game.GameDir))
-                ShowWarning("Mod not installed in the game folder yet.");
+            if (!BepInExInstaller.IsFullyInstalled(_game.GameDir) && !_installInProgress)
+                ShowWarning("Mod not installed yet — installing automatically when possible.");
 
             ApplyUpdateUi();
         }
@@ -239,58 +313,30 @@ namespace WinterMP.Launcher
                 WarningStatusText.Text += "\n" + text;
         }
 
-        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
-        {
-            RefreshStatus();
-            await CheckForUpdatesAsync(showUpToDate: false);
-        }
-
         private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e) =>
             await CheckForUpdatesAsync(showUpToDate: true);
 
-        private void InstallButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_game == null) return;
-            RunInstall(showSuccessDialog: true);
-        }
-
         private void TryAutoInstallIfNeeded()
         {
-            if (_game == null || BepInExInstaller.IsFullyInstalled(_game.GameDir))
-                return;
+            if (_installInProgress || _updateBusy || _game == null) return;
+            if (BepInExInstaller.IsFullyInstalled(_game.GameDir)) return;
+            if (!ModPayload.PayloadPresent() || !BepInExInstaller.VendorPackagePresent()) return;
 
-            if (!ModPayload.PayloadPresent() || !BepInExInstaller.VendorPackagePresent())
-                return;
+            // Status refreshes every second; retry install at most every 30 s on failure.
+            if ((DateTime.UtcNow - _lastAutoInstallAttempt).TotalSeconds < 30) return;
 
-            AppendLog("Mod not installed — running Install / Repair automatically…");
-            RunInstall(showSuccessDialog: false);
-        }
-
-        private void RunInstall(bool showSuccessDialog)
-        {
-            if (_game == null) return;
-
-            if (!TryInstallMod(out string? error))
+            _installInProgress = true;
+            _lastAutoInstallAttempt = DateTime.UtcNow;
+            try
             {
-                if (showSuccessDialog || !string.IsNullOrWhiteSpace(error))
-                {
-                    MessageBox.Show(this,
-                        error ?? "Install / Repair failed.",
-                        "Install / Repair failed",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                }
-
-                return;
+                AppendLog("Installing BepInEx and mod automatically…");
+                if (TryInstallMod(out _))
+                    AppendLog("Install complete.");
             }
-
-            if (showSuccessDialog)
+            finally
             {
-                MessageBox.Show(this,
-                    $"BepInEx and {Branding.ProductName} are installed in:\n{_game.GameDir}",
-                    "Install / Repair",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
+                _installInProgress = false;
+                RefreshStatus();
             }
         }
 
@@ -299,7 +345,7 @@ namespace WinterMP.Launcher
             error = null;
             if (_game == null)
             {
-                error = "Game folder not found. Open Settings and browse to your My Winter Car folder.";
+                error = "Game folder not found. Browse to your My Winter Car folder above.";
                 return false;
             }
 
@@ -307,7 +353,6 @@ namespace WinterMP.Launcher
             {
                 string result = BepInExInstaller.InstallOrRepair(_game.GameDir);
                 AppendLog(result.Replace("\n", "\n"));
-                RefreshStatus();
 
                 if (BepInExInstaller.IsFullyInstalled(_game.GameDir))
                     return true;
@@ -319,7 +364,6 @@ namespace WinterMP.Launcher
             {
                 error = ex.Message;
                 AppendLog($"Install failed: {ex.Message}");
-                RefreshStatus();
                 return false;
             }
         }
@@ -341,16 +385,14 @@ namespace WinterMP.Launcher
                 string result = await UpdateChecker.DownloadAndApplyPayloadAsync(
                     _pendingUpdate.PayloadDownloadUrl, _game.GameDir, _settings.GitHubToken);
                 AppendLog(result);
-                MessageBox.Show(this, result, "Mod updated", MessageBoxButton.OK, MessageBoxImage.Information);
-                await CheckForUpdatesAsync(showUpToDate: false);
+                AppendLog("Mod updated — restarting launcher.");
+                UpdateChecker.RestartApplication();
+                Application.Current.Shutdown();
             }
             catch (Exception ex)
             {
                 AppendLog($"Mod update failed: {ex.Message}");
                 MessageBox.Show(this, ex.Message, "Mod update failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
                 _updateBusy = false;
                 RefreshStatus();
             }
@@ -363,7 +405,7 @@ namespace WinterMP.Launcher
 
             var confirm = MessageBox.Show(this,
                 $"Download and install {_pendingUpdate.Tag}?\n\n" +
-                "The launcher will close and the installer will run silently.",
+                "The launcher will close and restart when the update finishes.",
                 "Update launcher",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -376,7 +418,7 @@ namespace WinterMP.Launcher
                 AppendLog($"Downloading launcher update {_pendingUpdate.Tag}...");
                 string setupPath = await UpdateChecker.DownloadLauncherSetupAsync(
                     _pendingUpdate.SetupDownloadUrl, _settings.GitHubToken);
-                AppendLog($"Running installer: {setupPath}");
+                AppendLog("Installing update — launcher will restart.");
                 UpdateChecker.RunLauncherSetup(setupPath);
                 Application.Current.Shutdown();
             }
@@ -437,40 +479,10 @@ namespace WinterMP.Launcher
             RefreshStatus();
         }
 
-        private void DiagnosticsButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string zip = DiagnosticsService.CreateBundle(_game, _log.ToString());
-                AppendLog($"Diagnostics saved: {zip}");
-                Process.Start(new ProcessStartInfo { FileName = zip, UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, ex.Message, "Diagnostics failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
         private void OpenGameButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
             Process.Start(new ProcessStartInfo { FileName = _game.GameDir, UseShellExecute = true });
-        }
-
-        private void HelpButton_Click(object sender, RoutedEventArgs e)
-        {
-            string help = Path.Combine(AppContext.BaseDirectory, "PLAYERS.md");
-            if (File.Exists(help))
-            {
-                Process.Start(new ProcessStartInfo { FileName = help, UseShellExecute = true });
-                return;
-            }
-
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "https://github.com/Steinkoloss/our-winter-car/releases/latest",
-                UseShellExecute = true,
-            });
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -480,7 +492,6 @@ namespace WinterMP.Launcher
             {
                 _settings = dialog.Settings;
                 RefreshStatus();
-                _ = CheckForUpdatesAsync(showUpToDate: false);
             }
         }
 
@@ -536,7 +547,7 @@ namespace WinterMP.Launcher
             if (!TryInstallMod(out string? error))
             {
                 MessageBox.Show(this,
-                    error ?? $"Install / Repair failed. Both BepInEx and {Branding.ProductName} must be ready before launch.\n\n" +
+                    error ?? $"{Branding.ProductName} could not install into the game folder.\n\n" +
                     "If Windows Defender removed files, add your My Winter Car folder to exclusions and try again.",
                     "Not ready",
                     MessageBoxButton.OK,
@@ -544,12 +555,12 @@ namespace WinterMP.Launcher
                 return false;
             }
 
+            RefreshStatus();
             return true;
         }
 
         private void LaunchGame(string args)
         {
-            SaveDisplaySettingsFromUi();
             string launchArgs = UnityDisplayPrefs.WithScreenArgs(_settings, args);
             UnityDisplayPrefs.Apply(_settings, launchArgs);
 
@@ -580,98 +591,6 @@ namespace WinterMP.Launcher
             _log.AppendLine($"[{DateTime.Now:HH:mm:ss}] {line}");
             LogText.Text = _log.ToString();
             LogScroll.ScrollToEnd();
-        }
-
-        private void InitializeDisplaySettings()
-        {
-            _loadingDisplaySettings = true;
-            try
-            {
-                QualityCombo.ItemsSource = MwcDisplayOptions.QualityNames;
-                QualityCombo.SelectedIndex = Math.Clamp(
-                    _settings.GraphicsQuality,
-                    0,
-                    MwcDisplayOptions.QualityNames.Length - 1);
-
-                MonitorCombo.ItemsSource = MwcDisplayOptions.GetMonitorLabels();
-                MonitorCombo.SelectedIndex = Math.Clamp(
-                    _settings.MonitorIndex,
-                    0,
-                    Math.Max(0, MonitorCombo.Items.Count - 1));
-
-                RefreshResolutionCombo(_settings.DisplayWidth, _settings.DisplayHeight);
-                WindowedCheck.IsChecked = _settings.Windowed;
-            }
-            finally
-            {
-                _loadingDisplaySettings = false;
-            }
-        }
-
-        private void RefreshResolutionCombo(int preferredWidth, int preferredHeight)
-        {
-            int monitorIndex = MonitorCombo.SelectedIndex >= 0 ? MonitorCombo.SelectedIndex : _settings.MonitorIndex;
-            IReadOnlyList<ResolutionOption> options = MwcDisplayOptions.GetResolutionsForMonitor(monitorIndex);
-
-            ResolutionOption? selected = MwcDisplayOptions.FindResolution(options, preferredWidth, preferredHeight);
-            if (selected == null)
-            {
-                selected = new ResolutionOption(preferredWidth, preferredHeight);
-                options = options.Prepend(selected).ToList();
-            }
-
-            ResolutionCombo.ItemsSource = options;
-            ResolutionCombo.SelectedItem = selected;
-        }
-
-        private void MonitorCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            if (_loadingDisplaySettings) return;
-
-            int width = _settings.DisplayWidth;
-            int height = _settings.DisplayHeight;
-            if (ResolutionCombo.SelectedItem is ResolutionOption current)
-            {
-                width = current.Width;
-                height = current.Height;
-            }
-
-            _loadingDisplaySettings = true;
-            try
-            {
-                RefreshResolutionCombo(width, height);
-            }
-            finally
-            {
-                _loadingDisplaySettings = false;
-            }
-
-            DisplaySetting_Changed(sender, e);
-        }
-
-        private void DisplaySetting_Changed(object sender, RoutedEventArgs e)
-        {
-            if (_loadingDisplaySettings) return;
-            SaveDisplaySettingsFromUi();
-        }
-
-        private void SaveDisplaySettingsFromUi()
-        {
-            if (ResolutionCombo.SelectedItem is ResolutionOption resolution)
-            {
-                _settings.DisplayWidth = resolution.Width;
-                _settings.DisplayHeight = resolution.Height;
-            }
-
-            _settings.Windowed = WindowedCheck.IsChecked == true;
-            _settings.GraphicsQuality = QualityCombo.SelectedIndex >= 0
-                ? QualityCombo.SelectedIndex
-                : UnityDisplayPrefs.DefaultQuality;
-            _settings.MonitorIndex = MonitorCombo.SelectedIndex >= 0
-                ? MonitorCombo.SelectedIndex
-                : UnityDisplayPrefs.DefaultMonitor;
-            _settings.DisplaySettingsSaved = true;
-            _settings.Save();
         }
     }
 

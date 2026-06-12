@@ -3,12 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Name="RootWindow"
         Title="Our Winter Car Launcher"
-        Width="640" Height="720"
-        MinWidth="560" MinHeight="660"
+        Width="720" Height="820"
+        MinWidth="640" MinHeight="720"
         Background="{StaticResource BgBrush}"
         WindowStartupLocation="CenterScreen">
-    <Grid Margin="24">
+    <Grid Margin="28">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -16,56 +17,83 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,16">
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,20">
             <StackPanel>
-                <TextBlock Text="Our Winter Car" FontSize="30" FontWeight="Bold" />
+                <TextBlock Text="Our Winter Car" FontSize="32" FontWeight="Bold" />
                 <TextBlock x:Name="SubtitleText" Text="Co-op multiplayer only · host or join via Steam"
-                           FontSize="14" Foreground="{StaticResource MutedBrush}" />
+                           FontSize="14" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
             </StackPanel>
             <Button Content="Settings" HorizontalAlignment="Right" VerticalAlignment="Top"
-                    Click="SettingsButton_Click" />
+                    Click="SettingsButton_Click" Padding="16,8" />
         </Grid>
 
-        <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,10">
+        <!-- Game folder -->
+        <Border Grid.Row="1" Style="{StaticResource SectionBorderStyle}" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="Game folder" Style="{StaticResource SectionTitleStyle}" />
+                <TextBlock Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="12"
+                           Text="Leave empty to auto-detect via Steam. Browse only if detection fails." />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="GamePathBox" LostFocus="GamePathBox_LostFocus"
+                             KeyDown="GamePathBox_KeyDown" />
+                    <Button Grid.Column="1" Content="Browse…" Click="BrowseGamePath_Click" Margin="10,0,0,0" />
+                </Grid>
+                <TextBlock x:Name="GameDetectText" Foreground="{StaticResource MutedBrush}"
+                           FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!-- Info -->
+        <Border Grid.Row="2" Style="{StaticResource SectionBorderStyle}" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="130" />
+                    <ColumnDefinition Width="120" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="26" />
-                    <RowDefinition Height="26" />
-                    <RowDefinition Height="26" />
-                    <RowDefinition Height="26" />
-                    <RowDefinition Height="26" />
-                    <RowDefinition Height="26" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="28" />
+                    <RowDefinition Height="28" />
+                    <RowDefinition Height="28" />
+                    <RowDefinition Height="28" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Game" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="GameStatusText" Text="Searching..." TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
+                           Text="Info" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,10" />
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="BepInEx" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="BepInExStatusText" Text="—" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="BepInEx" Style="{StaticResource LabelStyle}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="BepInExStatusText" Text="—" VerticalAlignment="Center" />
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Mod" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="ModStatusText" Text="—" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Mod" Style="{StaticResource LabelStyle}" />
+                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="ModStatusText" Text="—" VerticalAlignment="Center" />
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Save backups" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="BackupStatusText" Text="—" />
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Backups" Style="{StaticResource LabelStyle}" />
+                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="BackupStatusText" Text="—" VerticalAlignment="Center" />
 
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="Build" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="BuildStatusText" Text="—" />
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Versions" Style="{StaticResource LabelStyle}" />
+                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="BuildStatusText" Text="—" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
 
-                <TextBlock Grid.Row="5" Grid.Column="0" Text="Updates" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="UpdateStatusText" Text="Not checked yet" TextWrapping="Wrap" />
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="Updates" Style="{StaticResource LabelStyle}" Margin="0,6,0,0" />
+                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="UpdateStatusText" Text="Not checked yet"
+                           VerticalAlignment="Center" Margin="0,6,0,0" TextWrapping="Wrap" />
+                <Button Grid.Row="5" Grid.Column="2" Content="Check" Click="CheckUpdatesButton_Click"
+                        Margin="8,6,0,0" Padding="12,4" FontSize="12" VerticalAlignment="Top" />
             </Grid>
         </Border>
 
-        <Border Grid.Row="2" x:Name="UpdateBannerPanel" Background="#FF2A2418" CornerRadius="8"
-                Padding="12" Margin="0,0,0,10" Visibility="Collapsed"
+        <!-- Update banner -->
+        <Border Grid.Row="3" x:Name="UpdateBannerPanel" Background="#FF2A2418" CornerRadius="8"
+                Padding="14" Margin="0,0,0,12" Visibility="Collapsed"
                 BorderBrush="#FFE8C547" BorderThickness="1">
             <StackPanel>
                 <TextBlock x:Name="UpdateBannerTitle" Text="Update available" FontWeight="SemiBold"
@@ -83,91 +111,54 @@
             </StackPanel>
         </Border>
 
-        <TextBlock Grid.Row="3" x:Name="WarningStatusText" Foreground="{StaticResource WarnBrush}"
-                   TextWrapping="Wrap" Margin="0,0,0,10" Visibility="Collapsed" />
+        <TextBlock Grid.Row="4" x:Name="WarningStatusText" Foreground="{StaticResource WarnBrush}"
+                   TextWrapping="Wrap" Margin="0,0,0,12" Visibility="Collapsed" />
 
-        <StackPanel Grid.Row="4" Margin="0,0,0,12">
-            <WrapPanel Margin="0,0,0,8">
-                <Button x:Name="InstallButton" Content="Install / Repair" Click="InstallButton_Click" Margin="0,0,8,8" />
-                <Button Content="Check for updates" Click="CheckUpdatesButton_Click" Margin="0,0,8,8" />
-                <Button Content="Refresh" Click="RefreshButton_Click" Margin="0,0,8,8" />
-                <Button Content="Backup save" Click="BackupButton_Click" Margin="0,0,8,8" />
-                <Button Content="Restore save…" Click="RestoreButton_Click" Margin="0,0,8,8" />
-                <Button Content="Diagnostics zip" Click="DiagnosticsButton_Click" Margin="0,0,8,8" />
-                <Button x:Name="OpenGameButton" Content="Open game folder" Click="OpenGameButton_Click" Margin="0,0,8,8" />
-                <Button Content="Help" Click="HelpButton_Click" Margin="0,0,8,8" />
-            </WrapPanel>
+        <!-- Save tools -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button Content="Backup save" Click="BackupButton_Click" Margin="0,0,10,0" />
+            <Button Content="Restore save…" Click="RestoreButton_Click" Margin="0,0,10,0" />
+            <Button x:Name="OpenGameButton" Content="Open game folder" Click="OpenGameButton_Click" IsEnabled="False" />
         </StackPanel>
 
-        <Border Grid.Row="5" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="12" Margin="0,0,0,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="130" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Text="Graphics"
-                           FontWeight="SemiBold" Margin="0,0,0,8" />
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Resolution" VerticalAlignment="Center"
-                           Foreground="{StaticResource MutedBrush}" />
-                <ComboBox Grid.Row="1" Grid.Column="1" x:Name="ResolutionCombo" Margin="0,0,8,6"
-                          SelectionChanged="DisplaySetting_Changed" />
-                <CheckBox Grid.Row="1" Grid.Column="2" x:Name="WindowedCheck" Content="Windowed"
-                          VerticalAlignment="Center" Margin="0,0,0,6"
-                          Checked="DisplaySetting_Changed" Unchecked="DisplaySetting_Changed" />
-
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Quality" VerticalAlignment="Center"
-                           Foreground="{StaticResource MutedBrush}" />
-                <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" x:Name="QualityCombo" Margin="0,0,0,6"
-                          SelectionChanged="DisplaySetting_Changed" />
-
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Monitor" VerticalAlignment="Center"
-                           Foreground="{StaticResource MutedBrush}" />
-                <ComboBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" x:Name="MonitorCombo"
-                          SelectionChanged="MonitorCombo_SelectionChanged" />
-            </Grid>
+        <!-- Activity log -->
+        <Border Grid.Row="6" Style="{StaticResource SectionBorderStyle}" MinHeight="100">
+            <DockPanel LastChildFill="True">
+                <TextBlock DockPanel.Dock="Top" Text="Activity" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,8" />
+                <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
+                    <TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="11"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </ScrollViewer>
+            </DockPanel>
         </Border>
 
-        <Border Grid.Row="6" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="10">
-            <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
-                <TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="12"
-                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-            </ScrollViewer>
-        </Border>
-
-        <Grid Grid.Row="7" Margin="0,16,0,0">
+        <!-- Primary actions -->
+        <Grid Grid.Row="7" Margin="0,20,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="16" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <Button Grid.Column="0" x:Name="HostButton" Click="HostButton_Click"
-                    Background="#FF2C5E33" FontSize="16" FontWeight="SemiBold" Padding="14,12">
+                    Background="#FF2C5E33" FontSize="17" FontWeight="SemiBold" Padding="16,14">
                 <StackPanel>
                     <TextBlock Text="HOST GAME" HorizontalAlignment="Center" />
                     <TextBlock Text="backs up save · waits for a friend to join"
                                FontSize="11" FontWeight="Normal"
                                Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center"
-                               TextWrapping="Wrap" TextAlignment="Center" />
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,0" />
                 </StackPanel>
             </Button>
 
             <Button Grid.Column="2" x:Name="JoinButton" Click="JoinButton_Click"
-                    FontSize="16" FontWeight="SemiBold" Padding="14,12">
+                    FontSize="17" FontWeight="SemiBold" Padding="16,14">
                 <StackPanel>
                     <TextBlock Text="JOIN GAME" HorizontalAlignment="Center" />
                     <TextBlock Text="join a friend via Steam · not single player"
                                FontSize="11" FontWeight="Normal"
                                Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center"
-                               TextWrapping="Wrap" TextAlignment="Center" />
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,0" />
                 </StackPanel>
             </Button>
         </Grid>
