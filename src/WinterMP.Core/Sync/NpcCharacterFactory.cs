@@ -159,7 +159,7 @@ namespace WinterMP.Core.Sync
             if (forward.sqrMagnitude < 0.0001f)
                 return 0f;
 
-            return -YawFromForward(forward);
+            return -YawFromForward(forward) + 180f;
         }
 
         private static float YawFromForward(Vector3 forward)
