@@ -10,7 +10,7 @@
     <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
     <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>
     <BepInExPluginName>Our Winter Car</BepInExPluginName>
-    <Version>0.1.6</Version>
+    <Version>0.1.7</Version>
     <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
   </PropertyGroup>
 
@@ -26,7 +26,7 @@
       <HintPath>$(MwcManaged)\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- PlayMaker 1.7.7.6 — the game's FSM engine; the world-sync layer hooks it directly. -->
+    <!-- PlayMaker 1.7.7.6 â€” the game's FSM engine; the world-sync layer hooks it directly. -->
     <Reference Include="PlayMaker">
       <HintPath>$(MwcManaged)\PlayMaker.dll</HintPath>
       <Private>false</Private>
@@ -39,7 +39,7 @@
 
   <!--
     The game embeds Steamworks.NET (classic API + CSteamworks.dll) inside
-    Assembly-CSharp-firstpass.dll — referencing it gives us the same Steam callback
+    Assembly-CSharp-firstpass.dll â€” referencing it gives us the same Steam callback
     state as the game itself. When present, the Steam transport compiles in.
   -->
   <PropertyGroup Condition="Exists('$(MwcManaged)\Assembly-CSharp-firstpass.dll')">

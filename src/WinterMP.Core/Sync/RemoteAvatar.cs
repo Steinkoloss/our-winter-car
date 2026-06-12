@@ -3,17 +3,15 @@ using UnityEngine;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Visible body for a remote player: a cloned HUMANS walker rig (or capsule
-    /// fallback) with a floating name tag, smoothed toward the latest network
-    /// snapshot and animated from streamed <see cref="PlayerMoveState"/> flags.
+    /// Visible body for a remote player: cloned NPC mesh with look yaw driven
+    /// entirely by the streamed camera rotation on the avatar root.
     /// </summary>
     public sealed class RemoteAvatar : MonoBehaviour
     {
         private const float SnapDistance = 15f;
         private const float PositionSmoothing = 12f;
-        private const float RotationSmoothing = 10f;
+        private const float RotationSmoothing = 14f;
 
-        /// <summary>Seat triggers sit at cushion height; avatar pivot is at the feet.</summary>
         private const float SeatFootOffset = 0.8f;
         private const float SeatedFootOffset = 0.55f;
 
@@ -24,21 +22,15 @@ namespace WinterMP.Core.Sync
         private const float NameTagClearance = 0.25f;
 
         private Vector3 _targetPosition;
-        private Quaternion _targetRotation = Quaternion.identity;
+        private float _targetYaw;
         private Renderer? _bodyRenderer;
         private Transform? _bodyTransform;
         private TextMesh? _nameTag;
         private Transform? _nameTagTransform;
         private RemoteCharacterAnimator? _characterAnimator;
         private Transform? _rigRoot;
-        private Transform? _rigPivot;
-        private Transform? _lookTarget;
         private Vector3 _rigFootOffset;
-        private Vector3 _pivotBaseLocalPos;
-        private Quaternion _pivotBaseLocalRot = Quaternion.identity;
-        /// <summary>NPC mesh forward axis relative to avatar +Z (MWC walkers face -Z).</summary>
-        private const float ModelForwardSign = -1f;
-        private static readonly Vector3 LookTargetLocalOffset = new Vector3(0f, 1.2f, 2f);
+        private float _modelYawOffset;
         private bool _hasTarget;
         private bool _crouching;
         private bool _vehicleAnchored;
@@ -56,24 +48,11 @@ namespace WinterMP.Core.Sync
             if (rig != null)
             {
                 rig.Root.transform.parent = root.transform;
-                rig.Root.transform.localRotation = Quaternion.identity;
                 avatar._rigRoot = rig.Root.transform;
-                avatar._rigPivot = rig.Pivot;
-                avatar._lookTarget = rig.LookTarget;
                 avatar._rigFootOffset = new Vector3(0f, rig.FootOffsetY, 0f);
-                avatar._pivotBaseLocalPos = rig.PivotBaseLocalPos;
-                avatar._pivotBaseLocalRot = rig.PivotBaseLocalRot;
+                avatar._modelYawOffset = rig.ModelYawOffset;
                 avatar._rigRoot.localPosition = avatar._rigFootOffset;
-
-                if (avatar._lookTarget != null)
-                {
-                    avatar._lookTarget.parent = root.transform;
-                    avatar._lookTarget.localPosition = new Vector3(
-                        LookTargetLocalOffset.x,
-                        LookTargetLocalOffset.y,
-                        LookTargetLocalOffset.z * ModelForwardSign);
-                }
-
+                avatar._rigRoot.localRotation = Quaternion.Euler(0f, avatar._modelYawOffset, 0f);
                 avatar._characterAnimator = new RemoteCharacterAnimator(rig);
                 avatar._bodyTransform = rig.BodyPivot;
             }
@@ -128,13 +107,13 @@ namespace WinterMP.Core.Sync
         public void SetTarget(Vector3 position, Quaternion rotation)
         {
             _targetPosition = position;
-            _targetRotation = rotation;
+            _targetYaw = YawFromRotation(rotation);
 
             if (!_hasTarget)
             {
                 _hasTarget = true;
                 transform.position = position;
-                transform.rotation = rotation;
+                ApplyLookYaw(_targetYaw);
                 gameObject.SetActive(true);
             }
         }
@@ -189,19 +168,21 @@ namespace WinterMP.Core.Sync
             {
                 float footOffset = _vehicleAnchored ? SeatedFootOffset : SeatFootOffset;
                 transform.position = _anchorSeat.position - _anchorVehicle.up * footOffset;
-                transform.rotation = _anchorVehicle.rotation;
+                ApplyLookYaw(_anchorVehicle.eulerAngles.y);
             }
             else if (Vector3.Distance(transform.position, _targetPosition) > SnapDistance)
             {
                 transform.position = _targetPosition;
-                transform.rotation = _targetRotation;
+                ApplyLookYaw(_targetYaw);
             }
             else
             {
                 float positionT = 1f - Mathf.Exp(-PositionSmoothing * Time.deltaTime);
                 float rotationT = 1f - Mathf.Exp(-RotationSmoothing * Time.deltaTime);
                 transform.position = Vector3.Lerp(transform.position, _targetPosition, positionT);
-                transform.rotation = Quaternion.Slerp(transform.rotation, _targetRotation, rotationT);
+
+                float yaw = Mathf.LerpAngle(transform.eulerAngles.y, _targetYaw, rotationT);
+                ApplyLookYaw(yaw);
             }
 
             PinRigRoot();
@@ -212,17 +193,26 @@ namespace WinterMP.Core.Sync
                 _nameTagTransform.rotation = Quaternion.LookRotation(_nameTagTransform.position - camera.transform.position);
         }
 
+        private void ApplyLookYaw(float yawDegrees)
+        {
+            transform.rotation = Quaternion.Euler(0f, yawDegrees, 0f);
+        }
+
         private void PinRigRoot()
         {
             if (_rigRoot == null) return;
             _rigRoot.localPosition = _rigFootOffset;
-            _rigRoot.localRotation = Quaternion.identity;
+            _rigRoot.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
+        }
 
-            if (_rigPivot != null)
-            {
-                _rigPivot.localPosition = _pivotBaseLocalPos;
-                _rigPivot.localRotation = _pivotBaseLocalRot;
-            }
+        private static float YawFromRotation(Quaternion rotation)
+        {
+            Vector3 forward = rotation * Vector3.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f)
+                return rotation.eulerAngles.y;
+
+            return Quaternion.LookRotation(forward.normalized).eulerAngles.y;
         }
 
         private void ApplyCapsuleScale()

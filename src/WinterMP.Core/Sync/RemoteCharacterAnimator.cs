@@ -3,47 +3,40 @@ using UnityEngine;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Drives the cloned walker's Move FSM (WALK/STAND + stride speed) for real
-    /// skeletal animation. Root motion is suppressed by <see cref="RemoteAvatar"/>
-    /// pinning the rig each frame.
+    /// Procedural posture on a frozen NPC mesh. Facing comes from the avatar root
+    /// rotation — not from PlayMaker FSMs.
     /// </summary>
     internal sealed class RemoteCharacterAnimator
     {
         private const float CrouchHeightFactor = 2f / 3f;
         private const float SeatedHeightFactor = 0.55f;
         private const float SeatedForwardPitch = 12f;
-        private const float WalkDistanceValue = 1.2f;
-        private const float RunDistanceValue = 2.8f;
+        private const float WalkBobAmplitude = 0.04f;
+        private const float WalkSwayAmplitude = 0.02f;
+        private const float WalkBobHz = 3.5f;
+        private const float RunBobHz = 5.5f;
 
         private readonly Transform _rigRoot;
         private readonly Transform _bodyPivot;
-        private readonly PlayMakerFSM? _moveFsm;
-        private readonly HutongGames.PlayMaker.FsmFloat? _moveDistance;
         private readonly float _modelHeight;
         private readonly Renderer[] _renderers;
+        private readonly Vector3 _bodyBaseLocalPos;
 
         private byte _lastMoveState;
         private bool _lastSeated;
         private bool _lastWalking;
         private float _bodyHeightScale = 1f;
         private float _bodyPitch;
+        private float _bobPhase;
 
         public RemoteCharacterAnimator(NpcCharacterFactory.CharacterRig rig)
         {
             _rigRoot = rig.Root.transform;
             _bodyPivot = rig.BodyPivot;
-            _moveFsm = rig.MoveFsm;
             _modelHeight = rig.ModelHeight;
             _renderers = rig.Root.GetComponentsInChildren<Renderer>(true);
-
-            if (_moveFsm != null)
-            {
-                try { _moveDistance = _moveFsm.FsmVariables.FindFsmFloat("Distance"); }
-                catch { /* optional */ }
-            }
-
+            _bodyBaseLocalPos = _bodyPivot.localPosition;
             ApplyBodyLayout();
-            SendLocomotion(false);
         }
 
         public void Apply(byte moveState, bool vehicleAnchored)
@@ -64,7 +57,7 @@ namespace WinterMP.Core.Sync
             if (swimming)
             {
                 _lastWalking = false;
-                SendLocomotion(false);
+                ResetBob();
                 return;
             }
 
@@ -73,7 +66,7 @@ namespace WinterMP.Core.Sync
                 _bodyHeightScale = SeatedHeightFactor;
                 _bodyPitch = SeatedForwardPitch;
                 _lastWalking = false;
-                SendLocomotion(false);
+                ResetBob();
             }
             else if (PlayerMoveState.Has(moveState, PlayerMoveState.Crouch))
             {
@@ -87,66 +80,43 @@ namespace WinterMP.Core.Sync
             }
 
             ApplyBodyLayout();
-            UpdateLocomotion();
+            UpdateWalking();
         }
 
-        /// <summary>Keep stride speed in sync while the Move FSM is looping.</summary>
         public void Tick()
         {
             if (_lastSeated || PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Swimming))
+            {
+                ResetBob();
                 return;
+            }
 
             if (!_lastWalking)
+            {
+                ResetBob();
                 return;
+            }
 
-            UpdateStrideSpeed();
+            bool running = PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Running);
+            float hz = running ? RunBobHz : WalkBobHz;
+            _bobPhase += Time.deltaTime * hz * Mathf.PI * 2f;
+
+            float bob = Mathf.Sin(_bobPhase) * WalkBobAmplitude;
+            float sway = Mathf.Sin(_bobPhase * 0.5f) * WalkSwayAmplitude;
+            _bodyPivot.localPosition = _bodyBaseLocalPos + new Vector3(sway, bob, 0f);
         }
 
-        private void UpdateLocomotion()
+        private void UpdateWalking()
         {
-            bool walking = !_lastSeated
+            _lastWalking = !_lastSeated
                 && (PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Walking)
                     || PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Running));
-
-            if (walking == _lastWalking)
-            {
-                UpdateStrideSpeed();
-                return;
-            }
-
-            _lastWalking = walking;
-            SendLocomotion(walking);
         }
 
-        private void SendLocomotion(bool walking)
+        private void ResetBob()
         {
-            if (_moveFsm == null) return;
-
-            try
-            {
-                _moveFsm.SendEvent(walking ? "WALK" : "STAND");
-                UpdateStrideSpeed();
-            }
-            catch
-            {
-                // Clone FSM not ready yet.
-            }
-        }
-
-        private void UpdateStrideSpeed()
-        {
-            if (_moveDistance == null) return;
-
-            float distance = 0f;
-            if (_lastWalking)
-            {
-                distance = PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Running)
-                    ? RunDistanceValue
-                    : WalkDistanceValue;
-            }
-
-            try { _moveDistance.Value = distance; }
-            catch { /* FSM variable unavailable */ }
+            _bobPhase = 0f;
+            _bodyPivot.localPosition = _bodyBaseLocalPos;
         }
 
         private void ApplyBodyLayout()

@@ -4,9 +4,8 @@ using UnityEngine;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Builds a visual-only third-person body for remote players by cloning a
-    /// HUMANS walker. Keeps the root <c>Move</c> FSM for leg animation but
-    /// strips AI/navigation so the rig stays parented to the avatar.
+    /// Visual-only NPC mesh for remote players. Clones the walker <c>Pivot</c>
+    /// subtree only — no Move/AI FSMs, which fight network look rotation.
     /// </summary>
     internal static class NpcCharacterFactory
     {
@@ -18,21 +17,16 @@ namespace WinterMP.Core.Sync
             "Kristian", "Alpo", "Julli", "Kale", "Rauno", "Unto",
         };
 
-        private static readonly string[] KeepFsmNames = { "Move" };
-
         private static Transform? _walkersRoot;
 
         public sealed class CharacterRig
         {
             public GameObject Root = null!;
-            public Transform? Pivot;
-            public Vector3 PivotBaseLocalPos;
-            public Quaternion PivotBaseLocalRot = Quaternion.identity;
-            public Transform? LookTarget;
             public Transform BodyPivot = null!;
-            public PlayMakerFSM? MoveFsm;
             public float ModelHeight = 1.8f;
             public float FootOffsetY;
+            /// <summary>Local Y rotation so the mesh faces avatar +Z at yaw 0.</summary>
+            public float ModelYawOffset;
             public string TemplateName = string.Empty;
         }
 
@@ -41,23 +35,22 @@ namespace WinterMP.Core.Sync
             var template = FindTemplate(playerId);
             if (template == null) return null;
 
-            var pivot = template.transform.Find("Pivot");
-            if (pivot == null)
+            var templatePivot = template.transform.Find("Pivot");
+            if (templatePivot == null)
             {
                 WinterMPPlugin.Log.LogWarning(
                     $"PlayerSync: walker '{template.name}' has no Pivot — cannot build avatar.");
                 return null;
             }
 
-            // Clone the walker root so we get the Move FSM (skeletal walk/idle).
-            // AI FSMs and navigation helpers are stripped; Move is rewired in-place.
-            var clone = UnityEngine.Object.Instantiate(template);
+            var clone = UnityEngine.Object.Instantiate(templatePivot.gameObject);
             clone.name = $"WinterMP_Char_{playerId}";
             clone.transform.position = Vector3.zero;
             clone.transform.rotation = Quaternion.identity;
             clone.SetActive(true);
 
             StripSimulation(clone);
+            TryApplyStandingPose(clone.transform);
 
             var renderers = clone.GetComponentsInChildren<Renderer>(true);
             if (renderers == null || renderers.Length == 0)
@@ -66,39 +59,20 @@ namespace WinterMP.Core.Sync
                 return null;
             }
 
-            var clonePivot = clone.transform.Find("Pivot");
             var rig = new CharacterRig
             {
                 Root = clone,
-                Pivot = clonePivot,
-                PivotBaseLocalPos = clonePivot != null ? clonePivot.localPosition : Vector3.zero,
-                PivotBaseLocalRot = clonePivot != null ? clonePivot.localRotation : Quaternion.identity,
                 BodyPivot = FindBodyPivot(clone.transform) ?? clone.transform,
                 TemplateName = template.name,
             };
 
-            var lookTarget = new GameObject("WinterMP_LookTarget");
-            lookTarget.transform.parent = clone.transform;
-            lookTarget.transform.localPosition = new Vector3(0f, 1.2f, 2f);
-            rig.LookTarget = lookTarget.transform;
-
-            rig.MoveFsm = FindMoveFsm(clone);
-            if (rig.MoveFsm == null)
-            {
-                UnityEngine.Object.Destroy(clone);
-                WinterMPPlugin.Log.LogWarning(
-                    $"PlayerSync: walker '{template.name}' has no Move FSM — cannot animate avatar.");
-                return null;
-            }
-
-            NeutralizeMoveFsm(rig);
-
             MeasureFootAndHeight(clone.transform, out rig.ModelHeight, out rig.FootOffsetY);
+            rig.ModelYawOffset = ComputeModelYawOffset(clone.transform);
             ApplyPlayerTint(clone, playerId);
 
             WinterMPPlugin.Log.LogInfo(
                 $"PlayerSync: avatar rig '{rig.TemplateName}' for player {playerId} " +
-                $"(h={rig.ModelHeight:F2}m foot={rig.FootOffsetY:F2}m).");
+                $"(h={rig.ModelHeight:F2}m foot={rig.FootOffsetY:F2}m yaw={rig.ModelYawOffset:F0}°).");
 
             return rig;
         }
@@ -140,83 +114,18 @@ namespace WinterMP.Core.Sync
 
         private static Transform? FindBodyPivot(Transform root)
         {
-            var pivot = root.Find("Pivot");
-            if (pivot == null) return root;
-
-            var body = pivot.Find("Char");
-            return body != null ? body : pivot;
-        }
-
-        private static PlayMakerFSM? FindMoveFsm(GameObject root)
-        {
-            foreach (var fsm in root.GetComponents<PlayMakerFSM>())
-            {
-                if (fsm.FsmName == "Move")
-                    return fsm;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Point Move at our own skeleton with zero travel distance so legs animate
-        /// in place instead of pathing toward world TargetPoints.
-        /// </summary>
-        private static void NeutralizeMoveFsm(CharacterRig rig)
-        {
-            var fsm = rig.MoveFsm;
-            if (fsm == null) return;
-
-            try
-            {
-                var skeleton = rig.Root.transform.Find("Pivot/Char/skeleton")
-                    ?? rig.BodyPivot.Find("skeleton")
-                    ?? rig.BodyPivot;
-
-                var skeletonVar = fsm.FsmVariables.FindFsmGameObject("Skeleton");
-                if (skeletonVar != null)
-                    skeletonVar.Value = skeleton.gameObject;
-
-                // A point in front of the body — Move FSM rotates the skeleton toward Target.
-                var targetVar = fsm.FsmVariables.FindFsmGameObject("Target");
-                if (targetVar != null && rig.LookTarget != null)
-                    targetVar.Value = rig.LookTarget.gameObject;
-
-                var distanceVar = fsm.FsmVariables.FindFsmFloat("Distance");
-                if (distanceVar != null)
-                    distanceVar.Value = 0f;
-
-                fsm.SendEvent("STAND");
-            }
-            catch (Exception e)
-            {
-                WinterMPPlugin.Log.LogWarning($"PlayerSync: could not neutralize Move FSM: {e.Message}");
-            }
+            var body = root.Find("Char");
+            return body != null ? body : root;
         }
 
         private static void StripSimulation(GameObject root)
         {
-            DestroyChild(root.transform, "Pivot/RagDoll");
-            DestroyChild(root.transform, "Pivot/HumanTriggerCrime");
-
-            for (int i = root.transform.childCount - 1; i >= 0; i--)
-            {
-                var child = root.transform.GetChild(i);
-                string name = child.name;
-                if (name.StartsWith("HeadTarget", StringComparison.Ordinal)
-                    || name == "TargetPoint")
-                {
-                    UnityEngine.Object.Destroy(child.gameObject);
-                }
-            }
+            DestroyChild(root.transform, "RagDoll");
+            DestroyChild(root.transform, "HumanTriggerCrime");
 
             var fsms = root.GetComponentsInChildren<PlayMakerFSM>(true);
             for (int i = 0; i < fsms.Length; i++)
-            {
-                if (Array.IndexOf(KeepFsmNames, fsms[i].FsmName) >= 0)
-                    continue;
                 UnityEngine.Object.Destroy(fsms[i]);
-            }
 
             var colliders = root.GetComponentsInChildren<Collider>(true);
             for (int i = 0; i < colliders.Length; i++)
@@ -233,11 +142,99 @@ namespace WinterMP.Core.Sync
             var audioSources = root.GetComponentsInChildren<AudioSource>(true);
             for (int i = 0; i < audioSources.Length; i++)
                 UnityEngine.Object.Destroy(audioSources[i]);
+
+            var animations = root.GetComponentsInChildren<Animation>(true);
+            for (int i = 0; i < animations.Length; i++)
+                UnityEngine.Object.Destroy(animations[i]);
         }
 
-        private static void DestroyChild(Transform root, string path)
+        private static float ComputeModelYawOffset(Transform rigRoot)
         {
-            var child = root.Find(path);
+            var pelvis = rigRoot.Find("Char/skeleton/pelvis");
+            if (pelvis == null)
+                return 0f;
+
+            Vector3 forward = pelvis.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f)
+                return 0f;
+
+            return -YawFromForward(forward);
+        }
+
+        private static float YawFromForward(Vector3 forward)
+        {
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f)
+                return 0f;
+
+            return Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
+        }
+
+        private static void TryApplyStandingPose(Transform clonePivot)
+        {
+            var referencePivot = FindStandingReferencePivot();
+            if (referencePivot == null) return;
+
+            var sourceSkeleton = referencePivot.Find("Char/skeleton");
+            var destSkeleton = clonePivot.Find("Char/skeleton");
+            if (sourceSkeleton == null || destSkeleton == null) return;
+
+            CopyBonePose(sourceSkeleton, destSkeleton);
+        }
+
+        private static Transform? FindStandingReferencePivot()
+        {
+            EnsureWalkersCache();
+            if (_walkersRoot == null) return null;
+
+            Transform? fallback = null;
+            for (int i = 0; i < _walkersRoot.childCount; i++)
+            {
+                var walker = _walkersRoot.GetChild(i);
+                var pivot = walker.Find("Pivot");
+                if (pivot == null) continue;
+
+                if (fallback == null)
+                    fallback = pivot;
+
+                if (IsWalkerStanding(walker.gameObject))
+                    return pivot;
+            }
+
+            return fallback;
+        }
+
+        private static bool IsWalkerStanding(GameObject walker)
+        {
+            foreach (var fsm in walker.GetComponents<PlayMakerFSM>())
+            {
+                if (fsm.FsmName != "Move" || fsm.Fsm == null) continue;
+                try { return fsm.Fsm.ActiveStateName == "Standing"; }
+                catch { return false; }
+            }
+
+            return false;
+        }
+
+        private static void CopyBonePose(Transform source, Transform dest)
+        {
+            dest.localPosition = source.localPosition;
+            dest.localRotation = source.localRotation;
+            dest.localScale = source.localScale;
+
+            for (int i = 0; i < dest.childCount; i++)
+            {
+                var destChild = dest.GetChild(i);
+                var sourceChild = source.Find(destChild.name);
+                if (sourceChild != null)
+                    CopyBonePose(sourceChild, destChild);
+            }
+        }
+
+        private static void DestroyChild(Transform root, string childName)
+        {
+            var child = root.Find(childName);
             if (child != null)
                 UnityEngine.Object.Destroy(child.gameObject);
         }
@@ -269,7 +266,6 @@ namespace WinterMP.Core.Sync
                 return;
             }
 
-            // Shift the rig so the lowest mesh point sits on the avatar origin (feet).
             footOffsetY = -minLocalY;
             height = Mathf.Max(1.2f, maxLocalY - minLocalY);
         }

@@ -8,9 +8,8 @@ namespace WinterMP.Core.Sync
     internal static class PlayerPoseReader
     {
         private const string AnimPivotPath = "Pivot/AnimPivot";
-        private const string FpsCameraPath = "Pivot/AnimPivot/Camera/FPSCamera";
+        private const string ViewCameraPath = "Pivot/AnimPivot/Camera/FPSCamera/FPSCamera/Camera/Camera";
 
-        /// <summary>World position at the feet — matches where remote avatars should stand.</summary>
         public static Vector3 ReadFeetPosition(Transform player, CharacterController? controller)
         {
             if (controller == null)
@@ -21,38 +20,58 @@ namespace WinterMP.Core.Sync
             return worldCenter - Vector3.up * halfHeight;
         }
 
-        /// <summary>Horizontal facing from the active view (where the player is looking).</summary>
-        public static Quaternion ReadLookRotation(Transform player)
+        /// <summary>Horizontal look yaw in degrees from the active view.</summary>
+        public static float ReadLookYawDegrees(Transform player)
         {
-            Transform? source = ResolveLookTransform(player);
-            if (source == null)
-                return player.rotation;
+            var view = player.Find(ViewCameraPath);
+            if (view != null)
+                return YawFromForward(view.forward);
 
-            Vector3 forward = source.forward;
-            forward.y = 0f;
-            if (forward.sqrMagnitude < 0.0001f)
-                return Quaternion.Euler(0f, source.eulerAngles.y, 0f);
+            var camera = FindViewCamera(player);
+            if (camera != null)
+                return YawFromForward(camera.transform.forward);
 
-            return Quaternion.LookRotation(forward.normalized, Vector3.up);
+            if (Camera.main != null && Camera.main.transform.IsChildOf(player))
+                return YawFromForward(Camera.main.transform.forward);
+
+            var pivot = player.Find(AnimPivotPath);
+            if (pivot != null)
+                return YawFromForward(pivot.forward);
+
+            return YawFromForward(player.forward);
         }
 
-        private static Transform? ResolveLookTransform(Transform player)
+        public static Quaternion ReadLookRotation(Transform player)
         {
-            var cam = Camera.main;
-            if (cam != null)
+            return Quaternion.Euler(0f, ReadLookYawDegrees(player), 0f);
+        }
+
+        private static Camera? FindViewCamera(Transform player)
+        {
+            var cameras = player.GetComponentsInChildren<Camera>(true);
+            Camera? best = null;
+            float bestDepth = float.NegativeInfinity;
+
+            for (int i = 0; i < cameras.Length; i++)
             {
-                var t = cam.transform;
-                while (t != null)
-                {
-                    if (t == player) return cam.transform;
-                    t = t.parent;
-                }
+                var camera = cameras[i];
+                if (camera == null) continue;
+                if (camera.depth < bestDepth) continue;
+
+                bestDepth = camera.depth;
+                best = camera;
             }
 
-            var fps = player.Find(FpsCameraPath);
-            if (fps != null) return fps;
+            return best;
+        }
 
-            return player.Find(AnimPivotPath);
+        private static float YawFromForward(Vector3 forward)
+        {
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f)
+                return 0f;
+
+            return Quaternion.LookRotation(forward.normalized).eulerAngles.y;
         }
     }
 }

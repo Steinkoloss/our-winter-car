@@ -9,7 +9,7 @@
     <RootNamespace>WinterMP.Launcher</RootNamespace>
     <AssemblyName>WinterMPLauncher</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>0.1.6</Version>
+    <Version>0.1.7</Version>
     <WinterMPCoreOut>$(MSBuildThisFileDirectory)..\WinterMP.Core\bin\$(Configuration)\net35</WinterMPCoreOut>
   </PropertyGroup>
 
@@ -38,9 +38,9 @@
           DestinationFolder="$(LauncherStageDir)payload" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(BepInExZip)" DestinationFolder="$(LauncherStageDir)vendor" SkipUnchangedFiles="true"
           Condition="Exists('%(BepInExZip.Identity)')" />
-    <Warning Text="WinterMP.Core Release build not found — run 'dotnet build src/WinterMP.Core -c Release' before the launcher."
+    <Warning Text="WinterMP.Core Release build not found â€” run 'dotnet build src/WinterMP.Core -c Release' before the launcher."
              Condition="!Exists('$(WinterMPCoreOut)\WinterMP.Core.dll')" />
-    <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing — run tools/fetch-vendor.ps1"
+    <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing â€” run tools/fetch-vendor.ps1"
              Condition="!Exists('@(BepInExZip)')" />
   </Target>
 
