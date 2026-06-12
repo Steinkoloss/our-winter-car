@@ -632,7 +632,7 @@ namespace WinterMP.Core.Session
                     if (IsHost)
                     {
                         Broadcast(itemTransform,
-                            ItemTransformPolicy.SelectSendChannel(itemTransform.IsFinal, itemTransform.IsDriver),
+                            ItemTransformPolicy.SelectSendChannel(itemTransform.IsFinal, itemTransform.IsVehicle),
                             except: peer);
                     }
                     break;
@@ -830,7 +830,7 @@ namespace WinterMP.Core.Session
             {
                 Channel channel = message switch
                 {
-                    ItemTransform t => ItemTransformPolicy.SelectSendChannel(t.IsFinal, t.IsDriver),
+                    ItemTransform t => ItemTransformPolicy.SelectSendChannel(t.IsFinal, t.IsVehicle),
                     VehicleState => Channel.ReliableOrdered,
                     VehicleClimate => Channel.ReliableOrdered,
                     _ => Channel.ReliableOrdered,

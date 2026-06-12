@@ -68,6 +68,9 @@ namespace WinterMP.Net.Messages
         /// </summary>
         public const byte FlagDriver = 2;
 
+        /// <summary>Transform stream is for a registered vehicle root rigidbody.</summary>
+        public const byte FlagVehicle = 4;
+
         public uint ItemId;
         /// <summary>Session player id of the peer simulating this item right now.</summary>
         public byte OwnerPlayerId;
@@ -78,6 +81,7 @@ namespace WinterMP.Net.Messages
 
         public bool IsFinal => (Flags & FlagFinal) != 0;
         public bool IsDriver => (Flags & FlagDriver) != 0;
+        public bool IsVehicle => (Flags & FlagVehicle) != 0;
 
         public MessageId Id => MessageId.ItemTransform;
 

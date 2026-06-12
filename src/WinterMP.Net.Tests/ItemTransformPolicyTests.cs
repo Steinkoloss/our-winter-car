@@ -8,31 +8,33 @@ namespace WinterMP.Net.Tests
     public class ItemTransformPolicyTests
     {
         [Theory]
-        [InlineData(false, ItemTransformPolicy.ItemRemoteHoldSeconds)]
-        [InlineData(true, ItemTransformPolicy.DriverRemoteHoldSeconds)]
-        public void GetRemoteHoldSeconds_DependsOnDriverFlag(bool remoteIsDriver, float expected)
+        [InlineData(false, false, ItemTransformPolicy.ItemRemoteHoldSeconds)]
+        [InlineData(true, false, ItemTransformPolicy.DriverRemoteHoldSeconds)]
+        [InlineData(false, true, ItemTransformPolicy.DriverRemoteHoldSeconds)]
+        [InlineData(true, true, ItemTransformPolicy.DriverRemoteHoldSeconds)]
+        public void GetRemoteHoldSeconds_DependsOnDriverOrVehicle(bool remoteIsDriver, bool isVehicle, float expected)
         {
-            Assert.Equal(expected, ItemTransformPolicy.GetRemoteHoldSeconds(remoteIsDriver));
+            Assert.Equal(expected, ItemTransformPolicy.GetRemoteHoldSeconds(remoteIsDriver, isVehicle));
         }
 
         [Fact]
-        public void IsRemoteStreamLive_UsesDriverHoldForDrivers()
+        public void IsRemoteStreamLive_UsesDriverHoldForDriversAndVehicles()
         {
             float now = 100f;
-            float last = now - 2f;
-            Assert.True(ItemTransformPolicy.IsRemoteStreamLive(last, now, remoteIsDriver: true));
-            Assert.False(ItemTransformPolicy.IsRemoteStreamLive(now - 4f, now, remoteIsDriver: true));
-            Assert.False(ItemTransformPolicy.IsRemoteStreamLive(now - 1f, now, remoteIsDriver: false));
+            Assert.True(ItemTransformPolicy.IsRemoteStreamLive(now - 2f, now, remoteIsDriver: true, isVehicle: false));
+            Assert.True(ItemTransformPolicy.IsRemoteStreamLive(now - 2f, now, remoteIsDriver: false, isVehicle: true));
+            Assert.False(ItemTransformPolicy.IsRemoteStreamLive(now - 4f, now, remoteIsDriver: true, isVehicle: false));
+            Assert.False(ItemTransformPolicy.IsRemoteStreamLive(now - 1f, now, remoteIsDriver: false, isVehicle: false));
         }
 
         [Theory]
         [InlineData(true, true, Channel.ReliableOrdered)]
-        [InlineData(false, true, Channel.ReliableOrdered)]
         [InlineData(true, false, Channel.ReliableOrdered)]
+        [InlineData(false, true, Channel.ReliableOrdered)]
         [InlineData(false, false, Channel.UnreliableSequenced)]
-        public void SelectSendChannel_DriverAndFinalAreReliable(bool isFinal, bool isDriver, Channel expected)
+        public void SelectSendChannel_FinalAndVehicleAreReliable(bool isFinal, bool isVehicle, Channel expected)
         {
-            Assert.Equal(expected, ItemTransformPolicy.SelectSendChannel(isFinal, isDriver));
+            Assert.Equal(expected, ItemTransformPolicy.SelectSendChannel(isFinal, isVehicle));
         }
 
         [Fact]
@@ -44,6 +46,23 @@ namespace WinterMP.Net.Tests
             Assert.False(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
                 remoteStreamLive: true,
                 remoteIsDriver: true,
+                remoteIsVehicle: false,
+                lastRemoteAt: last,
+                now: now,
+                localPlayerId: 0,
+                remoteOwnerId: 2));
+        }
+
+        [Fact]
+        public void ShouldSeatDriverOutClaimRemote_BlocksLiveRemoteVehicleStreamEvenForHost()
+        {
+            float now = 50f;
+            float last = now - 1f;
+
+            Assert.False(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
+                remoteStreamLive: true,
+                remoteIsDriver: false,
+                remoteIsVehicle: true,
                 lastRemoteAt: last,
                 now: now,
                 localPlayerId: 0,
@@ -59,6 +78,7 @@ namespace WinterMP.Net.Tests
             Assert.True(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
                 remoteStreamLive: false,
                 remoteIsDriver: true,
+                remoteIsVehicle: false,
                 lastRemoteAt: last,
                 now: now,
                 localPlayerId: 0,
@@ -74,6 +94,7 @@ namespace WinterMP.Net.Tests
             Assert.False(ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
                 remoteStreamLive: false,
                 remoteIsDriver: true,
+                remoteIsVehicle: false,
                 lastRemoteAt: last,
                 now: now,
                 localPlayerId: 2,
@@ -86,6 +107,19 @@ namespace WinterMP.Net.Tests
             float now = 10f;
             Assert.False(ItemTransformPolicy.AllowsVehicleProximityClaim(
                 remoteIsDriver: true,
+                remoteVehicleStreamLive: false,
+                remoteOwnerId: 1,
+                lastRemoteAt: now - 0.5f,
+                now: now));
+        }
+
+        [Fact]
+        public void AllowsVehicleProximityClaim_BlocksNearLiveRemoteVehicleStream()
+        {
+            float now = 10f;
+            Assert.False(ItemTransformPolicy.AllowsVehicleProximityClaim(
+                remoteIsDriver: false,
+                remoteVehicleStreamLive: true,
                 remoteOwnerId: 1,
                 lastRemoteAt: now - 0.5f,
                 now: now));
@@ -97,9 +131,22 @@ namespace WinterMP.Net.Tests
             float now = 10f;
             Assert.True(ItemTransformPolicy.AllowsVehicleProximityClaim(
                 remoteIsDriver: true,
+                remoteVehicleStreamLive: false,
                 remoteOwnerId: 1,
                 lastRemoteAt: now - ItemTransformPolicy.DriverRemoteHoldSeconds - 0.1f,
                 now: now));
+        }
+
+        [Fact]
+        public void RemoteClaimWinsOverLocal_ActiveVehicleStreamAlwaysWins()
+        {
+            Assert.True(ItemTransformPolicy.RemoteClaimWinsOverLocal(
+                localIsDriver: false,
+                remoteIsDriver: false,
+                localPlayerId: 0,
+                remoteOwnerId: 2,
+                isVehicleStream: true,
+                isFinal: false));
         }
 
         [Theory]
@@ -111,7 +158,8 @@ namespace WinterMP.Net.Tests
             bool localIsDriver, bool remoteIsDriver, byte localId, byte remoteId, bool remoteWins)
         {
             Assert.Equal(remoteWins, ItemTransformPolicy.RemoteClaimWinsOverLocal(
-                localIsDriver, remoteIsDriver, localId, remoteId));
+                localIsDriver, remoteIsDriver, localId, remoteId,
+                isVehicleStream: false, isFinal: false));
         }
 
         [Fact]
@@ -123,20 +171,21 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
-        public void ItemTransform_DriverFlag_RoundTrips()
+        public void ItemTransform_Flags_RoundTrip()
         {
             var original = new ItemTransform
             {
                 ItemId = 1,
                 OwnerPlayerId = 2,
                 Sequence = 3,
-                Flags = ItemTransform.FlagDriver,
+                Flags = ItemTransform.FlagDriver | ItemTransform.FlagVehicle,
             };
 
             var decoded = Assert.IsType<ItemTransform>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.True(decoded.IsDriver);
+            Assert.True(decoded.IsVehicle);
             Assert.False(decoded.IsFinal);
-            Assert.Equal(Channel.ReliableOrdered, ItemTransformPolicy.SelectSendChannel(decoded.IsFinal, decoded.IsDriver));
+            Assert.Equal(Channel.ReliableOrdered, ItemTransformPolicy.SelectSendChannel(decoded.IsFinal, decoded.IsVehicle));
         }
     }
 }

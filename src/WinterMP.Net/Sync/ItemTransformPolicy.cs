@@ -12,14 +12,18 @@ namespace WinterMP.Net.Sync
         public const float DriverRemoteHoldSeconds = 3.5f;
         public const byte NoRemoteOwner = byte.MaxValue;
 
-        public static float GetRemoteHoldSeconds(bool remoteIsDriver) =>
-            remoteIsDriver ? DriverRemoteHoldSeconds : ItemRemoteHoldSeconds;
+        public static float GetRemoteHoldSeconds(bool remoteIsDriver, bool isVehicle) =>
+            remoteIsDriver || isVehicle ? DriverRemoteHoldSeconds : ItemRemoteHoldSeconds;
 
-        public static bool IsRemoteStreamLive(float lastRemoteAt, float now, bool remoteIsDriver) =>
-            now - lastRemoteAt < GetRemoteHoldSeconds(remoteIsDriver);
+        public static bool IsRemoteStreamLive(float lastRemoteAt, float now, bool remoteIsDriver, bool isVehicle) =>
+            now - lastRemoteAt < GetRemoteHoldSeconds(remoteIsDriver, isVehicle);
 
-        public static Channel SelectSendChannel(bool isFinal, bool isDriver) =>
-            isFinal || isDriver ? Channel.ReliableOrdered : Channel.UnreliableSequenced;
+        /// <summary>
+        /// Vehicle pose streams must be reliable — dropped unreliable packets left
+        /// cars frozen at their spawn pose until the resting final packet arrived.
+        /// </summary>
+        public static Channel SelectSendChannel(bool isFinal, bool isVehicle) =>
+            isFinal || isVehicle ? Channel.ReliableOrdered : Channel.UnreliableSequenced;
 
         /// <summary>
         /// When the local player enters the driver's seat, may they take ownership
@@ -28,15 +32,16 @@ namespace WinterMP.Net.Sync
         public static bool ShouldSeatDriverOutClaimRemote(
             bool remoteStreamLive,
             bool remoteIsDriver,
+            bool remoteIsVehicle,
             float lastRemoteAt,
             float now,
             byte localPlayerId,
             byte remoteOwnerId)
         {
-            if (remoteStreamLive && remoteIsDriver)
+            if (remoteStreamLive && (remoteIsDriver || remoteIsVehicle))
                 return false;
 
-            if (remoteIsDriver && remoteOwnerId != NoRemoteOwner)
+            if ((remoteIsDriver || remoteIsVehicle) && remoteOwnerId != NoRemoteOwner)
                 return localPlayerId < remoteOwnerId;
 
             return true;
@@ -47,14 +52,16 @@ namespace WinterMP.Net.Sync
         /// </summary>
         public static bool AllowsVehicleProximityClaim(
             bool remoteIsDriver,
+            bool remoteVehicleStreamLive,
             byte remoteOwnerId,
             float lastRemoteAt,
             float now)
         {
-            if (remoteIsDriver && now - lastRemoteAt < DriverRemoteHoldSeconds)
+            if ((remoteIsDriver || remoteVehicleStreamLive)
+                && now - lastRemoteAt < DriverRemoteHoldSeconds)
                 return false;
             if (remoteOwnerId != NoRemoteOwner
-                && now - lastRemoteAt < GetRemoteHoldSeconds(remoteIsDriver))
+                && now - lastRemoteAt < GetRemoteHoldSeconds(remoteIsDriver, remoteVehicleStreamLive))
                 return false;
             return true;
         }
@@ -66,9 +73,18 @@ namespace WinterMP.Net.Sync
             bool localIsDriver,
             bool remoteIsDriver,
             byte localPlayerId,
-            byte remoteOwnerId)
+            byte remoteOwnerId,
+            bool isVehicleStream,
+            bool isFinal)
         {
-            if (remoteIsDriver != localIsDriver) return remoteIsDriver;
+            // Active vehicle streams beat idle local proximity claims — otherwise
+            // the host (id 0) ignores guest driver packets and vice versa.
+            if (isVehicleStream && !isFinal)
+                return true;
+
+            if (remoteIsDriver != localIsDriver)
+                return remoteIsDriver;
+
             return remoteOwnerId < localPlayerId;
         }
 

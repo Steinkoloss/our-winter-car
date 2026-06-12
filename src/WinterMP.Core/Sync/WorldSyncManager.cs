@@ -239,6 +239,7 @@ namespace WinterMP.Core.Sync
 
             public byte RemoteOwner = NoOwner;
             public bool RemoteIsDriver;
+            public bool RemoteVehicleStream;
             public float LastRemoteAt = -999f;
             public ushort LastRemoteSequence;
             public Vector3 TargetPosition;
@@ -259,6 +260,10 @@ namespace WinterMP.Core.Sync
             public Transform? DriverAnchorTransform;
             public Collider? SeatCollider;
             public bool SeatBlocked;
+
+            // Vehicles only: stays true from claim/drive until rest final — MWC often
+            // leaves PLAYER at the door while the rigidbody moves away.
+            public bool LocalDriveActive;
 
             // Vehicles only: engine / ignition sync (M4).
             public bool SystemsReady;
@@ -2780,9 +2785,14 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (item.LocallyOwned && session != null)
             {
-                bool localIsDriver = item.IsVehicle && IsLocalPlayerDriving(item);
+                bool localIsDriver = item.IsVehicle && IsLocalVehicleOperator(item);
                 bool remoteWins = ItemTransformPolicy.RemoteClaimWinsOverLocal(
-                    localIsDriver, message.IsDriver, session.LocalPlayerId, message.OwnerPlayerId);
+                    localIsDriver,
+                    message.IsDriver,
+                    session.LocalPlayerId,
+                    message.OwnerPlayerId,
+                    message.IsVehicle,
+                    message.IsFinal);
                 if (!remoteWins) return;
                 item.LocallyOwned = false;
             }
@@ -2790,6 +2800,7 @@ namespace WinterMP.Core.Sync
             bool firstPacket = item.RemoteOwner != message.OwnerPlayerId;
             item.RemoteOwner = message.OwnerPlayerId;
             item.RemoteIsDriver = message.IsDriver;
+            item.RemoteVehicleStream = message.IsVehicle && !message.IsFinal;
             item.LastRemoteSequence = message.Sequence;
 
             var body = item.Body;
@@ -2816,6 +2827,7 @@ namespace WinterMP.Core.Sync
 
                 item.RemoteOwner = NoOwner;
                 item.RemoteIsDriver = false;
+                item.RemoteVehicleStream = false;
                 item.LastRemoteAt = -999f;
                 item.LastMovedAt = -999f; // the landing must not look like local motion
                 item.LastPosition = position;
@@ -2828,7 +2840,8 @@ namespace WinterMP.Core.Sync
                 body.isKinematic = true;
                 if (firstPacket && item.IsVehicle)
                 {
-                    WinterMPPlugin.Log.LogInfo($"WorldSync: '{item.Path}' now {(message.IsDriver ? "driven" : "moved")} by player {message.OwnerPlayerId}.");
+                    WinterMPPlugin.Log.LogInfo(
+                        $"WorldSync: '{item.Path}' now {(message.IsDriver ? "driven" : "moved")} by player {message.OwnerPlayerId}.");
                     // Snap on first packet so a car that drove away doesn't stay parked
                     // locally until someone walks up and triggers a huge correction.
                     body.transform.position = position;
@@ -2841,7 +2854,7 @@ namespace WinterMP.Core.Sync
 
                 // An occupied driver's seat must not be enterable locally.
                 if (item.IsVehicle)
-                    SetSeatBlocked(item, message.IsDriver);
+                    SetSeatBlocked(item, message.IsDriver || (message.IsVehicle && !message.IsFinal));
             }
         }
 
@@ -2859,7 +2872,9 @@ namespace WinterMP.Core.Sync
             foreach (var item in _items.Values)
             {
                 if (item.IsVehicle && item.Body != null
-                    && ItemTransformPolicy.IsRemoteStreamLive(item.LastRemoteAt, now, item.RemoteIsDriver))
+                    && item.RemoteOwner != NoOwner
+                    && ItemTransformPolicy.IsRemoteStreamLive(
+                        item.LastRemoteAt, now, item.RemoteIsDriver, item.RemoteVehicleStream))
                     _remoteVehiclePositions.Add(item.Body.transform.position);
             }
 
@@ -2875,17 +2890,15 @@ namespace WinterMP.Core.Sync
                     continue;
                 }
 
-                bool seatedDriver = item.IsVehicle && IsLocalPlayerDriving(item);
-                bool remoteDriven = ItemTransformPolicy.IsRemoteStreamLive(
-                    item.LastRemoteAt, now, item.RemoteIsDriver);
+                bool operating = item.IsVehicle && IsLocalVehicleOperator(item);
+                bool remoteDriven = item.RemoteOwner != NoOwner
+                    && ItemTransformPolicy.IsRemoteStreamLive(
+                        item.LastRemoteAt, now, item.RemoteIsDriver, item.RemoteVehicleStream);
 
                 if (item.IsVehicle)
                     UpdateRemoteEngineAudio(item, now);
 
-                // Entering the driver's seat out-claims proximity owners, pushers,
-                // and the previous driver (protocol: driver beats non-driver; among
-                // drivers the lowest player id wins).
-                if (seatedDriver && !item.LocallyOwned
+                if (operating && !item.LocallyOwned
                     && LocalDriverOutClaimsRemote(session, item, remoteDriven))
                 {
                     ClaimItem(session, item, body, now);
@@ -2898,12 +2911,12 @@ namespace WinterMP.Core.Sync
                     continue;
                 }
 
-                if (item.RemoteOwner != NoOwner)
+                if (item.RemoteOwner != NoOwner && !remoteDriven)
                 {
-                    // Stream died without a final packet — give physics back.
                     body.isKinematic = item.OriginalKinematic;
                     item.RemoteOwner = NoOwner;
                     item.RemoteIsDriver = false;
+                    item.RemoteVehicleStream = false;
                     SetSeatBlocked(item, false);
                 }
 
@@ -2918,15 +2931,31 @@ namespace WinterMP.Core.Sync
 
                 if (item.LocallyOwned)
                 {
-                    if (seatedDriver)
+                    if (item.IsVehicle)
                     {
-                        // Drivers hold their vehicle until they leave the seat. A
-                        // stillness release here would let the other machine's copy
-                        // wake up, claim, and freeze us — the mutual-driver deadlock.
-                        if (now >= item.NextSendAt)
+                        if (operating)
+                            item.LocalDriveActive = true;
+
+                        if (item.LocalDriveActive || moving)
+                        {
+                            if (now >= item.NextSendAt)
+                            {
+                                SendItem(session, item, body, false);
+                                item.NextSendAt = now + (moving || item.LocalDriveActive
+                                    ? 1f / item.SendRateHz
+                                    : DriverKeepaliveSeconds);
+                            }
+                        }
+                        else if (!ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
+                        {
+                            SendItem(session, item, body, true);
+                            item.LocallyOwned = false;
+                            item.LocalDriveActive = false;
+                        }
+                        else if (now >= item.NextSendAt)
                         {
                             SendItem(session, item, body, false);
-                            item.NextSendAt = now + (moving ? 1f / item.SendRateHz : DriverKeepaliveSeconds);
+                            item.NextSendAt = now + DriverKeepaliveSeconds;
                         }
                     }
                     else if (!moving)
@@ -2947,7 +2976,6 @@ namespace WinterMP.Core.Sync
                         SendItem(session, item, body, false);
                         item.NextSendAt = now + 1f / item.SendRateHz;
                     }
-
                 }
                 else if (moving && CanClaim(item, position, now)
                          && !ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
@@ -2963,12 +2991,16 @@ namespace WinterMP.Core.Sync
             FindLocalPlayer();
             if (_localPlayer == null) return false;
 
-            if (item.IsVehicle && IsLocalPlayerDriving(item)) return true;
+            if (item.IsVehicle && IsLocalVehicleOperator(item)) return true;
 
-            // Never proximity-steal a vehicle someone else is driving remotely.
-            if (item.IsVehicle && !IsLocalPlayerDriving(item)
+            if (item.IsVehicle && !IsLocalVehicleOperator(item)
                 && !ItemTransformPolicy.AllowsVehicleProximityClaim(
-                    item.RemoteIsDriver, item.RemoteOwner, item.LastRemoteAt, now))
+                    item.RemoteIsDriver,
+                    item.RemoteVehicleStream && ItemTransformPolicy.IsRemoteStreamLive(
+                        item.LastRemoteAt, now, item.RemoteIsDriver, isVehicle: true),
+                    item.RemoteOwner,
+                    item.LastRemoteAt,
+                    now))
                 return false;
 
             if ((position - _localPlayer.position).sqrMagnitude >= item.ClaimRadius * item.ClaimRadius)
@@ -2996,21 +3028,23 @@ namespace WinterMP.Core.Sync
                 body.isKinematic = item.OriginalKinematic;
                 item.RemoteOwner = NoOwner;
                 item.RemoteIsDriver = false;
+                item.RemoteVehicleStream = false;
                 item.LastRemoteAt = -999f;
                 SetSeatBlocked(item, false);
             }
 
-            // Our real engine takes over from the synthesized remote audio.
             item.RemoteEngineUntil = -999f;
 
             item.LocallyOwned = true;
             item.LastMovedAt = now;
+            if (item.IsVehicle)
+                item.LocalDriveActive = IsLocalPlayerDriving(item) || IsLocalPlayerNearVehicle(item);
             SendItem(session, item, body, false);
             item.NextSendAt = now + 1f / item.SendRateHz;
 
             if (item.IsVehicle)
                 WinterMPPlugin.Log.LogInfo($"WorldSync: claimed vehicle '{item.Path}' " +
-                    $"({(IsLocalPlayerDriving(item) ? "driving" : "pushing")}).");
+                    $"({(IsLocalVehicleOperator(item) ? "driving" : "pushing")}).");
             else
                 WinterMPPlugin.Log.LogDebug($"WorldSync: claimed item '{item.Path}'.");
         }
@@ -3042,7 +3076,22 @@ namespace WinterMP.Core.Sync
         }
 
         private static float GetRemoteHoldSeconds(SyncedItem item) =>
-            ItemTransformPolicy.GetRemoteHoldSeconds(item.RemoteIsDriver);
+            ItemTransformPolicy.GetRemoteHoldSeconds(item.RemoteIsDriver, item.RemoteVehicleStream);
+
+        private bool IsLocalVehicleOperator(SyncedItem item)
+        {
+            if (!item.IsVehicle) return false;
+            if (item.LocalDriveActive) return true;
+            return IsLocalPlayerDriving(item);
+        }
+
+        private bool IsLocalPlayerNearVehicle(SyncedItem item)
+        {
+            FindLocalPlayer();
+            if (_localPlayer == null || item.Body == null) return false;
+            float distSq = (_localPlayer.position - item.Body.transform.position).sqrMagnitude;
+            return distSq <= VehicleClaimRadius * VehicleClaimRadius;
+        }
 
         private bool IsLocalPlayerDriving(SyncedItem item) => IsLocalPlayerDriving(item.Body, item);
 
@@ -3085,6 +3134,7 @@ namespace WinterMP.Core.Sync
             return ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
                 remoteDriven,
                 item.RemoteIsDriver,
+                item.RemoteVehicleStream,
                 item.LastRemoteAt,
                 Time.unscaledTime,
                 session.LocalPlayerId,
@@ -3157,8 +3207,12 @@ namespace WinterMP.Core.Sync
             float now = Time.unscaledTime;
             foreach (var item in _items.Values)
             {
-                if (!item.IsVehicle || !item.RemoteIsDriver || item.RemoteOwner != playerId) continue;
-                if (item.Body == null || now - item.LastRemoteAt >= RemoteDriverHoldSeconds) continue;
+                if (!item.IsVehicle || item.RemoteOwner != playerId) continue;
+                if (item.Body == null
+                    || !ItemTransformPolicy.IsRemoteStreamLive(
+                        item.LastRemoteAt, now, item.RemoteIsDriver, item.RemoteVehicleStream))
+                    continue;
+                if (!item.RemoteIsDriver && !item.RemoteVehicleStream) continue;
 
                 EnsureSeat(item);
                 vehicle = item.Body.transform;
@@ -3173,10 +3227,12 @@ namespace WinterMP.Core.Sync
 
         private void SendItem(SessionManager session, SyncedItem item, Rigidbody body, bool final)
         {
-            bool isDriver = item.IsVehicle && IsLocalPlayerDriving(item);
+            bool isVehicle = item.IsVehicle;
+            bool isDriver = isVehicle && IsLocalVehicleOperator(item);
             byte flags = 0;
             if (final) flags |= ItemTransform.FlagFinal;
             if (isDriver) flags |= ItemTransform.FlagDriver;
+            if (isVehicle && !final) flags |= ItemTransform.FlagVehicle;
 
             var message = new ItemTransform
             {
@@ -3188,7 +3244,10 @@ namespace WinterMP.Core.Sync
                 Rotation = body.transform.rotation.ToNet(),
             };
 
-            session.SendWorldMessage(message, ItemTransformPolicy.SelectSendChannel(final, isDriver));
+            session.SendWorldMessage(message, ItemTransformPolicy.SelectSendChannel(final, isVehicle));
+
+            if (final && isVehicle)
+                item.LocalDriveActive = false;
         }
 
         // ------------------------------------------------------------------ engine & ignition
@@ -4386,6 +4445,8 @@ namespace WinterMP.Core.Sync
                     item.Body.isKinematic = item.OriginalKinematic;
                 item.RemoteOwner = NoOwner;
                 item.RemoteIsDriver = false;
+                item.RemoteVehicleStream = false;
+                item.LocalDriveActive = false;
                 item.LocallyOwned = false;
                 item.LastRemoteAt = -999f;
                 item.RemoteEngineUntil = -999f;
