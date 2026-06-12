@@ -6,6 +6,7 @@ using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
@@ -54,7 +55,10 @@ namespace WinterMP.Core.Sync
         /// <summary>Vehicle claims: covers the cabin (driver) and pushing from any side.</summary>
         private const float VehicleClaimRadius = 7f;
         /// <summary>Remote stream is considered live for this long after the last packet.</summary>
-        private const float RemoteHoldSeconds = 0.75f;
+        private const float RemoteHoldSeconds = ItemTransformPolicy.ItemRemoteHoldSeconds;
+        /// <summary>Remote drivers keep the vehicle frozen longer — packet loss must not
+        /// wake local physics and let nearby players fight over the car.</summary>
+        private const float RemoteDriverHoldSeconds = ItemTransformPolicy.DriverRemoteHoldSeconds;
         /// <summary>A seated driver holds the vehicle with keepalives even when parked,
         /// so ownership can't flap when two players sit in (their copies of) one car.</summary>
         private const float DriverKeepaliveSeconds = 0.4f;
@@ -64,7 +68,6 @@ namespace WinterMP.Core.Sync
         private const float MoveEpsilonSqr = 1e-6f; // 1 mm — carried items move slowly
         private const float VehicleMoveEpsilonSqr = 2.5e-3f; // 5 cm — ignore idle-engine jitter
         /// <summary>Root rigidbodies at least this heavy are treated as vehicles.</summary>
-        private const float VehicleMinMass = 150f;
         /// <summary>Remote pose smoothing (same feel as RemoteAvatar).</summary>
         private const float RemoteLerpSpeed = 12f;
         private const float RemoteSnapDistance = 15f;
@@ -253,6 +256,7 @@ namespace WinterMP.Core.Sync
             // remote driver holds the vehicle; also anchors the driver's avatar.
             public bool SeatSearched;
             public Transform? SeatTransform;
+            public Transform? DriverAnchorTransform;
             public Collider? SeatCollider;
             public bool SeatBlocked;
 
@@ -737,11 +741,8 @@ namespace WinterMP.Core.Sync
                         }
                         else if (fsmName == "Screw")
                         {
-                            if (FsmHook.HasState(fsm, "Tight?") && FsmHook.HasState(fsm, "Loose?")
-                                && RegisterBolt(fsm))
-                            {
+                            if (SyncCatalog.TryMatchBolt(fsm) && RegisterBolt(fsm))
                                 newBolts++;
-                            }
                         }
                         else if (fsmName == "Buy")
                         {
@@ -750,7 +751,7 @@ namespace WinterMP.Core.Sync
                         }
                         else if (fsmName == "Data")
                         {
-                            string[]? partStates = ClassifyPartAssembly(fsm);
+                            string[]? partStates = SyncCatalog.TryMatchPart(fsm);
                             if (partStates != null && RegisterPart(fsm, partStates))
                                 newParts++;
                             else if (ClassifyBuy(fsm, out var dataBuy) && RegisterBuy(fsm, dataBuy))
@@ -809,34 +810,15 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        private static string[]? ClassifyPartAssembly(PlayMakerFSM fsm)
-        {
-            string path = ScenePath.Of(fsm.transform);
-            if (path.IndexOf("(VINXX)", StringComparison.Ordinal) < 0) return null;
-            if (!HasAllStates(fsm, "Bolted", "Unbolted")) return null;
-
-            var states = new List<string> { "Bolted", "Unbolted" };
-            if (FsmHook.HasState(fsm, "Stop")) states.Add("Stop");
-            if (FsmHook.HasState(fsm, "Install 1")) states.Add("Install 1");
-            if (FsmHook.HasState(fsm, "Install 2")) states.Add("Install 2");
-            if (FsmHook.HasState(fsm, "Remove")) states.Add("Remove");
-            return states.ToArray();
-        }
-
         private static bool ClassifyBuy(PlayMakerFSM fsm, out BuyProfile profile)
         {
             profile = default;
-            if (SyncCatalog.TryMatchBuy(fsm, out var catalog) && catalog != null)
-            {
-                profile.EntryGuards = ToBuyGuards(catalog.EntryGuards);
-                profile.ResultStates = catalog.ResultStates;
-                return true;
-            }
-
-            if (fsm.FsmName != "Buy")
+            if (!SyncCatalog.TryMatchBuy(fsm, out var catalog) || catalog == null)
                 return false;
 
-            return ClassifyShopBuy(fsm, out profile);
+            profile.EntryGuards = ToBuyGuards(catalog.EntryGuards);
+            profile.ResultStates = catalog.ResultStates;
+            return true;
         }
 
         private static BuyEntryGuard[] ToBuyGuards(CatalogBuyGuard[] guards)
@@ -852,41 +834,6 @@ namespace WinterMP.Core.Sync
             }
 
             return result;
-        }
-
-        private static bool ClassifyShopBuy(PlayMakerFSM fsm, out BuyProfile profile)
-        {
-            profile = default;
-
-            var guards = new List<BuyEntryGuard>();
-            if (FsmHook.HasState(fsm, "Check money")) guards.Add(new BuyEntryGuard { StateName = "Check money", TriggerEvent = "USE" });
-            if (FsmHook.HasState(fsm, "Check inventory")) guards.Add(new BuyEntryGuard { StateName = "Check inventory", TriggerEvent = "PURCHASE" });
-            if (FsmHook.HasState(fsm, "Check if 0")) guards.Add(new BuyEntryGuard { StateName = "Check if 0", TriggerEvent = "DEPURCHASE" });
-            if (guards.Count == 0 && FsmHook.HasState(fsm, "Purchase") && FsmHook.HasState(fsm, "Wait button"))
-                guards.Add(new BuyEntryGuard { StateName = "Purchase", TriggerEvent = "USE" });
-
-            // Peräpörtti restaurant counter — PURCHASE/DEPURCHASE from Wait button, no Check money.
-            if (guards.Count == 0 && FsmHook.HasState(fsm, "Cashier") && FsmHook.HasState(fsm, "Wait button")
-                && !FsmHook.HasState(fsm, "Check money") && !FsmHook.HasState(fsm, "Purchase"))
-            {
-                guards.Add(new BuyEntryGuard { StateName = "Cashier", TriggerEvent = "PURCHASE" });
-                if (FsmHook.HasState(fsm, "State 1"))
-                    guards.Add(new BuyEntryGuard { StateName = "State 1", TriggerEvent = "DEPURCHASE" });
-            }
-
-            if (guards.Count == 0) return false;
-
-            var results = new List<string>();
-            foreach (string state in new[] { "Purchase", "Cashier", "Add", "Subtract", "State 1", "Wait" })
-            {
-                if (FsmHook.HasState(fsm, state)) results.Add(state);
-            }
-
-            if (results.Count == 0) return false;
-
-            profile.EntryGuards = guards.ToArray();
-            profile.ResultStates = results.ToArray();
-            return true;
         }
 
         private static bool HasAllStates(PlayMakerFSM fsm, params string[] states)
@@ -1134,8 +1081,8 @@ namespace WinterMP.Core.Sync
                 {
                     if (!body.gameObject.activeInHierarchy) continue;
 
-                    bool isVehicle = IsVehicleRoot(body);
-                    bool isItem = !isVehicle && IsPickableRigidbody(body);
+                    bool isVehicle = SyncCatalog.IsVehicleRoot(body);
+                    bool isItem = !isVehicle && SyncCatalog.IsPickableRigidbody(body);
                     if (!isItem && !isVehicle) continue;
 
                     newcomers.Add(new SyncedItem
@@ -1216,65 +1163,6 @@ namespace WinterMP.Core.Sync
             return added;
         }
 
-        /// <summary>
-        /// Vehicles = heavy root-level rigidbodies (SORBET 955 kg, KEKMET, BACHGLOTZ,
-        /// FLATBED trailer...) plus the light two-wheelers/trucks caught by name.
-        /// </summary>
-        private static bool IsVehicleRoot(Rigidbody body)
-        {
-            if (body.transform.parent != null) return false;
-            if (body.mass >= VehicleMinMass) return true;
-
-            string name = body.name;
-            return name.StartsWith("JONNEZ", StringComparison.Ordinal)
-                || name.StartsWith("GIFU", StringComparison.Ordinal)
-                || name.StartsWith("JOKKIS", StringComparison.Ordinal)
-                || name.StartsWith("CORRIS", StringComparison.Ordinal); // project car shell is only 107 kg
-        }
-
-        /// <summary>
-        /// Pickables beyond the (itemx) equipment suffix — includes food/drink
-        /// rigidbodies whose root Use FSM has a Destroy pipeline.
-        /// </summary>
-        private static bool IsPickableRigidbody(Rigidbody body)
-        {
-            string name = body.name;
-            if (name.IndexOf("(VINXX)", StringComparison.Ordinal) >= 0) return false;
-            if (name.IndexOf("(itemx)", StringComparison.Ordinal) >= 0) return true;
-            if (name.IndexOf("(item2)", StringComparison.Ordinal) >= 0) return true;
-            if (name.IndexOf("(lugga)", StringComparison.Ordinal) >= 0) return true;
-
-            foreach (var fsm in body.GetComponents<PlayMakerFSM>())
-            {
-                if (fsm.FsmName != "Use") continue;
-                if (FsmHook.HasState(fsm, "Destroy") || FsmHook.HasState(fsm, "Destroy self"))
-                    return true;
-                if (FsmHook.HasState(fsm, "Check drink"))
-                    return true;
-            }
-
-            return false;
-        }
-
-        private static void CollectConsumableDespawnStates(PlayMakerFSM fsm, List<string> states)
-        {
-            foreach (string state in new[] { "Destroy", "Destroy self" })
-            {
-                if (FsmHook.HasState(fsm, state) && !states.Contains(state))
-                    states.Add(state);
-            }
-
-            if (!FsmHook.HasState(fsm, "Check drink")) return;
-
-            if (FsmHook.HasState(fsm, "State 2") && !states.Contains("State 2"))
-                states.Add("State 2");
-            if (FsmHook.HasState(fsm, "State 5") && !states.Contains("State 5"))
-                states.Add("State 5");
-            // Juice concentrate, milk cartons, empty beer cases, etc. — Save DESTROY -> State 6.
-            if (FsmHook.HasState(fsm, "State 6") && !states.Contains("State 6"))
-                states.Add("State 6");
-        }
-
         private void TryRegisterConsumableHooks(SyncedItem item)
         {
             if (item.Body == null || item.IsVehicle) return;
@@ -1284,7 +1172,7 @@ namespace WinterMP.Core.Sync
                 if (fsm.FsmName != "Use" || _hookedFsms.ContainsKey(fsm)) continue;
 
                 var despawnStates = new List<string>();
-                CollectConsumableDespawnStates(fsm, despawnStates);
+                SyncCatalog.CollectConsumableDespawnStates(fsm, despawnStates);
                 if (despawnStates.Count == 0) continue;
 
                 bool hooked = false;
@@ -2672,7 +2560,7 @@ namespace WinterMP.Core.Sync
                 if (_items.TryGetValue(entry.ItemId, out var item) && item.Body != null)
                 {
                     // Live streams beat the snapshot (it was built moments ago).
-                    if (item.LocallyOwned || Time.unscaledTime - item.LastRemoteAt < RemoteHoldSeconds)
+                    if (item.LocallyOwned || Time.unscaledTime - item.LastRemoteAt < GetRemoteHoldSeconds(item))
                         continue;
                     ApplySnapshotPose(item, position, rotation);
                     applied++;
@@ -2878,27 +2766,23 @@ namespace WinterMP.Core.Sync
             // Stale unreliable packets from the same owner are dropped (wrap-aware).
             if (message.OwnerPlayerId == item.RemoteOwner)
             {
-                ushort diff = (ushort)(message.Sequence - item.LastRemoteSequence);
-                if (diff == 0 || diff > short.MaxValue)
+                if (ItemTransformPolicy.IsStaleSequence(item.LastRemoteSequence, message.Sequence))
                 {
-                    if (!message.IsFinal)
+                    if (!message.IsFinal && !message.IsDriver)
                         ConnectionQuality.Instance.NoteUnreliableDropped();
                     return;
                 }
             }
 
-            if (!message.IsFinal)
+            if (!message.IsFinal && !message.IsDriver)
                 ConnectionQuality.Instance.NoteUnreliableReceived();
 
             var session = SessionManager.Instance;
             if (item.LocallyOwned && session != null)
             {
-                // Conflicting claims: a driver beats a non-driver; among equal
-                // priorities the lowest player id wins (host is 0, always wins).
-                bool localIsDriver = item.IsVehicle && IsLocalPlayerDriving(item.Body);
-                bool remoteWins = message.IsDriver != localIsDriver
-                    ? message.IsDriver
-                    : message.OwnerPlayerId < session.LocalPlayerId;
+                bool localIsDriver = item.IsVehicle && IsLocalPlayerDriving(item);
+                bool remoteWins = ItemTransformPolicy.RemoteClaimWinsOverLocal(
+                    localIsDriver, message.IsDriver, session.LocalPlayerId, message.OwnerPlayerId);
                 if (!remoteWins) return;
                 item.LocallyOwned = false;
             }
@@ -2943,7 +2827,14 @@ namespace WinterMP.Core.Sync
                 // vehicles glide instead of teleporting at packet rate.
                 body.isKinematic = true;
                 if (firstPacket && item.IsVehicle)
+                {
                     WinterMPPlugin.Log.LogInfo($"WorldSync: '{item.Path}' now {(message.IsDriver ? "driven" : "moved")} by player {message.OwnerPlayerId}.");
+                    // Snap on first packet so a car that drove away doesn't stay parked
+                    // locally until someone walks up and triggers a huge correction.
+                    body.transform.position = position;
+                    body.transform.rotation = rotation;
+                }
+
                 item.TargetPosition = position;
                 item.TargetRotation = rotation;
                 item.LastRemoteAt = Time.unscaledTime;
@@ -2967,7 +2858,8 @@ namespace WinterMP.Core.Sync
             _remoteVehiclePositions.Clear();
             foreach (var item in _items.Values)
             {
-                if (item.IsVehicle && item.Body != null && now - item.LastRemoteAt < RemoteHoldSeconds)
+                if (item.IsVehicle && item.Body != null
+                    && ItemTransformPolicy.IsRemoteStreamLive(item.LastRemoteAt, now, item.RemoteIsDriver))
                     _remoteVehiclePositions.Add(item.Body.transform.position);
             }
 
@@ -2983,8 +2875,9 @@ namespace WinterMP.Core.Sync
                     continue;
                 }
 
-                bool seatedDriver = item.IsVehicle && IsLocalPlayerDriving(body);
-                bool remoteDriven = now - item.LastRemoteAt < RemoteHoldSeconds;
+                bool seatedDriver = item.IsVehicle && IsLocalPlayerDriving(item);
+                bool remoteDriven = ItemTransformPolicy.IsRemoteStreamLive(
+                    item.LastRemoteAt, now, item.RemoteIsDriver);
 
                 if (item.IsVehicle)
                     UpdateRemoteEngineAudio(item, now);
@@ -3056,7 +2949,7 @@ namespace WinterMP.Core.Sync
                     }
 
                 }
-                else if (moving && CanClaim(item, position)
+                else if (moving && CanClaim(item, position, now)
                          && !ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
                 {
                     ClaimItem(session, item, body, now);
@@ -3065,11 +2958,19 @@ namespace WinterMP.Core.Sync
 
         }
 
-        private bool CanClaim(SyncedItem item, Vector3 position)
+        private bool CanClaim(SyncedItem item, Vector3 position, float now)
         {
+            FindLocalPlayer();
             if (_localPlayer == null) return false;
 
-            if (item.IsVehicle && IsLocalPlayerDriving(item.Body)) return true;
+            if (item.IsVehicle && IsLocalPlayerDriving(item)) return true;
+
+            // Never proximity-steal a vehicle someone else is driving remotely.
+            if (item.IsVehicle && !IsLocalPlayerDriving(item)
+                && !ItemTransformPolicy.AllowsVehicleProximityClaim(
+                    item.RemoteIsDriver, item.RemoteOwner, item.LastRemoteAt, now))
+                return false;
+
             if ((position - _localPlayer.position).sqrMagnitude >= item.ClaimRadius * item.ClaimRadius)
                 return false;
 
@@ -3109,7 +3010,7 @@ namespace WinterMP.Core.Sync
 
             if (item.IsVehicle)
                 WinterMPPlugin.Log.LogInfo($"WorldSync: claimed vehicle '{item.Path}' " +
-                    $"({(IsLocalPlayerDriving(body) ? "driving" : "pushing")}).");
+                    $"({(IsLocalPlayerDriving(item) ? "driving" : "pushing")}).");
             else
                 WinterMPPlugin.Log.LogDebug($"WorldSync: claimed item '{item.Path}'.");
         }
@@ -3132,28 +3033,62 @@ namespace WinterMP.Core.Sync
             item.LastPosition = transform.position;
         }
 
-        private bool IsLocalPlayerDriving(Rigidbody vehicleBody)
+        private static Transform GetVehicleSceneRoot(Transform bodyTransform)
         {
-            // A seated passenger is parented under the car exactly like a driver,
-            // but passengers never own the vehicle.
+            Transform root = bodyTransform;
+            while (root.parent != null)
+                root = root.parent;
+            return root;
+        }
+
+        private static float GetRemoteHoldSeconds(SyncedItem item) =>
+            ItemTransformPolicy.GetRemoteHoldSeconds(item.RemoteIsDriver);
+
+        private bool IsLocalPlayerDriving(SyncedItem item) => IsLocalPlayerDriving(item.Body, item);
+
+        private bool IsLocalPlayerDriving(Rigidbody vehicleBody, SyncedItem? item = null)
+        {
             if (PassengerController.Instance != null && PassengerController.Instance.IsLocalSeated)
                 return false;
 
-            // Entering a vehicle parents PLAYER under it; that machine is the driver.
-            return _localPlayer != null && vehicleBody != null
-                && _localPlayer.IsChildOf(vehicleBody.transform);
+            FindLocalPlayer();
+            if (_localPlayer == null || vehicleBody == null) return false;
+
+            if (item?.PlayerInVar != null && item.PlayerInVar.Value)
+                return true;
+
+            Transform vehicleRoot = GetVehicleSceneRoot(vehicleBody.transform);
+            if (_localPlayer.IsChildOf(vehicleRoot))
+                return true;
+
+            if (_localPlayer.IsChildOf(vehicleBody.transform))
+                return true;
+
+            // Enter-seat race: hierarchy may lag one frame; MassDriver is the
+            // in-cabin physics anchor the game uses while driving.
+            if (item != null)
+            {
+                EnsureSeat(item);
+                if (item.DriverAnchorTransform != null)
+                {
+                    float distSq = (_localPlayer.position - item.DriverAnchorTransform.position).sqrMagnitude;
+                    if (distSq <= 2.25f)
+                        return true;
+                }
+            }
+
+            return false;
         }
 
-        /// <summary>
-        /// Whether a locally seated driver should take this vehicle away from a
-        /// remote stream. Drivers beat pushers/proximity owners; among two drivers
-        /// the lowest player id wins (see <see cref="OnRemoteItemTransform"/>).
-        /// </summary>
         private static bool LocalDriverOutClaimsRemote(SessionManager session, SyncedItem item, bool remoteDriven)
         {
-            if (!remoteDriven) return true;
-            if (!item.RemoteIsDriver) return true;
-            return session.LocalPlayerId < item.RemoteOwner;
+            return ItemTransformPolicy.ShouldSeatDriverOutClaimRemote(
+                remoteDriven,
+                item.RemoteIsDriver,
+                item.LastRemoteAt,
+                Time.unscaledTime,
+                session.LocalPlayerId,
+                item.RemoteOwner);
         }
 
         // ------------------------------------------------------------------ seats
@@ -3169,10 +3104,15 @@ namespace WinterMP.Core.Sync
 
             foreach (var transform in item.Body.GetComponentsInChildren<Transform>(true))
             {
-                if (!transform.name.StartsWith("DriveTrigger", StringComparison.Ordinal)) continue;
-                item.SeatTransform = transform;
-                item.SeatCollider = transform.GetComponent<Collider>();
-                return;
+                string name = transform.name;
+                if (item.SeatTransform == null && name.StartsWith("DriveTrigger", StringComparison.Ordinal))
+                {
+                    item.SeatTransform = transform;
+                    item.SeatCollider = transform.GetComponent<Collider>();
+                }
+
+                if (item.DriverAnchorTransform == null && name == "MassDriver")
+                    item.DriverAnchorTransform = transform;
             }
         }
 
@@ -3218,7 +3158,7 @@ namespace WinterMP.Core.Sync
             foreach (var item in _items.Values)
             {
                 if (!item.IsVehicle || !item.RemoteIsDriver || item.RemoteOwner != playerId) continue;
-                if (item.Body == null || now - item.LastRemoteAt >= RemoteHoldSeconds) continue;
+                if (item.Body == null || now - item.LastRemoteAt >= RemoteDriverHoldSeconds) continue;
 
                 EnsureSeat(item);
                 vehicle = item.Body.transform;
@@ -3233,9 +3173,10 @@ namespace WinterMP.Core.Sync
 
         private void SendItem(SessionManager session, SyncedItem item, Rigidbody body, bool final)
         {
+            bool isDriver = item.IsVehicle && IsLocalPlayerDriving(item);
             byte flags = 0;
             if (final) flags |= ItemTransform.FlagFinal;
-            if (item.IsVehicle && IsLocalPlayerDriving(body)) flags |= ItemTransform.FlagDriver;
+            if (isDriver) flags |= ItemTransform.FlagDriver;
 
             var message = new ItemTransform
             {
@@ -3247,8 +3188,7 @@ namespace WinterMP.Core.Sync
                 Rotation = body.transform.rotation.ToNet(),
             };
 
-            // The resting pose must arrive even if every streamed packet was lost.
-            session.SendWorldMessage(message, final ? Channel.ReliableOrdered : Channel.UnreliableSequenced);
+            session.SendWorldMessage(message, ItemTransformPolicy.SelectSendChannel(final, isDriver));
         }
 
         // ------------------------------------------------------------------ engine & ignition
@@ -3772,12 +3712,9 @@ namespace WinterMP.Core.Sync
             foreach (var fsm in item.Body.GetComponentsInChildren<PlayMakerFSM>(true))
             {
                 string path = ScenePath.Of(fsm.transform);
-                bool sorbet = path.IndexOf("SORBET(190-200psi)/", StringComparison.Ordinal) >= 0;
-                bool corris = path.IndexOf("CORRIS/", StringComparison.Ordinal) >= 0;
-                if (!sorbet && !corris) continue;
+                if (!SyncCatalog.IsClimateVehicleFsmPath(path)) continue;
 
-                bool carTempRoot = path.IndexOf("/Simulation/CarTempSorbet", StringComparison.Ordinal) >= 0
-                    || path.IndexOf("/Simulation/CarTempCorris", StringComparison.Ordinal) >= 0;
+                bool carTempRoot = SyncCatalog.IsCarTempFsmPath(path);
 
                 if (item.GlassFrostingFsm == null && fsm.FsmName == "GlassFrosting" && carTempRoot)
                 {
@@ -3809,7 +3746,7 @@ namespace WinterMP.Core.Sync
                 }
 
                 if (item.HeaterUnitFsm == null && fsm.FsmName == "Function"
-                    && path.IndexOf("/HeaterUnit", StringComparison.Ordinal) >= 0)
+                    && SyncCatalog.IsHeaterFsmPath(path))
                 {
                     item.HeaterUnitFsm = fsm;
                     item.HeaterSettingTemp = fsm.FsmVariables.FindFsmFloat("SettingTemp");
@@ -3877,7 +3814,8 @@ namespace WinterMP.Core.Sync
                 return true;
 
             // Parked frost still matters to anyone standing near the car.
-            if (now - item.LastRemoteAt < RemoteHoldSeconds) return false;
+            if (now - item.LastRemoteAt < GetRemoteHoldSeconds(item)) return false;
+            FindLocalPlayer();
             if (_localPlayer == null || item.Body == null) return false;
 
             float distSq = (_localPlayer.position - item.Body.transform.position).sqrMagnitude;
@@ -4278,7 +4216,7 @@ namespace WinterMP.Core.Sync
             if (passenger != null && passenger.IsLocalSeatedInVehicle(item.Id))
                 return true;
 
-            return item.Body != null && Instance != null && Instance.IsLocalPlayerDriving(item.Body);
+            return item.Body != null && Instance != null && Instance.IsLocalPlayerDriving(item);
         }
 
         private static float ReadHeaterTemp(SyncedItem item) =>
@@ -4423,7 +4361,15 @@ namespace WinterMP.Core.Sync
 
         private void FindLocalPlayer()
         {
-            if (_localPlayer != null || Time.unscaledTime < _nextPlayerSearchAt) return;
+            if (_localPlayer != null)
+            {
+                // Unity destroys scene objects without clearing our reference.
+                if ((UnityEngine.Object)_localPlayer != null)
+                    return;
+                _localPlayer = null;
+            }
+
+            if (Time.unscaledTime < _nextPlayerSearchAt) return;
             _nextPlayerSearchAt = Time.unscaledTime + PlayerSearchIntervalSeconds;
 
             var playerObject = GameObject.Find(PlayerObjectName);

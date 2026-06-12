@@ -67,11 +67,29 @@ namespace WinterMP.Launcher.Services
 
         private static string? GetSteamPath()
         {
+            string?[] candidates =
+            {
+                ReadRegistrySteamPath(Registry.CurrentUser, @"Software\Valve\Steam"),
+                ReadRegistrySteamPath(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam"),
+                ReadRegistrySteamPath(Registry.LocalMachine, @"SOFTWARE\Valve\Steam"),
+            };
+
+            foreach (string? path in candidates)
+            {
+                if (path != null && Directory.Exists(path))
+                    return path;
+            }
+
+            return null;
+        }
+
+        private static string? ReadRegistrySteamPath(RegistryKey root, string subKey)
+        {
             try
             {
-                using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
+                using var key = root.OpenSubKey(subKey);
                 return key?.GetValue("SteamPath") as string is { Length: > 0 } path
-                    ? path.Replace('/', '\\')
+                    ? UnescapeVdfPath(path)
                     : null;
             }
             catch
@@ -82,27 +100,56 @@ namespace WinterMP.Launcher.Services
 
         private static IEnumerable<string> GetLibraryFolders(string steamPath)
         {
-            yield return steamPath;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            string vdf = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
-            if (!File.Exists(vdf)) yield break;
-
-            string content;
-            try
+            foreach (string folder in EnumerateExistingFolder(steamPath))
             {
-                content = File.ReadAllText(vdf);
-            }
-            catch
-            {
-                yield break;
+                if (seen.Add(folder))
+                    yield return folder;
             }
 
-            foreach (Match match in Regex.Matches(content, "\"path\"\\s+\"([^\"]+)\""))
+            string steamApps = Path.Combine(steamPath, "steamapps");
+            foreach (string vdfName in new[] { "libraryfolders.vdf", "libraryfolder.vdf" })
             {
-                string path = match.Groups[1].Value.Replace(@"\\", @"\");
-                if (Directory.Exists(path))
-                    yield return path;
+                string vdf = Path.Combine(steamApps, vdfName);
+                if (!File.Exists(vdf)) continue;
+
+                string content;
+                try
+                {
+                    content = File.ReadAllText(vdf);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (Match match in Regex.Matches(content, "\"path\"\\s+\"([^\"]+)\""))
+                {
+                    foreach (string folder in EnumerateExistingFolder(match.Groups[1].Value))
+                    {
+                        if (seen.Add(folder))
+                            yield return folder;
+                    }
+                }
             }
+        }
+
+        private static IEnumerable<string> EnumerateExistingFolder(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) yield break;
+
+            path = UnescapeVdfPath(path);
+            if (Directory.Exists(path))
+                yield return path;
+        }
+
+        private static string UnescapeVdfPath(string path)
+        {
+            path = path.Replace('/', '\\').Trim();
+            while (path.Contains(@"\\", StringComparison.Ordinal))
+                path = path.Replace(@"\\", @"\");
+            return path;
         }
 
         private static string? MatchValue(string acf, string key)

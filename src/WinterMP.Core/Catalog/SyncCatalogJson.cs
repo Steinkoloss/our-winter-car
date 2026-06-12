@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace WinterMP.Core.Catalog
@@ -27,7 +28,76 @@ namespace WinterMP.Core.Catalog
             ParseRuleArray(root, "ignitions", data.Ignitions);
             ParseRuleArray(root, "starters", data.Starters);
             ParseBuyArray(root, "buys", data.Buys);
+            ParsePartArray(root, "parts", data.Parts);
+            ParseBoltArray(root, "bolts", data.Bolts);
+            if (root.TryGetValue("vehicles", out var vehiclesObj) && vehiclesObj is Dictionary<string, object?> vehicles)
+                data.Vehicles = ParseVehicles(vehicles);
+            if (root.TryGetValue("pickables", out var pickablesObj) && pickablesObj is Dictionary<string, object?> pickables)
+                data.Pickables = ParsePickables(pickables);
+            if (root.TryGetValue("consumables", out var consumablesObj) && consumablesObj is Dictionary<string, object?> consumables)
+                data.Consumables = ParseConsumables(consumables);
+            if (root.TryGetValue("vehicleClimate", out var climateObj) && climateObj is Dictionary<string, object?> climate)
+                data.VehicleClimate = ParseVehicleClimate(climate);
             return data;
+        }
+
+        private static VehicleRegistrationData ParseVehicles(Dictionary<string, object?> obj)
+        {
+            var data = new VehicleRegistrationData
+            {
+                MinMass = GetFloat(obj, "minMass", 150f),
+                RequireRoot = GetBool(obj, "requireRoot", true),
+            };
+            AppendStrings(obj, "namePrefixes", data.NamePrefixes);
+            return data;
+        }
+
+        private static PickableRegistrationData ParsePickables(Dictionary<string, object?> obj)
+        {
+            var data = new PickableRegistrationData
+            {
+                ProbeUseFsm = GetBool(obj, "probeUseFsm", true),
+            };
+            AppendStrings(obj, "excludeNameContains", data.ExcludeNameContains);
+            AppendStrings(obj, "nameSuffixes", data.NameSuffixes);
+            return data;
+        }
+
+        private static ConsumableData ParseConsumables(Dictionary<string, object?> obj)
+        {
+            var data = new ConsumableData
+            {
+                FsmName = GetString(obj, "fsmName"),
+                DrinkCheckState = GetString(obj, "drinkCheckState"),
+            };
+            if (data.FsmName.Length == 0) data.FsmName = "Use";
+            if (data.DrinkCheckState.Length == 0) data.DrinkCheckState = "Check drink";
+            AppendStrings(obj, "destroyStates", data.DestroyStates);
+            AppendStrings(obj, "drinkEmptyStates", data.DrinkEmptyStates);
+            return data;
+        }
+
+        private static VehicleClimateData ParseVehicleClimate(Dictionary<string, object?> obj)
+        {
+            var data = new VehicleClimateData();
+            AppendStrings(obj, "pathPrefixes", data.PathPrefixes);
+            AppendStrings(obj, "carTempPathContains", data.CarTempPathContains);
+            AppendStrings(obj, "heaterPathContains", data.HeaterPathContains);
+            return data;
+        }
+
+        private static float GetFloat(Dictionary<string, object?> obj, string key, float defaultValue)
+        {
+            if (!obj.TryGetValue(key, out var value) || value == null) return defaultValue;
+            if (value is double d) return (float)d;
+            if (value is long l) return l;
+            return defaultValue;
+        }
+
+        private static bool GetBool(Dictionary<string, object?> obj, string key, bool defaultValue)
+        {
+            if (!obj.TryGetValue(key, out var value)) return defaultValue;
+            return value is bool b ? b : defaultValue;
         }
 
         private static void ParseBuyArray(
@@ -42,9 +112,84 @@ namespace WinterMP.Core.Catalog
             {
                 if (entry is not Dictionary<string, object?> obj) continue;
                 var rule = ParseBuyRule(obj);
-                if (rule.FsmName.Length > 0 && rule.EntryGuards.Count > 0 && rule.ResultStates.Count > 0)
+                if (rule.FsmName.Length == 0) continue;
+                if (rule.Template == "shopBuy")
+                {
+                    target.Add(rule);
+                    continue;
+                }
+
+                if (rule.EntryGuards.Count > 0 && rule.ResultStates.Count > 0)
                     target.Add(rule);
             }
+        }
+
+        private static void ParsePartArray(
+            Dictionary<string, object?> root,
+            string key,
+            List<PartRuleData> target)
+        {
+            if (!root.TryGetValue(key, out var arrayObj) || arrayObj is not List<object?> entries)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (entry is not Dictionary<string, object?> obj) continue;
+                var rule = ParsePartRule(obj);
+                if (rule.FsmName.Length > 0 && rule.States.Count > 0)
+                    target.Add(rule);
+            }
+        }
+
+        private static PartRuleData ParsePartRule(Dictionary<string, object?> obj)
+        {
+            var rule = new PartRuleData
+            {
+                PathPrefix = GetString(obj, "pathPrefix"),
+                PathContains = GetOptionalString(obj, "pathContains"),
+                ObjectName = GetOptionalString(obj, "objectName"),
+                ObjectNameContains = GetOptionalString(obj, "objectNameContains"),
+                FsmName = GetString(obj, "fsmName"),
+            };
+
+            AppendStrings(obj, "states", rule.States);
+            AppendStrings(obj, "requireStates", rule.RequireStates);
+            AppendStrings(obj, "optionalStates", rule.OptionalStates);
+            AppendStrings(obj, "excludePathPrefixes", rule.ExcludePathPrefixes);
+            return rule;
+        }
+
+        private static void ParseBoltArray(
+            Dictionary<string, object?> root,
+            string key,
+            List<BoltRuleData> target)
+        {
+            if (!root.TryGetValue(key, out var arrayObj) || arrayObj is not List<object?> entries)
+                return;
+
+            foreach (var entry in entries)
+            {
+                if (entry is not Dictionary<string, object?> obj) continue;
+                var rule = ParseBoltRule(obj);
+                if (rule.FsmName.Length > 0 && rule.RequireStates.Count > 0)
+                    target.Add(rule);
+            }
+        }
+
+        private static BoltRuleData ParseBoltRule(Dictionary<string, object?> obj)
+        {
+            var rule = new BoltRuleData
+            {
+                PathPrefix = GetString(obj, "pathPrefix"),
+                PathContains = GetOptionalString(obj, "pathContains"),
+                ObjectName = GetOptionalString(obj, "objectName"),
+                ObjectNameContains = GetOptionalString(obj, "objectNameContains"),
+                FsmName = GetString(obj, "fsmName"),
+            };
+
+            AppendStrings(obj, "requireStates", rule.RequireStates);
+            AppendStrings(obj, "excludePathPrefixes", rule.ExcludePathPrefixes);
+            return rule;
         }
 
         private static BuyRuleData ParseBuyRule(Dictionary<string, object?> obj)
@@ -56,6 +201,7 @@ namespace WinterMP.Core.Catalog
                 ObjectName = GetOptionalString(obj, "objectName"),
                 ObjectNameContains = GetOptionalString(obj, "objectNameContains"),
                 FsmName = GetString(obj, "fsmName"),
+                Template = GetOptionalString(obj, "template") ?? string.Empty,
             };
 
             AppendStrings(obj, "requireStates", rule.RequireStates);
@@ -217,6 +363,7 @@ namespace WinterMP.Core.Catalog
                 if (c == 'n' && MatchLiteral("null")) return null;
                 if (c == 't' && MatchLiteral("true")) return true;
                 if (c == 'f' && MatchLiteral("false")) return false;
+                if (c == '-' || char.IsDigit(c)) return ReadNumber();
                 throw new FormatException("Unsupported JSON value at " + _index + ".");
             }
 
@@ -261,6 +408,23 @@ namespace WinterMP.Core.Catalog
                 throw new FormatException("Unterminated string.");
             }
 
+            private object ReadNumber()
+            {
+                int start = _index;
+                if (_text[_index] == '-') _index++;
+                while (_index < _text.Length && char.IsDigit(_text[_index]))
+                    _index++;
+                if (_index < _text.Length && _text[_index] == '.')
+                {
+                    _index++;
+                    while (_index < _text.Length && char.IsDigit(_text[_index]))
+                        _index++;
+                    return double.Parse(_text.Substring(start, _index - start), CultureInfo.InvariantCulture);
+                }
+
+                return long.Parse(_text.Substring(start, _index - start), CultureInfo.InvariantCulture);
+            }
+
             private bool MatchLiteral(string literal)
             {
                 if (_index + literal.Length > _text.Length) return false;
@@ -296,6 +460,41 @@ namespace WinterMP.Core.Catalog
         public readonly List<CatalogRuleData> Ignitions = new List<CatalogRuleData>();
         public readonly List<CatalogRuleData> Starters = new List<CatalogRuleData>();
         public readonly List<BuyRuleData> Buys = new List<BuyRuleData>();
+        public readonly List<PartRuleData> Parts = new List<PartRuleData>();
+        public readonly List<BoltRuleData> Bolts = new List<BoltRuleData>();
+        public VehicleRegistrationData? Vehicles;
+        public PickableRegistrationData? Pickables;
+        public ConsumableData? Consumables;
+        public VehicleClimateData? VehicleClimate;
+    }
+
+    internal sealed class VehicleRegistrationData
+    {
+        public float MinMass = 150f;
+        public bool RequireRoot = true;
+        public readonly List<string> NamePrefixes = new List<string>();
+    }
+
+    internal sealed class PickableRegistrationData
+    {
+        public bool ProbeUseFsm = true;
+        public readonly List<string> ExcludeNameContains = new List<string>();
+        public readonly List<string> NameSuffixes = new List<string>();
+    }
+
+    internal sealed class ConsumableData
+    {
+        public string FsmName = "Use";
+        public string DrinkCheckState = "Check drink";
+        public readonly List<string> DestroyStates = new List<string>();
+        public readonly List<string> DrinkEmptyStates = new List<string>();
+    }
+
+    internal sealed class VehicleClimateData
+    {
+        public readonly List<string> PathPrefixes = new List<string>();
+        public readonly List<string> CarTempPathContains = new List<string>();
+        public readonly List<string> HeaterPathContains = new List<string>();
     }
 
     internal sealed class BuyRuleData
@@ -305,6 +504,7 @@ namespace WinterMP.Core.Catalog
         public string? ObjectName;
         public string? ObjectNameContains;
         public string FsmName = string.Empty;
+        public string Template = string.Empty;
         public readonly List<string> RequireStates = new List<string>();
         public readonly List<string> ResultStates = new List<string>();
         public readonly List<string> ExcludePathPrefixes = new List<string>();
@@ -316,6 +516,30 @@ namespace WinterMP.Core.Catalog
         public string StateName = string.Empty;
         public string TriggerEvent = string.Empty;
         public bool Optional;
+    }
+
+    internal sealed class PartRuleData
+    {
+        public string PathPrefix = string.Empty;
+        public string? PathContains;
+        public string? ObjectName;
+        public string? ObjectNameContains;
+        public string FsmName = string.Empty;
+        public readonly List<string> States = new List<string>();
+        public readonly List<string> RequireStates = new List<string>();
+        public readonly List<string> OptionalStates = new List<string>();
+        public readonly List<string> ExcludePathPrefixes = new List<string>();
+    }
+
+    internal sealed class BoltRuleData
+    {
+        public string PathPrefix = string.Empty;
+        public string? PathContains;
+        public string? ObjectName;
+        public string? ObjectNameContains;
+        public string FsmName = string.Empty;
+        public readonly List<string> RequireStates = new List<string>();
+        public readonly List<string> ExcludePathPrefixes = new List<string>();
     }
 
     internal sealed class CatalogRuleData

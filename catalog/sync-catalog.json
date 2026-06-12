@@ -297,6 +297,46 @@
         { "state": "Purchase event", "event": "PURCHASE", "optional": true }
       ],
       "resultStates": ["Purchase"]
+    },
+    {
+      "template": "shopBuy",
+      "fsmName": "Buy"
     }
-  ]
+  ],
+  "parts": [
+    {
+      "pathContains": "(VINXX)",
+      "fsmName": "Data",
+      "requireStates": ["Bolted", "Unbolted"],
+      "states": ["Bolted", "Unbolted"],
+      "optionalStates": ["Stop", "Install 1", "Install 2", "Remove"]
+    }
+  ],
+  "bolts": [
+    {
+      "fsmName": "Screw",
+      "requireStates": ["Tight?", "Loose?", "Set pos"]
+    }
+  ],
+  "vehicles": {
+    "minMass": 150,
+    "requireRoot": true,
+    "namePrefixes": ["JONNEZ", "GIFU", "JOKKIS", "CORRIS", "SORBET", "KEKMET", "BACHGLOTZ"]
+  },
+  "pickables": {
+    "excludeNameContains": ["(VINXX)"],
+    "nameSuffixes": ["(itemx)", "(item2)", "(lugga)"],
+    "probeUseFsm": true
+  },
+  "consumables": {
+    "fsmName": "Use",
+    "destroyStates": ["Destroy", "Destroy self"],
+    "drinkCheckState": "Check drink",
+    "drinkEmptyStates": ["State 2", "State 5", "State 6"]
+  },
+  "vehicleClimate": {
+    "pathPrefixes": ["SORBET(190-200psi)/", "CORRIS/"],
+    "carTempPathContains": ["/Simulation/CarTempSorbet", "/Simulation/CarTempCorris"],
+    "heaterPathContains": ["/HeaterUnit"]
+  }
 }

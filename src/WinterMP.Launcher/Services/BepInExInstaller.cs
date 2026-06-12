@@ -51,9 +51,27 @@ namespace WinterMP.Launcher.Services
             }
         }
 
+        public static bool VendorPackagePresent() => FindBepInExZip() != null;
+
+        public static bool IsFullyInstalled(string gameDir) =>
+            GetStatus(gameDir) == BepInExStatus.Ready && GetInstalledModVersion(gameDir) != null;
+
         public static string InstallOrRepair(string gameDir)
         {
-            var messages = new List<string>();
+            if (!ModPayload.PayloadPresent())
+            {
+                throw new InvalidOperationException(
+                    $"{Branding.ProductName} mod files are missing from the launcher. Reinstall from GitHub.");
+            }
+
+            if (!VendorPackagePresent())
+            {
+                throw new InvalidOperationException(
+                    $"BepInEx package not found ({BepInExZipName}). " +
+                    $"Reinstall {Branding.ProductName} — the launcher vendor folder may have been removed by Windows Defender.");
+            }
+
+            var messages = new List<string> { $"Target: {gameDir}" };
             var status = GetStatus(gameDir);
 
             if (status == BepInExStatus.NotInstalled)
@@ -65,8 +83,31 @@ namespace WinterMP.Launcher.Services
 
             messages.Add(EnsureConfig(gameDir, status));
             messages.Add(ModPayload.Deploy(gameDir));
+            VerifyInstall(gameDir);
 
             return string.Join("\n", messages.Where(m => !string.IsNullOrWhiteSpace(m)));
+        }
+
+        private static void VerifyInstall(string gameDir)
+        {
+            if (GetStatus(gameDir) != BepInExStatus.Ready)
+            {
+                throw new InvalidOperationException(
+                    "BepInEx did not install into the game folder.\n\n" +
+                    $"Expected: {Path.Combine(gameDir, "winhttp.dll")}\n\n" +
+                    "Common causes:\n" +
+                    "• Windows Defender removed the files — add your My Winter Car folder to Defender exclusions\n" +
+                    "• No write permission — try running the launcher as administrator\n" +
+                    "• Wrong game folder — open Settings and browse to the folder that contains the game .exe");
+            }
+
+            if (GetInstalledModVersion(gameDir) == null)
+            {
+                throw new InvalidOperationException(
+                    "Mod files did not install into the game folder.\n\n" +
+                    $"Expected: {Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP", "WinterMP.Core.dll")}\n\n" +
+                    "Windows Defender often blocks these files. Add the game folder to exclusions, then click Install / Repair.");
+            }
         }
 
         private static string EnsureConfig(string gameDir, BepInExStatus status)

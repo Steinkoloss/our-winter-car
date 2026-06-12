@@ -20,8 +20,36 @@ namespace WinterMP.Launcher
             SubtitleText.Text = $"Multiplayer for My Winter Car · protocol v{ModMeta.ProtocolVersion}";
             AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
             RefreshStatus();
+            ShowLastInstallFailureIfAny();
             ShowWelcomeIfNeeded();
-            Loaded += async (_, _) => await CheckForUpdatesAsync(showUpToDate: false);
+            Loaded += async (_, _) =>
+            {
+                TryAutoInstallIfNeeded();
+                await CheckForUpdatesAsync(showUpToDate: false);
+            };
+        }
+
+        private static string LastInstallLogPath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WinterMP", "last-install.log");
+
+        private void ShowLastInstallFailureIfAny()
+        {
+            if (!File.Exists(LastInstallLogPath)) return;
+
+            try
+            {
+                if (File.ReadAllText(LastInstallLogPath).Contains("ERROR", StringComparison.Ordinal))
+                {
+                    ShowWarning(
+                        "The last automatic mod install failed (often because the game was not found yet). " +
+                        "The launcher will retry now, or click Install / Repair.");
+                }
+            }
+            catch
+            {
+                // ignore unreadable log
+            }
         }
 
         private void ShowWelcomeIfNeeded()
@@ -30,9 +58,9 @@ namespace WinterMP.Launcher
 
             MessageBox.Show(this,
                 $"Welcome to {Branding.ProductName}!\n\n" +
-                "1. Click Install / Repair\n" +
-                "2. HOST GAME opens a Steam lobby for friends\n" +
-                $"3. Friends install {Branding.ProductName}, then use Steam Join Game\n\n" +
+                "The launcher installs BepInEx and the mod into your My Winter Car folder automatically.\n\n" +
+                "1. HOST GAME — backs up save and opens a Steam lobby\n" +
+                "2. Friends install the same build, then use Steam Join Game\n\n" +
                 "Never save the game as a guest.",
                 Branding.ProductName,
                 MessageBoxButton.OK,
@@ -189,6 +217,12 @@ namespace WinterMP.Launcher
             if (!ModPayload.PayloadPresent())
                 ShowWarning($"Mod payload missing from launcher — reinstall {Branding.ProductName}.");
 
+            if (!BepInExInstaller.VendorPackagePresent())
+                ShowWarning("BepInEx package missing from launcher (vendor folder). Reinstall from GitHub.");
+
+            if (_game != null && !BepInExInstaller.IsFullyInstalled(_game.GameDir))
+                ShowWarning("Mod not installed in the game folder yet.");
+
             ApplyUpdateUi();
         }
 
@@ -213,7 +247,77 @@ namespace WinterMP.Launcher
         private void InstallButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
-            RunInstall(() => BepInExInstaller.InstallOrRepair(_game.GameDir));
+            RunInstall(showSuccessDialog: true);
+        }
+
+        private void TryAutoInstallIfNeeded()
+        {
+            if (_game == null || BepInExInstaller.IsFullyInstalled(_game.GameDir))
+                return;
+
+            if (!ModPayload.PayloadPresent() || !BepInExInstaller.VendorPackagePresent())
+                return;
+
+            AppendLog("Mod not installed — running Install / Repair automatically…");
+            RunInstall(showSuccessDialog: false);
+        }
+
+        private void RunInstall(bool showSuccessDialog)
+        {
+            if (_game == null) return;
+
+            if (!TryInstallMod(out string? error))
+            {
+                if (showSuccessDialog || !string.IsNullOrWhiteSpace(error))
+                {
+                    MessageBox.Show(this,
+                        error ?? "Install / Repair failed.",
+                        "Install / Repair failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+
+                return;
+            }
+
+            if (showSuccessDialog)
+            {
+                MessageBox.Show(this,
+                    $"BepInEx and {Branding.ProductName} are installed in:\n{_game.GameDir}",
+                    "Install / Repair",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+
+        private bool TryInstallMod(out string? error)
+        {
+            error = null;
+            if (_game == null)
+            {
+                error = "Game folder not found. Open Settings and browse to your My Winter Car folder.";
+                return false;
+            }
+
+            try
+            {
+                string result = BepInExInstaller.InstallOrRepair(_game.GameDir);
+                AppendLog(result.Replace("\n", "\n"));
+                RefreshStatus();
+
+                if (BepInExInstaller.IsFullyInstalled(_game.GameDir))
+                    return true;
+
+                error = "Install finished but BepInEx or the mod is still missing. Check Windows Defender exclusions.";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                AppendLog($"Install failed: {ex.Message}");
+                RefreshStatus();
+                return false;
+            }
         }
 
         private async void UpdateModButton_Click(object sender, RoutedEventArgs e) => await RunModUpdateAsync();
@@ -306,24 +410,6 @@ namespace WinterMP.Launcher
             });
         }
 
-        private void RunInstall(Func<string> action)
-        {
-            if (_game == null) return;
-            try
-            {
-                string result = action();
-                AppendLog(result.Replace("\n", "\n"));
-                MessageBox.Show(this, result, "Install / Repair", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"Install failed: {ex.Message}");
-                MessageBox.Show(this, ex.Message, "Install / Repair failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-
-            RefreshStatus();
-        }
-
         private void BackupButton_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -397,7 +483,7 @@ namespace WinterMP.Launcher
         private void HostButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
-            if (!ConfirmPlayable()) return;
+            if (!EnsureReadyForLaunch()) return;
 
             try
             {
@@ -415,7 +501,7 @@ namespace WinterMP.Launcher
         private void PlayButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
-            if (!ConfirmPlayable()) return;
+            if (!EnsureReadyForLaunch()) return;
 
             try
             {
@@ -428,15 +514,25 @@ namespace WinterMP.Launcher
             }
         }
 
-        private bool ConfirmPlayable()
+        private bool EnsureReadyForLaunch()
         {
-            if (HostButton.IsEnabled) return true;
-            MessageBox.Show(this,
-                $"Install / Repair first. Both BepInEx and {Branding.ProductName} must be ready.",
-                "Not ready",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return false;
+            RefreshStatus();
+            if (_game != null && BepInExInstaller.IsFullyInstalled(_game.GameDir))
+                return true;
+
+            AppendLog("Installing BepInEx and mod before launch…");
+            if (!TryInstallMod(out string? error))
+            {
+                MessageBox.Show(this,
+                    error ?? $"Install / Repair failed. Both BepInEx and {Branding.ProductName} must be ready before launch.\n\n" +
+                    "If Windows Defender removed files, add your My Winter Car folder to exclusions and try again.",
+                    "Not ready",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return false;
+            }
+
+            return true;
         }
 
         private void LaunchGame(string args)

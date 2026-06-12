@@ -4,6 +4,7 @@ using UnityEngine;
 using WinterMP.Core.Catalog;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 using WinterMP.Net.Transport;
 
 namespace WinterMP.Core.Session
@@ -629,9 +630,11 @@ namespace WinterMP.Core.Session
                 case ItemTransform itemTransform:
                     Sync.WorldSyncManager.Instance?.OnRemoteItemTransform(itemTransform);
                     if (IsHost)
+                    {
                         Broadcast(itemTransform,
-                            itemTransform.IsFinal ? Channel.ReliableOrdered : Channel.UnreliableSequenced,
+                            ItemTransformPolicy.SelectSendChannel(itemTransform.IsFinal, itemTransform.IsDriver),
                             except: peer);
+                    }
                     break;
 
                 case VehicleState vehicleState:
@@ -827,7 +830,7 @@ namespace WinterMP.Core.Session
             {
                 Channel channel = message switch
                 {
-                    ItemTransform t => t.IsFinal ? Channel.ReliableOrdered : Channel.UnreliableSequenced,
+                    ItemTransform t => ItemTransformPolicy.SelectSendChannel(t.IsFinal, t.IsDriver),
                     VehicleState => Channel.ReliableOrdered,
                     VehicleClimate => Channel.ReliableOrdered,
                     _ => Channel.ReliableOrdered,

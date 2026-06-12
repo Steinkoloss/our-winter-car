@@ -18,7 +18,13 @@ Per-game-build data describing *what* gets synchronized (PLAN.md §4.2).
 | `switchRules` | ON/OFF style toggles | Lights, radiators, fireplaces, TV |
 | `ignitions` | Key/ACC FSMs | `IGNITION` objects with ACC on / Motor OFF |
 | `starters` | Engine run/stall FSMs | SORBET/CORRIS Starter, CORRIS Pushstart |
-| `buys` | Host-authoritative purchases / payments | Inspection, post packages, phone orders, Fleetari, cash register |
+| `buys` | Host-authoritative purchases / payments | Inspection, shops (`template: shopBuy`), Fleetari, cash register |
+| `parts` | Car-part assembly Data FSMs | `(VINXX)` bolt on/off, install, remove |
+| `bolts` | Wrench Screw FSMs | Tight? / Loose? / Set pos |
+| `vehicles` | Rigidbody roots treated as vehicles | `minMass`, `namePrefixes` |
+| `pickables` | Synced item rigidbodies | `(itemx)` suffixes, optional Use FSM probe |
+| `consumables` | Food/drink despawn hooks | Destroy + drink empty states |
+| `vehicleClimate` | Frost/heater FSM path filters | SORBET / CORRIS car-temp roots |
 
 Shared rule fields:
 
@@ -32,7 +38,8 @@ Shared rule fields:
 - `excludePathPrefixes` — skip paths starting with these prefixes
 
 `buys` entries use `entryGuards` (`state` + `event`, optional `optional: true`) and
-`resultStates` instead of `states`. Generic shop `Buy` FSMs remain heuristic in code.
+`resultStates`, or `template: shopBuy` to infer guards from a generic `Buy` FSM.
+`parts` add `optionalStates` when present on the FSM.
 
 ## Adding a rule
 
@@ -53,4 +60,5 @@ Handshake refuses a catalog mismatch (same as protocol/mod/game version).
 
 ## Still heuristic in code
 
-Bolts, car parts, shops, and vehicle climate/gauge probes remain in `WorldSyncManager` until moved into the catalog.
+Vehicle gauge/system FSM binding (speedo, fuel, blinkers, revs) remains in
+`WorldSyncManager.EnsureVehicleSystemsProbe` until moved into declarative bindings.
