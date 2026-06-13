@@ -7,7 +7,7 @@ Per-game-build data describing *what* gets synchronized (PLAN.md §4.2).
 | File | Purpose |
 |------|---------|
 | `sync-catalog.json` | **Shipped with the mod.** Curated rules the runtime loads. |
-| `dump-<buildId>.json` | **Dev reference only.** Full F9 dump (8k+ FSMs). Commit per game build; diff across patches. |
+| `dump-23268598.json` | **Dev reference** for Steam build 23268598 (GAME scene, post-sleep F9 dump 2026-06-13). Full F9 dump (~8600 FSMs). Diff across patches with `tools/catalog_diff.py`. |
 
 ## Rule sections in `sync-catalog.json`
 
@@ -57,6 +57,38 @@ Handshake refuses a catalog mismatch (same as protocol/mod/game version).
 2. Copy `WinterMP/dumps/catalog-<timestamp>.json` here as `dump-<gameBuildId>.json`.
 3. After a game update: `python tools/catalog_diff.py dump-old.json dump-new.json`
 4. Fix `sync-catalog.json` if paths or state names moved.
+
+## Sleep / time skip (build 23268598)
+
+From `dump-23268598.json` (post-sleep F9). Host sleep uses `SleepTrigger :: Activate`:
+
+| Path | States (consent hooks) | Events |
+|------|------------------------|--------|
+| `HOMENEW/Functions/FunctionsDisable/Sleep/SleepTrigger` | `Confirm`, `Get positions` → `AnimateSleep` → `Sleep` → `Sleep time` | `ACTIVATE`, `STOP`, `ABORT`, `DAY` |
+| `GIFU(...)/LOD/Sleep/SleepTrigger` | same template (in-vehicle sleep) | same |
+| `CABIN/LOD/Sleep/SleepTrigger`, `COTTAGE/LOD/...` | same template | same |
+
+Runtime: `PlayerSleepHook` hooks `Confirm` / `Get positions` on any `*/Sleep/SleepTrigger :: Activate`;
+`Get positions` rolls back to `Confirm` until all guests accept. Post-sleep TimeSync fires on `Calc rates`.
+Abort: `STOP` / `ABORT`. Proceed after consent: `ACTIVATE`. Guests get `SleepConsentResult` + fatigue reset.
+
+## Death / respawn (build 23268598)
+
+| Path | Role |
+|------|------|
+| `Systems/Death :: Activate Dead Body` | Master death/orbituary FSM — hook `Take photo` (death start), `State 2` (non-permadeath respawn after SAVE) |
+| `Database/PlayerDatabase :: Simulation` | ES2 tag `UniqueTagPlayerPermaDeath` (character creation) |
+| `Systems/Steam :: Achi` | Achievement bookkeeping — `_DEATHON` / `_DEATHOFF` when mirroring host permadeath on guests |
+
+Runtime: host sends `sessionFlags.permadeath` in handshake; guests mirror the ES2 flag locally.
+Permadeath ON: one death triggers group wipe on all clients. Permadeath OFF: dead player hides avatar,
+completes vanilla orbituary SAVE flow, sends `PlayerRespawn` when the death FSM finishes.
+
+## Guest rejoin (build 23268598)
+
+Host keeps stable `playerId` slots per SteamID for the session. On disconnect the host writes pose
+to `wintermp-guests.json` (needs when `PlayerNeedsReport` has arrived). Reconnecting guests get
+the same id, snapshot + `GuestSpawn` with last pose, and chat `* name reconnected`.
 
 ## Still heuristic in code
 

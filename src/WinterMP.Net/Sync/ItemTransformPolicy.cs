@@ -97,12 +97,11 @@ namespace WinterMP.Net.Sync
 
         /// <summary>
         /// Per-item streams are ignored while cargo rides a moving vehicle; only the
-        /// vehicle transform (and a resting final) matter.
+        /// vehicle transform matters until the car is parked.
         /// </summary>
         public static bool ShouldIgnoreRemoteItemTransformForVehicleCargo(
             bool isVehicle,
-            bool insideActivelyDrivenVehicle,
-            bool messageIsFinal) =>
-            !isVehicle && insideActivelyDrivenVehicle && !messageIsFinal;
+            bool insideActivelyDrivenVehicle) =>
+            !isVehicle && insideActivelyDrivenVehicle;
     }
 }

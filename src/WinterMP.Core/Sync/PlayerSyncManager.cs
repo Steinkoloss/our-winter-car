@@ -44,6 +44,7 @@ namespace WinterMP.Core.Sync
 
         internal GuestSpawnRelocator GuestRelocator => _guestRelocator;
         internal PlayerNeedsSync NeedsSync => _needsSync;
+        internal bool IsLocalDead => DeathSyncManager.Instance != null && DeathSyncManager.Instance.IsLocalDead;
 
         private void Awake()
         {
@@ -133,6 +134,7 @@ namespace WinterMP.Core.Sync
             _moveStateReader.Reset();
             _needsSync.Reset();
             _sleepHook.Reset();
+            DeathSyncManager.Instance?.OnSceneChanged();
             NpcCharacterFactory.ClearCache();
             _nextSearchAt = 0f;
             _avatars.Clear();
@@ -144,6 +146,7 @@ namespace WinterMP.Core.Sync
         {
             // Host only streams once someone has joined; guests always stream to the host.
             if (session.IsHost && session.PlayerCount == 0) return;
+            if (IsLocalDead) return;
 
             if (_localPlayer == null)
             {
@@ -221,7 +224,8 @@ namespace WinterMP.Core.Sync
 
                 avatar.SetTarget(player.Position, player.Rotation);
                 avatar.SetMoveState(player.MoveState);
-                avatar.SetVisible(Time.unscaledTime - player.LastTransformTime < StaleAfterSeconds);
+                avatar.SetVisible(!player.IsDead
+                    && Time.unscaledTime - player.LastTransformTime < StaleAfterSeconds);
 
                 // Drivers and passengers ride their vehicle, not the world-space
                 // pose stream (which trails behind the smoothed car).

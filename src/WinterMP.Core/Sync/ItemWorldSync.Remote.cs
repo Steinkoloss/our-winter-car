@@ -24,8 +24,7 @@ namespace WinterMP.Core.Sync
 
                 if (ItemTransformPolicy.ShouldIgnoreRemoteItemTransformForVehicleCargo(
                         item.IsVehicle,
-                        IsVehicleInMotion(cargoVehicle, now),
-                        message.IsFinal))
+                        IsVehicleInMotion(cargoVehicle, now)))
                     return;
             }
 
@@ -106,6 +105,7 @@ namespace WinterMP.Core.Sync
                     // locally until someone walks up and triggers a huge correction.
                     body.transform.position = position;
                     body.transform.rotation = rotation;
+                    InvalidateCargoFollowOffsets(item.Id);
                 }
 
                 item.TargetPosition = position;

@@ -343,6 +343,39 @@ namespace WinterMP.Net.Tests
             var decodedResponse = Assert.IsType<SleepConsentResponse>(
                 PacketCodec.Decode(PacketCodec.Encode(response)));
             Assert.True(decodedResponse.Accepted);
+
+            var result = new SleepConsentResult { RequestId = 3, Accepted = false };
+            var decodedResult = Assert.IsType<SleepConsentResult>(
+                PacketCodec.Decode(PacketCodec.Encode(result)));
+            Assert.Equal(result.RequestId, decodedResult.RequestId);
+            Assert.False(decodedResult.Accepted);
+        }
+
+        [Fact]
+        public void PlayerDeath_RoundTrips()
+        {
+            var report = new PlayerDeathReport { PlayerId = 2, Cause = DeathCause.Fatigue, Sequence = 1 };
+            var decodedReport = Assert.IsType<PlayerDeathReport>(PacketCodec.Decode(PacketCodec.Encode(report)));
+            Assert.Equal(DeathCause.Fatigue, decodedReport.Cause);
+
+            var evt = new PlayerDeathEvent
+            {
+                PlayerId = 2,
+                Cause = DeathCause.Drown,
+                Flags = PlayerDeathEventFlags.PermadeathWipe,
+            };
+            var decodedEvt = Assert.IsType<PlayerDeathEvent>(PacketCodec.Decode(PacketCodec.Encode(evt)));
+            Assert.True((decodedEvt.Flags & PlayerDeathEventFlags.PermadeathWipe) != 0);
+
+            var respawn = new PlayerRespawn
+            {
+                PlayerId = 2,
+                Position = new NetVector3(1f, 2f, 3f),
+                Rotation = NetQuaternion.Identity,
+                Sequence = 4,
+            };
+            var decodedRespawn = Assert.IsType<PlayerRespawn>(PacketCodec.Decode(PacketCodec.Encode(respawn)));
+            Assert.Equal(respawn.Position.Y, decodedRespawn.Position.Y, 3);
         }
 
         [Fact]
@@ -430,6 +463,25 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Entries[0].Flags, decoded.Entries[0].Flags);
             Assert.Equal(original.Entries[0].Tightness, decoded.Entries[0].Tightness);
             Assert.Equal(original.Entries[0].Wear, decoded.Entries[0].Wear);
+        }
+
+        [Fact]
+        public void NpcTransform_RoundTrips()
+        {
+            var original = new NpcTransform
+            {
+                NetId = 0xAABBCCDD,
+                Sequence = 9001,
+                Flags = NpcTransform.FlagFinal,
+                Position = new NetVector3(100f, 1.5f, -40f),
+                Rotation = NetQuaternion.Identity,
+            };
+
+            var decoded = Assert.IsType<NpcTransform>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.NetId, decoded.NetId);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.True(decoded.IsFinal);
+            Assert.Equal(original.Position.X, decoded.Position.X);
         }
     }
 }

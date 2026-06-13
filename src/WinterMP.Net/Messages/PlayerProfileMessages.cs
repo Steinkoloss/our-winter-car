@@ -80,4 +80,25 @@ namespace WinterMP.Net.Messages
             Accepted = reader.ReadByte() != 0;
         }
     }
+
+    /// <summary>Host -> all guests: sleep consent round finished (accepted or cancelled).</summary>
+    public sealed class SleepConsentResult : IMessage
+    {
+        public byte RequestId;
+        public bool Accepted;
+
+        public MessageId Id => MessageId.SleepConsentResult;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteByte(RequestId);
+            writer.WriteByte(Accepted ? (byte)1 : (byte)0);
+        }
+
+        public void Read(NetReader reader)
+        {
+            RequestId = reader.ReadByte();
+            Accepted = reader.ReadByte() != 0;
+        }
+    }
 }

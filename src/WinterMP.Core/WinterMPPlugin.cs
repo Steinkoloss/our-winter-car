@@ -55,6 +55,7 @@ namespace WinterMP.Core
             root.AddComponent<UI.GuestSpawnPrompt>();
             root.AddComponent<Sync.SleepConsentManager>();
             root.AddComponent<UI.SleepConsentPrompt>();
+            root.AddComponent<Sync.DeathSyncManager>();
             var worldSync = root.AddComponent<Sync.WorldSyncManager>();
             worldSync.Configure(launch);
             root.AddComponent<Sync.PassengerController>();

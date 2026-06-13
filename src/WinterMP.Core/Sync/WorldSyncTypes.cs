@@ -37,6 +37,7 @@ namespace WinterMP.Core.Sync
     // world-space item streams (which desync from the vehicle and fight physics).
     public bool CargoFollowActive;
     public uint CargoFollowVehicleId;
+    public byte CargoFollowDriverId = WorldSyncIds.NoOwner;
     public Vector3 CargoFollowLocalPos;
     public Quaternion CargoFollowLocalRot = Quaternion.identity;
 
@@ -162,6 +163,29 @@ namespace WinterMP.Core.Sync
         public Vector3 Position;
         public Quaternion Rotation;
         public float ExpiresAt;
+    }
+
+    internal sealed class SyncedNpc
+    {
+        public Rigidbody Body = null!;
+        public string Path = string.Empty;
+        public uint NetId;
+
+        public bool KinematicSaved;
+        public bool OriginalKinematic;
+
+        public ushort LastRemoteSequence;
+        public float LastRemoteAt = -999f;
+        public Vector3 TargetPosition;
+        public Quaternion TargetRotation = Quaternion.identity;
+
+        public ushort OutSequence;
+        public float NextSendAt;
+        public bool HostStreaming;
+
+        public Vector3 LastPosition;
+        public float LastMovedAt = -999f;
+        public bool GuestRemoteActive;
     }
 
     public struct VehicleInfo

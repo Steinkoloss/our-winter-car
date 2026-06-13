@@ -1,0 +1,14 @@
+﻿# Cursor index exclusions — build/runtime noise and huge raw dumps only.
+# Still indexed: all source, docs/, protocol/, catalog/sync-catalog.json,
+# catalog/README.md, catalog/analysis-GAME.md, tools/, PLAN.md, AGENTS.md.
+# To inspect a full F9 dump: python tools/extract_fsm_details.py catalog/dump-*.json find:<term>
+
+**/bin/
+**/obj/
+dist/
+TestResults/
+dumps/
+*.log
+
+# Raw F9 reference dumps (~20 MB). Use extract_fsm_details.py / catalog/README.md instead.
+catalog/dump-*.json

@@ -33,6 +33,12 @@ namespace WinterMP.Core.UI
             _request = request;
         }
 
+        public void DismissRequest(byte requestId)
+        {
+            if (_request != null && _request.RequestId == requestId)
+                _request = null;
+        }
+
         public bool IsBlockingInput => _request != null;
 
         private void OnGUI()

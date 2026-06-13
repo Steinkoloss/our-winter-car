@@ -45,37 +45,22 @@ namespace WinterMP.Core.Sync
                     remoteDriven = false;
                 }
 
+                if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
+                    && cargoVehicle != null
+                    && ShouldCargoRideVehicle(item, cargoVehicle, now))
+                {
+                    PrepareCargoForVehicleFollow(item, body);
+                    ApplyVehicleCargoFollow(item, cargoVehicle, body);
+                    continue;
+                }
+
                 if (remoteDriven && !item.LocallyOwned)
                 {
-                    if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
-                        && cargoVehicle != null
-                        && ShouldFollowVehicleCargo(item, cargoVehicle, now))
-                    {
-                        item.RemoteOwner = WorldSyncIds.NoOwner;
-                        item.RemoteIsDriver = false;
-                        item.RemoteVehicleStream = false;
-                        item.LastRemoteAt = -999f;
-                        ApplyVehicleCargoFollow(item, cargoVehicle, body);
-                        continue;
-                    }
-
                     ApplyRemoteSmoothing(item, body);
                     continue;
                 }
 
-                if (TryGetContainingVehicle(item, out SyncedItem? localCargoVehicle)
-                    && localCargoVehicle != null
-                    && IsLocalVehicleOperator(localCargoVehicle)
-                    && IsVehicleInMotion(localCargoVehicle, now))
-                {
-                    ClearCargoFollow(item);
-                    ReleaseLocalCargoOwnership(item, body);
-                    item.LastPosition = body.transform.position;
-                    item.LastMovedAt = now;
-                    continue;
-                }
-
-                ClearCargoFollow(item);
+                ClearCargoFollow(item, body);
 
                 if (item.RemoteOwner != WorldSyncIds.NoOwner && !remoteDriven)
                 {

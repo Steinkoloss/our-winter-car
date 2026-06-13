@@ -59,6 +59,8 @@ Release zips land in `dist/`:
 
 Player guide: [PLAYERS.md](PLAYERS.md).
 
+Agent routing: [CODEMAP.md](CODEMAP.md), [AGENT-RECIPES.md](AGENT-RECIPES.md).
+
 ## Testing real multiplayer
 
 Steam allows one running instance per account, so end-to-end tests need either

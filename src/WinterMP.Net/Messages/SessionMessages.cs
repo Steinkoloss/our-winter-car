@@ -39,6 +39,8 @@ namespace WinterMP.Net.Messages
         /// <summary>Session-scoped small id assigned by the host (host is always 0).</summary>
         public byte PlayerId;
         public string HostPlayerName = string.Empty;
+        /// <summary>See <see cref="SessionFlags"/> (bit 0 = host permadeath enabled).</summary>
+        public byte SessionFlags;
 
         public MessageId Id => MessageId.HandshakeResponse;
 
@@ -48,6 +50,7 @@ namespace WinterMP.Net.Messages
             writer.WriteString(Reason);
             writer.WriteByte(PlayerId);
             writer.WriteString(HostPlayerName);
+            writer.WriteByte(SessionFlags);
         }
 
         public void Read(NetReader reader)
@@ -56,6 +59,7 @@ namespace WinterMP.Net.Messages
             Reason = reader.ReadString();
             PlayerId = reader.ReadByte();
             HostPlayerName = reader.ReadString();
+            SessionFlags = reader.ReadByte();
         }
     }
 

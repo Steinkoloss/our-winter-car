@@ -14,9 +14,6 @@ namespace WinterMP.Core.Sync
         private const float SeatedForwardPitch = 12f;
         private const float WalkDistanceValue = 2f;
         private const float RunDistanceValue = 4f;
-        private const float WalkBobAmplitude = 0.035f;
-        private const float WalkBobHz = 3.5f;
-        private const float RunBobHz = 5.5f;
 
         private readonly Transform _rigRoot;
         private readonly Transform _bodyPivot;
@@ -25,14 +22,12 @@ namespace WinterMP.Core.Sync
         private readonly PlayMakerFSM? _moveFsm;
         private readonly HutongGames.PlayMaker.FsmFloat? _moveDistance;
         private readonly float _modelHeight;
-        private readonly Vector3 _bodyBaseLocalPos;
 
         private byte _lastMoveState;
         private bool _lastSeated;
         private bool _lastWalking;
         private float _bodyHeightScale = 1f;
         private float _bodyPitch;
-        private float _bobPhase;
 
         public RemoteCharacterAnimator(NpcCharacterFactory.CharacterRig rig)
         {
@@ -42,7 +37,6 @@ namespace WinterMP.Core.Sync
             _visibleSkeleton = rig.Skeleton;
             _moveFsm = rig.MoveFsm;
             _modelHeight = rig.ModelHeight;
-            _bodyBaseLocalPos = _bodyPivot.localPosition;
 
             if (_moveFsm != null)
             {
@@ -75,7 +69,6 @@ namespace WinterMP.Core.Sync
             if (PlayerMoveState.Has(moveState, PlayerMoveState.Swimming))
             {
                 _lastWalking = false;
-                ResetBob();
                 SendLocomotion(false);
                 return;
             }
@@ -85,7 +78,6 @@ namespace WinterMP.Core.Sync
                 _bodyHeightScale = SeatedHeightFactor;
                 _bodyPitch = SeatedForwardPitch;
                 _lastWalking = false;
-                ResetBob();
                 SendLocomotion(false);
             }
             else if (PlayerMoveState.Has(moveState, PlayerMoveState.Crouch))
@@ -107,25 +99,8 @@ namespace WinterMP.Core.Sync
         {
             CopySkeletonPose();
 
-            if (_lastSeated || PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Swimming))
-            {
-                ResetBob();
-                return;
-            }
-
             if (IsWalking)
-            {
-                bool running = PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Running);
-                float hz = running ? RunBobHz : WalkBobHz;
-                _bobPhase += Time.deltaTime * hz * Mathf.PI * 2f;
-                float bob = Mathf.Sin(_bobPhase) * WalkBobAmplitude;
-                _bodyPivot.localPosition = _bodyBaseLocalPos + new Vector3(0f, bob, 0f);
                 UpdateStrideSpeed();
-            }
-            else
-            {
-                ResetBob();
-            }
         }
 
         private void UpdateLocomotion()
@@ -179,12 +154,6 @@ namespace WinterMP.Core.Sync
         {
             if (_driverSkeleton == null || _visibleSkeleton == null) return;
             NpcCharacterFactory.CopySkeletonPose(_driverSkeleton, _visibleSkeleton);
-        }
-
-        private void ResetBob()
-        {
-            _bobPhase = 0f;
-            _bodyPivot.localPosition = _bodyBaseLocalPos;
         }
 
         private void ApplyBodyLayout()

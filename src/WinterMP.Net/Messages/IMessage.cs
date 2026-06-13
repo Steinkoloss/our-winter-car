@@ -29,6 +29,14 @@ namespace WinterMP.Net.Messages
         SleepConsentRequest = 26,
         /// <summary>Guest -> host: sleep consent answer.</summary>
         SleepConsentResponse = 27,
+        /// <summary>Host -> guests: sleep consent round finished.</summary>
+        SleepConsentResult = 28,
+        /// <summary>Any player -> host: local death started.</summary>
+        PlayerDeathReport = 29,
+        /// <summary>Host -> all: player died or permadeath wipe.</summary>
+        PlayerDeathEvent = 30,
+        /// <summary>Player -> all: non-permadeath respawn complete.</summary>
+        PlayerRespawn = 31,
 
         // 40-59: world events (doors, switches, pickables) — M3
         FsmStateEnter = 40,
@@ -50,6 +58,9 @@ namespace WinterMP.Net.Messages
         WalletState = 80,
         PurchaseIntent = 81,
 
+        // 100-119: NPCs — M6
+        NpcTransform = 100,
+
         // 120-139: snapshots/bulk — M3 join snapshot
         WorldSnapshotRequest = 120,
         WorldDoorSnapshot = 121,
@@ -59,9 +70,10 @@ namespace WinterMP.Net.Messages
         WorldItemDespawnSnapshot = 125,
 
         // Reserved ranges for future subsystems:
-        //   61-79 vehicles (attachment, fuel/damage)
-        //   80-99 economy
-        //   100-119 NPCs
+        //   62-79 vehicles (attachment, fuel/damage)
+        //   82-99 economy
+        //   101-119 NPCs/jobs (NpcTransform = 100)
+        //   126-139 snapshot/bulk transfer control
     }
 
     public interface IMessage

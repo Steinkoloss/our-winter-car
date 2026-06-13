@@ -112,6 +112,14 @@ namespace WinterMP.Core.Sync
                 "PlayerNeedsSync: restored guest needs from host profile.");
         }
 
+        /// <summary>Guest accepted host sleep — mirror the rested fatigue reset.</summary>
+        public void ApplyRestedFromSleep()
+        {
+            Locate();
+            Write(_fatigue, 0f);
+            WinterMPPlugin.Log.LogInfo("PlayerNeedsSync: guest fatigue reset after sleep consent.");
+        }
+
         private static HutongGames.PlayMaker.FsmFloat? FindGlobalFloat(params string[] names)
         {
             for (int i = 0; i < names.Length; i++)

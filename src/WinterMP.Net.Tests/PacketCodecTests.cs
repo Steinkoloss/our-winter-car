@@ -35,6 +35,7 @@ namespace WinterMP.Net.Tests
                 Reason = "Mod version mismatch (host 0.2.0, you 0.1.0).",
                 PlayerId = 3,
                 HostPlayerName = "Host",
+                SessionFlags = SessionFlags.PermadeathEnabled,
             };
 
             var decoded = Assert.IsType<HandshakeResponse>(PacketCodec.Decode(PacketCodec.Encode(original)));
@@ -42,6 +43,7 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Reason, decoded.Reason);
             Assert.Equal(original.PlayerId, decoded.PlayerId);
             Assert.Equal(original.HostPlayerName, decoded.HostPlayerName);
+            Assert.Equal(SessionFlags.PermadeathEnabled, decoded.SessionFlags & SessionFlags.PermadeathEnabled);
         }
 
         [Fact]

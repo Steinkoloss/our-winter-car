@@ -50,9 +50,26 @@ namespace WinterMP.Core.Session
 
         private readonly Dictionary<byte, PassengerState> _passengerOccupancy = new Dictionary<byte, PassengerState>();
 
+        /// <summary>Stable player ids + disconnect tracking for mid-session guest rejoin (PLAN.md §4.5).</summary>
+        private sealed class GuestSlot
+        {
+            public byte PlayerId;
+            public bool Disconnected;
+        }
+
+        private readonly Dictionary<ulong, GuestSlot> _guestSlotsBySteam = new Dictionary<ulong, GuestSlot>();
+
         public IEnumerable<RemotePlayer> Players => _playersByPeer.Values;
         public int PlayerCount => _playersByPeer.Count;
         public IList<string> ChatLog => _chatLog;
+
+        /// <summary>From the host save's permadeath flag — guests mirror this for the session.</summary>
+        public bool PermanentDeathEnabled { get; private set; }
+
+        public void SetPermanentDeathEnabled(bool enabled)
+        {
+            PermanentDeathEnabled = enabled;
+        }
 
         public event Action<RemotePlayer>? PlayerJoined;
         public event Action<RemotePlayer>? PlayerLeft;
@@ -408,6 +425,7 @@ namespace WinterMP.Core.Session
             _bypassHostPlayerGate = false;
             IsHost = false;
             _joinBrowseActive = false;
+            _guestSlotsBySteam.Clear();
             ConnectionQuality.Instance.Reset();
             SetState(SessionState.Idle, "Idle");
         }
@@ -569,6 +587,9 @@ namespace WinterMP.Core.Session
                         player.SteamId,
                         player.Position.ToNet(),
                         player.Rotation.ToNet());
+
+                    if (_guestSlotsBySteam.TryGetValue(player.SteamId, out GuestSlot slot))
+                        slot.Disconnected = true;
                 }
 
                 _playersByPeer.Remove(peer);
@@ -707,6 +728,27 @@ namespace WinterMP.Core.Session
                     Sync.SleepConsentManager.Instance?.OnRemoteResponse(sleepResponse);
                     break;
 
+                case SleepConsentResult sleepResult when !IsHost:
+                    Sync.SleepConsentManager.Instance?.OnGuestResult(sleepResult);
+                    break;
+
+                case PlayerDeathReport deathReport when IsHost:
+                    Sync.DeathSyncManager.Instance?.OnRemoteDeathReport(deathReport);
+                    break;
+
+                case PlayerDeathEvent deathEvent when !IsHost:
+                    Sync.DeathSyncManager.Instance?.OnRemoteDeathEvent(deathEvent);
+                    break;
+
+                case PlayerRespawn respawn when IsHost:
+                    Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn);
+                    Broadcast(respawn, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case PlayerRespawn respawn when !IsHost:
+                    Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn);
+                    break;
+
                 case FsmStateEnter stateEnter:
                     Sync.WorldSyncManager.Instance?.OnRemoteStateEnter(stateEnter);
                     if (IsHost)
@@ -745,6 +787,10 @@ namespace WinterMP.Core.Session
                             ItemTransformPolicy.SelectSendChannel(itemTransform.IsFinal, itemTransform.IsVehicle),
                             except: peer);
                     }
+                    break;
+
+                case NpcTransform npcTransform when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteNpcTransform(npcTransform);
                     break;
 
                 case VehicleState vehicleState:
@@ -841,7 +887,7 @@ namespace WinterMP.Core.Session
 
             var player = new RemotePlayer
             {
-                PlayerId = _nextPlayerId++,
+                PlayerId = AssignPlayerId(peer.Value, out bool reconnecting),
                 Peer = peer,
                 SteamId = peer.Value,
                 Name = request.PlayerName,
@@ -853,6 +899,7 @@ namespace WinterMP.Core.Session
                 Accepted = true,
                 PlayerId = player.PlayerId,
                 HostPlayerName = LocalPlayerName,
+                SessionFlags = BuildSessionFlags(),
             }, Channel.ReliableOrdered);
 
             // Introduce existing players to the newcomer...
@@ -875,7 +922,9 @@ namespace WinterMP.Core.Session
                 Name = player.Name,
             }, Channel.ReliableOrdered);
 
-            AddChatLine($"* {player.Name} joined");
+            AddChatLine(reconnecting
+                ? $"* {player.Name} reconnected"
+                : $"* {player.Name} joined");
             PlayerJoined?.Invoke(player);
 
             if (IsHost && PlayerCount == 1)
@@ -930,6 +979,31 @@ namespace WinterMP.Core.Session
             }
 
             WinterMPPlugin.Log.LogInfo($"Sent world snapshot to {peer} ({messages} messages).");
+        }
+
+        private byte AssignPlayerId(ulong steamId, out bool reconnecting)
+        {
+            reconnecting = false;
+            if (steamId == 0)
+                return AllocateFreshPlayerId();
+
+            if (_guestSlotsBySteam.TryGetValue(steamId, out GuestSlot slot))
+            {
+                reconnecting = slot.Disconnected;
+                slot.Disconnected = false;
+                return slot.PlayerId;
+            }
+
+            byte id = AllocateFreshPlayerId();
+            _guestSlotsBySteam[steamId] = new GuestSlot { PlayerId = id, Disconnected = false };
+            return id;
+        }
+
+        private byte AllocateFreshPlayerId()
+        {
+            byte id = _nextPlayerId++;
+            if (id == 0) id = _nextPlayerId++;
+            return id;
         }
 
         private static GuestSpawn BuildGuestSpawn(RemotePlayer guest)
@@ -1048,6 +1122,7 @@ namespace WinterMP.Core.Session
             }
 
             LocalPlayerId = response.PlayerId;
+            SetPermanentDeathEnabled((response.SessionFlags & SessionFlags.PermadeathEnabled) != 0);
             _playersByPeer[peer] = new RemotePlayer
             {
                 PlayerId = 0,
@@ -1057,6 +1132,8 @@ namespace WinterMP.Core.Session
             };
             SetState(SessionState.Connected, $"Connected to {response.HostPlayerName}");
             AddChatLine($"* Connected to {response.HostPlayerName}'s game");
+            if (PermanentDeathEnabled)
+                AddChatLine("* Host session: PERMADEATH (one death ends it for everyone)");
         }
 
         private void HandleChat(PeerId peer, ChatMessage chat)
@@ -1150,6 +1227,29 @@ namespace WinterMP.Core.Session
 
         public string ResolvePlayerName(byte playerId) => ResolveName(playerId);
 
+        public void SetPlayerDead(byte playerId, bool dead)
+        {
+            foreach (var player in _playersByPeer.Values)
+            {
+                if (player.PlayerId != playerId) continue;
+                player.IsDead = dead;
+                return;
+            }
+        }
+
+        public void ApplyPlayerRespawnPose(byte playerId, Vector3 position, Quaternion rotation)
+        {
+            foreach (var player in _playersByPeer.Values)
+            {
+                if (player.PlayerId != playerId) continue;
+                player.IsDead = false;
+                player.Position = position;
+                player.Rotation = rotation;
+                player.LastTransformTime = Time.unscaledTime;
+                return;
+            }
+        }
+
         public void SendChat(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
@@ -1178,6 +1278,17 @@ namespace WinterMP.Core.Session
         }
 
         // ---------------------------------------------------------------- misc
+
+        private byte BuildSessionFlags()
+        {
+            byte flags = 0;
+            if (IsHost && Sync.PermadeathSettings.TryRead(out bool enabled))
+                SetPermanentDeathEnabled(enabled);
+
+            if (PermanentDeathEnabled)
+                flags |= SessionFlags.PermadeathEnabled;
+            return flags;
+        }
 
         private void RemovePlayerById(byte playerId, string reason)
         {

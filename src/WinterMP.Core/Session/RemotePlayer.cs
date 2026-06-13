@@ -24,7 +24,9 @@ namespace WinterMP.Core.Session
         /// <summary>Round-trip time in milliseconds, measured by the ping loop.</summary>
         public int PingMs = -1;
 
-        /// <summary>Had a saved spawn pose on this host before this connection (handshake-time).</summary>
         public bool ReturningGuest;
+
+        /// <summary>Non-permadeath: player is in the death/orbituary flow and avatars should hide.</summary>
+        public bool IsDead;
     }
 }

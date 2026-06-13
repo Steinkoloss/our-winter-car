@@ -6,11 +6,22 @@ using WinterMP.Core.Session;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Hooks bed/sleep PlayMaker states on the host PLAYER (and bed objects) so
-    /// multi-player sleep requires guest consent (PLAN.md §4.4).
+    /// Hooks the game's <c>SleepTrigger :: Activate</c> FSM (catalog dump
+    /// <c>dump-23268598.json</c>, path * /Sleep/SleepTrigger) so multi-player sleep
+    /// requires guest consent before time skip (PLAN.md §4.4).
     /// </summary>
     internal sealed class PlayerSleepHook
     {
+        private const string ActivateFsmName = "Activate";
+        private const string SleepTriggerObjectName = "SleepTrigger";
+        private const string SleepTriggerPathMarker = "/Sleep/SleepTrigger";
+
+        /// <summary>Host confirmed sleep or setup started — before AnimateSleep advances the clock.</summary>
+        private static readonly string[] ConsentTriggerStates = { "Confirm", "Get positions" };
+
+        /// <summary>Host finished the sleep-time loop — push an immediate TimeSync.</summary>
+        private static readonly string[] PostSleepSyncStates = { "Calc rates" };
+
         private readonly System.Collections.Generic.HashSet<PlayMakerFSM> _hooked =
             new System.Collections.Generic.HashSet<PlayMakerFSM>();
 
@@ -28,62 +39,85 @@ namespace WinterMP.Core.Sync
             if (Time.unscaledTime < _nextProbeAt) return;
             _nextProbeAt = Time.unscaledTime + 3f;
 
-            TryHookObject("PLAYER", session);
-            TryHookObject("Bed", session);
-        }
+            PlayMakerFSM[] fsms;
+            try
+            {
+                fsms = Resources.FindObjectsOfTypeAll<PlayMakerFSM>();
+            }
+            catch
+            {
+                return;
+            }
 
-        private void TryHookObject(string objectName, SessionManager session)
-        {
-            var go = GameObject.Find(objectName);
-            if (go == null) return;
-
-            var fsms = go.GetComponentsInChildren<PlayMakerFSM>(true);
             for (int i = 0; i < fsms.Length; i++)
-                TryHookFsm(fsms[i], session);
+                TryHookSleepActivate(fsms[i], session);
         }
 
-        private void TryHookFsm(PlayMakerFSM fsm, SessionManager session)
+        private void TryHookSleepActivate(PlayMakerFSM fsm, SessionManager session)
         {
             if (fsm == null || _hooked.Contains(fsm)) return;
+            if (fsm.FsmName != ActivateFsmName) return;
+            if (fsm.gameObject.name != SleepTriggerObjectName) return;
+
+            string path;
+            try
+            {
+                path = ScenePath.Of(fsm.transform);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (path.IndexOf(SleepTriggerPathMarker, StringComparison.OrdinalIgnoreCase) < 0)
+                return;
 
             var states = fsm.Fsm != null ? fsm.Fsm.States : null;
             if (states == null) return;
 
             bool hookedAny = false;
-            for (int i = 0; i < states.Length; i++)
+            for (int s = 0; s < ConsentTriggerStates.Length; s++)
             {
-                var state = states[i];
-                if (state == null || state.Name == null) continue;
-                if (!IsSleepState(state.Name)) continue;
+                string stateName = ConsentTriggerStates[s];
+                if (!FsmHook.HasState(fsm, stateName)) continue;
 
-                string captured = state.Name;
-                if (FsmHook.OnStateEnter(fsm, captured, () => OnSleepStateEntered(fsm, session)))
+                if (FsmHook.OnStateEnter(fsm, stateName, () => OnConsentStateEntered(fsm, session, stateName)))
                     hookedAny = true;
             }
 
-            if (hookedAny)
+            for (int s = 0; s < PostSleepSyncStates.Length; s++)
             {
-                _hooked.Add(fsm);
-                WinterMPPlugin.Log.LogInfo(
-                    "SleepConsent: hooked sleep states on " + fsm.gameObject.name + ".");
+                string stateName = PostSleepSyncStates[s];
+                if (!FsmHook.HasState(fsm, stateName)) continue;
+
+                if (FsmHook.OnStateEnter(fsm, stateName, () => OnPostSleepStateEntered(session)))
+                    hookedAny = true;
             }
+
+            if (!hookedAny) return;
+
+            _hooked.Add(fsm);
+            WinterMPPlugin.Log.LogInfo(
+                "SleepConsent: hooked Activate sleep FSM at " + path + ".");
         }
 
-        private static bool IsSleepState(string name)
-        {
-            if (name.IndexOf("sleep", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (name.IndexOf("time skip", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            return false;
-        }
-
-        private static void OnSleepStateEntered(PlayMakerFSM fsm, SessionManager session)
+        private static void OnConsentStateEntered(PlayMakerFSM fsm, SessionManager session, string stateName)
         {
             if (session.PlayerCount == 0) return;
 
             var manager = SleepConsentManager.Instance;
             if (manager == null) return;
 
-            manager.OnHostSleepAttempt(fsm);
+            if (stateName == "Get positions")
+                manager.OnHostReachedGetPositions(fsm);
+            else
+                manager.OnHostSleepAttempt(fsm, stateName);
+        }
+
+        private static void OnPostSleepStateEntered(SessionManager session)
+        {
+            if (session.PlayerCount == 0) return;
+            SleepConsentManager.Instance?.OnHostSleepCompleted();
         }
     }
 }

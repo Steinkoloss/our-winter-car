@@ -100,21 +100,19 @@ namespace WinterMP.Net.Tests
         }
 
         [Theory]
-        [InlineData(false, true, false, true)]
-        [InlineData(false, true, true, false)]
-        [InlineData(false, false, false, false)]
-        [InlineData(true, true, false, false)]
-        public void VehicleCargoPolicy_BlocksClaimAndMovingStreams(
+        [InlineData(false, true, true)]
+        [InlineData(false, false, false)]
+        [InlineData(true, true, false)]
+        public void VehicleCargoPolicy_BlocksClaimAndAllItemStreamsWhileMoving(
             bool isVehicle,
             bool insideActivelyDrivenVehicle,
-            bool messageIsFinal,
             bool ignoreStream)
         {
             Assert.Equal(insideActivelyDrivenVehicle && !isVehicle,
                 ItemTransformPolicy.ShouldBlockClaimForVehicleCargo(isVehicle, insideActivelyDrivenVehicle));
             Assert.Equal(ignoreStream,
                 ItemTransformPolicy.ShouldIgnoreRemoteItemTransformForVehicleCargo(
-                    isVehicle, insideActivelyDrivenVehicle, messageIsFinal));
+                    isVehicle, insideActivelyDrivenVehicle));
         }
 
         [Fact]

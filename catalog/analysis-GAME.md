@@ -1,9 +1,9 @@
-# Catalog analysis: GAME (8641 FSMs, 1956 rigidbodies)
+# Catalog analysis: GAME (8615 FSMs, 1940 rigidbodies)
 
 ## FSM template frequency (top 40)
 - Data: 978
-- Use: 715
-- Screw: 631
+- Use: 700
+- Screw: 624
 - Button: 367
 - Generate: 219
 - Spawn: 215
@@ -55,7 +55,7 @@
 - YARD: 218 FSMs, 19 rigidbodies
 - NPC_CARS: 163 FSMs, 77 rigidbodies
 - SORBET(190-200psi): 141 FSMs, 18 rigidbodies
-- HOMENEW: 131 FSMs, 9 rigidbodies
+- HOMENEW: 131 FSMs, 7 rigidbodies
 - GIFU(750: 130 FSMs, 37 rigidbodies
 - EQUIPMENTS: 128 FSMs, 47 rigidbodies
 - Spawner: 101 FSMs, 0 rigidbodies
@@ -97,37 +97,37 @@
 - Data @ .../VINP_DoorLeft x1   e.g. CORRIS/Assemblies/VINP_DoorLeft
 - Spawn @ .../DoorRight408 x1   e.g. CARPARTS/PARTSYSTEM/SPAWNERS_VIN/DoorRight408
 - Trigger @ .../TriggerIn x1   e.g. STORE_AREA/Stuff/LOD/DoorBarRear/TriggerIn
-- Door @ .../Route x1   e.g. NPC_CARS/BusSpawnPerajarvi/BUS/Route
+- Door @ .../Route x1   e.g. NPC_CARS/BusSpawnLoppe/BUS/Route
 - Data @ .../VINP_DoorRight x1   e.g. CORRIS/Assemblies/VINP_DoorRight
 - UseOld @ .../UncleDoorHandle x1   e.g. YARD/UNCLE/Building/DoorFront/Pivot/UncleDoorHandle
 
 ## Global FSM event vocabulary (top 40)
-- FINISHED: 7108
-- SAVEGAME: 1231
-- BACK: 1183
-- STOP: 1083
+- FINISHED: 7082
+- SAVEGAME: 1215
+- BACK: 1176
+- STOP: 1068
 - PROCEED: 900
-- LOOP: 870
+- LOOP: 869
 - OFF: 761
-- TIGHTEN: 679
-- UNTIGHTEN: 679
-- REPAIRMODE_OFF: 603
-- REPAIRMODE_ON: 603
-- USE: 577
+- TIGHTEN: 672
+- UNTIGHTEN: 672
+- REPAIRMODE_OFF: 595
+- REPAIRMODE_ON: 595
+- USE: 564
 - INSTALL: 450
 - ON: 450
 - CLICK: 392
-- EXISTS: 353
-- GARBAGE: 342
+- EXISTS: 351
+- GARBAGE: 328
 - SPAWNITEM: 317
-- CLOSE: 297
+- CLOSE: 296
 - 2: 281
 - 1: 271
-- NOTEXISTS: 251
+- NOTEXISTS: 250
 - CHECK: 246
 - back: 245
-- OPEN: 242
 - UNINSTALL: 241
+- OPEN: 241
 - 3: 240
 - ASSEMBLING: 228
 - 4: 228
@@ -135,54 +135,54 @@
 - ASSEMBLE: 223
 - REMOVE: 223
 - RESET: 218
-- GLOBALEVENT: 216
+- GLOBALEVENT: 215
 - BREAKOFF: 196
 - CrossedLine: 196
 - TRIGGER ENTER: 186
-- SAVE: 158
-- SCREW: 155
+- SCREW: 159
+- SAVE: 144
 - 5: 144
 
 ## netId uniqueness
-- FSM netIds: 7796 unique / 8641 total, 302 colliding ids
-- Rigidbody netIds: 1656 unique / 1956 total, 65 colliding ids
+- FSM netIds: 7786 unique / 8615 total, 298 colliding ids
+- Rigidbody netIds: 1651 unique / 1940 total, 63 colliding ids
 - sample collisions:
-  - 4090959143: 5 entries
-    - cigarettes(itemx)::Use
-    - cigarettes(itemx)::Use
-    - cigarettes(itemx)::Use
-  - 461163162: 4 entries
-    - potato chips(itemx)::Use
-    - potato chips(itemx)::Use
-    - potato chips(itemx)::Use
-  - 105758046: 6 entries
-    - sausages(itemx)::Use
-    - sausages(itemx)::Use
-    - sausages(itemx)::Use
   - 1605545038: 2 entries
     - beer case(itemx)::Use
     - beer case(itemx)::Use
-  - 4027114321: 2 entries
-    - Steering Rack 26(VINXX)/tierod_right/BoltPM::Screw
-    - Steering Rack 26(VINXX)/tierod_right/BoltPM::Screw
-  - 3169431098: 2 entries
-    - Steering Rack 26(VINXX)/tierod_left/BoltPM::Screw
-    - Steering Rack 26(VINXX)/tierod_left/BoltPM::Screw
-  - 2497409041: 4 entries
-    - Steering Rack 26(VINXX)/Bolts/BoltPM::Screw
-    - Steering Rack 26(VINXX)/Bolts/BoltPM::Screw
-    - Steering Rack 26(VINXX)/Bolts/BoltPM::Screw
-  - 3478845996: 2 entries
-    - Main Bearing(VINXX)/Bolts/BoltPM::Screw
-    - Main Bearing(VINXX)/Bolts/BoltPM::Screw
+  - 3306453239: 3 entries
+    - Hand Brake Lever(VINXX)/Bolts/BoltPM::Screw
+    - Hand Brake Lever(VINXX)/Bolts/BoltPM::Screw
+    - Hand Brake Lever(VINXX)/Bolts/BoltPM::Screw
+  - 1994627618: 2 entries
+    - Grille(VINXX)/Bolts/BoltPM::Screw
+    - Grille(VINXX)/Bolts/BoltPM::Screw
   - 1053396602: 3 entries
     - Front Link Right(VINXX)/Bolts/BoltPM::Screw
     - Front Link Right(VINXX)/Bolts/BoltPM::Screw
     - Front Link Right(VINXX)/Bolts/BoltPM::Screw
-  - 3603482838: 6 entries
-    - Manual Gearbox 4 spd(VINXX)/Bolts/BoltPM::Screw
-    - Manual Gearbox 4 spd(VINXX)/Bolts/BoltPM::Screw
-    - Manual Gearbox 4 spd(VINXX)/Bolts/BoltPM::Screw
+  - 3778869879: 6 entries
+    - Manual Gearbox 5 spd(VINXX)/Bolts/BoltPM::Screw
+    - Manual Gearbox 5 spd(VINXX)/Bolts/BoltPM::Screw
+    - Manual Gearbox 5 spd(VINXX)/Bolts/BoltPM::Screw
+  - 583103695: 4 entries
+    - Ventilation Box(VINXX)/Bolts/BoltPM::Screw
+    - Ventilation Box(VINXX)/Bolts/BoltPM::Screw
+    - Ventilation Box(VINXX)/Bolts/BoltPM::Screw
+  - 1488987105: 4 entries
+    - Rear Light(VINXX)/Bolts/BoltPM::Screw
+    - Rear Light(VINXX)/Bolts/BoltPM::Screw
+    - Rear Light(VINXX)/Bolts/BoltPM::Screw
+  - 4227759159: 2 entries
+    - Rear Light(VINXX)::Data
+    - Rear Light(VINXX)::Data
+  - 838612771: 2 entries
+    - Front Right Brake Assembly(VINXX)/Bolts/BoltPM::Screw
+    - Front Right Brake Assembly(VINXX)/Bolts/BoltPM::Screw
+  - 3585658435: 4 entries
+    - RIM15ALLOYSTARa0/Bolts/BoltPM::Screw
+    - RIM15ALLOYSTARa0/Bolts/BoltPM::Screw
+    - RIM15ALLOYSTARa0/Bolts/BoltPM::Screw
 
 ## Rigidbody-heavy roots (top 20, dynamic bodies only)
 - RACES: 538 dynamic bodies
@@ -203,5 +203,5 @@
 - FleaMarketProducts: 10 dynamic bodies
 - KEKMET(350-400psi): 9 dynamic bodies
 - BACHGLOTZ(1905kg): 9 dynamic bodies
-- sausages(itemx): 6 dynamic bodies
 - MAP: 6 dynamic bodies
+- INSPECTION: 5 dynamic bodies

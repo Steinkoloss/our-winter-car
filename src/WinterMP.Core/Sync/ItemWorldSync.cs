@@ -52,6 +52,7 @@ namespace WinterMP.Core.Sync
                 item.LastRemoteAt = -999f;
                 item.CargoFollowActive = false;
                 item.CargoFollowVehicleId = 0;
+                item.CargoFollowDriverId = WorldSyncIds.NoOwner;
                 item.RemoteEngineUntil = -999f;
                 item.RemoteClimateUntil = -999f;
                 item.RemoteEngineOn = false;

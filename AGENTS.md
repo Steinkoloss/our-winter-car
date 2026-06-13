@@ -42,6 +42,8 @@ the source of truth for the wire format.
 | `protocol/PROTOCOL.md` | Wire protocol spec — keep in lockstep with code. | — |
 | `docs/BUILDING.md` | Build, deploy, dev-loop instructions. | — |
 | `docs/PLAYERS.md` | Player-facing install/host/join guide. | — |
+| `docs/CODEMAP.md` | **Where to edit what** — subsystem → file routing. | — |
+| `docs/AGENT-RECIPES.md` | Step-by-step checklists (messages, catalog, FSM hooks, debug). | — |
 | `tools/*.ps1` | Build/release/installer scripts. | — |
 
 ---
@@ -176,8 +178,13 @@ self-trigger releases, and never commit unless asked.
 
 - Architecture / sync behavior → `PLAN.md`.
 - Wire format → `protocol/PROTOCOL.md`.
+- **Where is the code for X?** → `docs/CODEMAP.md`.
+- **How do I add a message / catalog rule / FSM hook?** → `docs/AGENT-RECIPES.md`.
 - How to build/deploy/test → `docs/BUILDING.md`.
 - Still unclear and it's a real fork in the road → ask the user. Don't guess on
   anything that could corrupt a save or desync a live session.
+
+Cursor index skips build output and raw `catalog/dump-*.json` (see `.cursorignore`);
+use `tools/extract_fsm_details.py` to query dumps.
 
 Leave the campsite cleaner than you found it.

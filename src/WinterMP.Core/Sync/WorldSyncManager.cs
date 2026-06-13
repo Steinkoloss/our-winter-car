@@ -41,6 +41,7 @@ namespace WinterMP.Core.Sync
         private FsmWorldSync _fsm = null!;
         private ItemWorldSync _items = null!;
         private VehicleWorldSync _vehicles = null!;
+        private NpcTrafficSync _npcTraffic = null!;
 
         private string _lastLevel = string.Empty;
         private float _nextScanAt;
@@ -73,6 +74,7 @@ namespace WinterMP.Core.Sync
         public int BuyCount => _syncReady ? _fsm.BuyCount : 0;
         public int BoltCount => _syncReady ? _fsm.BoltCount : 0;
         public int ItemCount => _syncReady ? _items.ItemCount : 0;
+        public int NpcCount => _syncReady ? _npcTraffic.NpcCount : 0;
         public uint IdHash { get; private set; }
 
         public void Configure(LaunchOptions launch)
@@ -96,6 +98,7 @@ namespace WinterMP.Core.Sync
             _bridge = new WorldSyncBridge(this, _hookedFsms);
             _items = new ItemWorldSync(_bridge);
             _vehicles = new VehicleWorldSync(_bridge, _items);
+            _npcTraffic = new NpcTrafficSync(_bridge);
             _items.BindVehicles(_vehicles);
             _bridge.BindItems(_items);
             _bridge.BindWallet(_wallet);
@@ -230,6 +233,7 @@ namespace WinterMP.Core.Sync
             }
 
             _items.UpdateItems(session);
+            _npcTraffic.Update(session!);
             _vehicles.UpdateVehicleStates(session!);
             _vehicles.UpdateVehicleClimate(session!);
 
@@ -271,6 +275,7 @@ namespace WinterMP.Core.Sync
 
             _fsm.Clear();
             _items.Clear();
+            _npcTraffic.Clear();
             _hookedFsms.Clear();
             _nextObjectRequestAt.Clear();
             _timeWeather.Reset();
@@ -371,12 +376,13 @@ namespace WinterMP.Core.Sync
                 }
 
                 int newItems = _items.ScanItems();
-                if (newDoors > 0 || newParts > 0 || newBuys > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newItems > 0)
+                int newNpcs = _npcTraffic.Scan();
+                if (newDoors > 0 || newParts > 0 || newBuys > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newItems > 0 || newNpcs > 0)
                 {
                     RecomputeIdHash();
                     WinterMPPlugin.Log.LogInfo(
-                        $"WorldSync: +{newDoors} doors, +{newParts} parts, +{newBuys} buys, +{newBolts} bolts, +{newIgnitions} ignitions, +{newControls} controls, +{newItems} items — " +
-                        $"now {_fsm.DoorCount}/{_fsm.PartCount}/{_fsm.BuyCount}/{_fsm.BoltCount}/{_fsm.IgnitionCount}/{_fsm.ControlCount}/{_fsm.StarterCount}/{_items.ItemCount} (id hash {IdHash:X8}).");
+                        $"WorldSync: +{newDoors} doors, +{newParts} parts, +{newBuys} buys, +{newBolts} bolts, +{newIgnitions} ignitions, +{newControls} controls, +{newStarters} starters, +{newItems} items, +{newNpcs} npcs — " +
+                        $"now {_fsm.DoorCount}/{_fsm.PartCount}/{_fsm.BuyCount}/{_fsm.BoltCount}/{_fsm.IgnitionCount}/{_fsm.ControlCount}/{_fsm.StarterCount}/{_items.ItemCount}/{_npcTraffic.NpcCount} (id hash {IdHash:X8}).");
                 }
 
                 if (_selfTest && !_readyAnnounced && _fsm.DoorCount > 0)
@@ -597,6 +603,19 @@ namespace WinterMP.Core.Sync
         public TimeSync? BuildTimeSync() => _timeWeather.BuildMessage();
         public WalletState? BuildWalletState() => _wallet.BuildMessage();
 
+        /// <summary>Push an immediate clock snapshot (e.g. after host sleep consent completes).</summary>
+        public void BroadcastTimeSyncNow()
+        {
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost || session.PlayerCount == 0) return;
+
+            var time = _timeWeather.BuildMessage();
+            if (time == null) return;
+
+            session.SendWorldMessage(time, Channel.ReliableOrdered);
+            _nextTimeSyncAt = Time.unscaledTime + TimeSyncIntervalSeconds;
+        }
+
         public void OnRemoteTimeSync(TimeSync message)
         {
             var session = SessionManager.Instance;
@@ -622,6 +641,7 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteItemDespawn(ItemDespawn message) { EnsureSyncReady(); _items.OnRemoteItemDespawn(message); }
         public void OnRemoteItemTransform(ItemTransform message) { EnsureSyncReady(); _items.OnRemoteItemTransform(message); }
+        public void OnRemoteNpcTransform(NpcTransform message) { EnsureSyncReady(); _npcTraffic.OnRemoteNpcTransform(message); }
         public void OnRemoteItemSnapshot(WorldItemSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemSnapshot(message); }
         public void OnRemoteItemDespawnSnapshot(WorldItemDespawnSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemDespawnSnapshot(message); }
 
@@ -702,6 +722,7 @@ namespace WinterMP.Core.Sync
             if (!_syncReady) return;
 
             _items.ReleaseSession();
+            _npcTraffic.ReleaseSession();
             _fsm.Clear();
             _nextObjectRequestAt.Clear();
             _snapshotRequested = false;

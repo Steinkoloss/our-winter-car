@@ -24,7 +24,10 @@ namespace WinterMP.Net
         // v20: GuestSpawn (24) — host tells joiners where to place PLAYER after snapshot.
         // v21: GuestSpawn carries host + last saved pose; guest picks locally.
         // v22: GuestSpawn adds saved needs; PlayerNeedsReport + sleep consent messages.
-        public const ushort Version = 22;
+        // v23: SleepConsentResult (28) — host notifies guests when sleep round completes.
+        // v24: HandshakeResponse sessionFlags; PlayerDeathReport/Event/Respawn (29-31).
+        // v25: NpcTransform (100) — host streams NPC/traffic rigidbody poses to guests.
+        public const ushort Version = 25;
     }
 
     /// <summary>

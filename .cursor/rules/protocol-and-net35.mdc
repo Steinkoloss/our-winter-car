@@ -1,0 +1,33 @@
+---
+description: Protocol bump discipline and net35 runtime constraints for in-game code
+alwaysApply: true
+---
+
+# Protocol & net35
+
+## Wire format
+
+- Source of truth: `protocol/PROTOCOL.md` and `src/WinterMP.Net/`.
+- Any message layout, id, channel, or semantics change **must**:
+  1. Bump `ProtocolInfo.Version` in `Protocol.cs`.
+  2. Update `protocol/PROTOCOL.md` in the same change.
+  3. Add/update a test in `WinterMP.Net.Tests`.
+- **Never reuse a retired message id.** New fields are append-only, shipped with a version bump.
+
+Prefer implementing and testing protocol logic in `WinterMP.Net` before touching `WinterMP.Core`.
+
+## .NET 3.5 (in-game assemblies only)
+
+`WinterMP.Core`, `WinterMP.Tools`, and the `net35` target of `WinterMP.Net` run on legacy Mono inside Unity 5.0.
+
+**Do not use at runtime:** `Span`, `ValueTuple`, `Task`/async, `record`, modern BCL helpers that need a newer runtime.
+
+**Safe:** C# syntax with `LangVersion=latest` when it lowers to net35-compatible IL.
+
+`WinterMP.Launcher` (.NET 8) may use modern APIs — keep game-facing code on net35.
+
+## FSM / catalog work
+
+- Curated sync rules: `catalog/sync-catalog.json` (shipped, small).
+- Raw F9 dumps: `catalog/dump-*.json` — use `python tools/extract_fsm_details.py`, not whole-file reads.
+- FSM hook patterns: `Sync/FsmHook.cs`, `docs/AGENT-RECIPES.md`.
