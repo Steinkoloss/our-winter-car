@@ -132,6 +132,7 @@ namespace WinterMP.Core.Session
             Util.BootTrace.Crumb("SessionManager.Initialize: begin");
             Instance = this;
             _launch = launch;
+            SessionLaunchPolicy.FastSessionLaunch = launch.FastSessionLaunch;
 
             // Precedence: command line (test tooling) > config > Steam persona/OS user.
             LocalPlayerName = !string.IsNullOrEmpty(launch.PlayerName)
@@ -168,19 +169,36 @@ namespace WinterMP.Core.Session
             }
         }
 
+        private bool WantsEarlySteamWork =>
+            _launch.FastSessionLaunch
+            && (_pendingMode == LaunchMode.Host
+                || _pendingMode == LaunchMode.Join
+                || _pendingMode == LaunchMode.JoinBrowse);
+
+        private bool CanExecutePendingLaunch(bool menuReady)
+        {
+            if (menuReady) return true;
+            if (!_launch.FastSessionLaunch) return false;
+
+            return _pendingMode == LaunchMode.Host
+                || (_pendingMode == LaunchMode.Join && _pendingLobbyId != 0);
+        }
+
         private void EnsureSteamInviteHandlers()
         {
 #if STEAMWORKS
             if (_steamCallbacksRegistered) return;
 
             bool menuReady = IsMainMenuReady();
-            if (menuReady && !_steamMainMenuNotified)
+            if ((menuReady || WantsEarlySteamWork) && !_steamMainMenuNotified)
             {
                 _steamMainMenuNotified = true;
                 Steam.SteamBootstrap.NoteMainMenuReady();
             }
 
-            if (!menuReady && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds) return;
+            if (!menuReady && !WantsEarlySteamWork && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds)
+                return;
+
             if (!Steam.SteamBootstrap.EnsureInitialized()) return;
 
             Steam.SteamLobbyManager.EnsureCallbacksRegistered();
@@ -209,12 +227,16 @@ namespace WinterMP.Core.Session
             if (_pendingMode == LaunchMode.None || State != SessionState.Idle) return;
 
             bool menuReady = IsMainMenuReady();
-            if (!menuReady && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds) return;
+            if (!CanExecutePendingLaunch(menuReady)
+                && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds)
+            {
+                return;
+            }
 
 #if STEAMWORKS
             if (_pendingMode == LaunchMode.Host || _pendingMode == LaunchMode.Join)
             {
-                if (!TryEnsureSteamReady("Waiting for Steam before hosting…"))
+                if (!TryEnsureSteamReady("Connecting to Steam…"))
                     return;
             }
 #endif

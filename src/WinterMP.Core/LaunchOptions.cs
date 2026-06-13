@@ -41,6 +41,12 @@ namespace WinterMP.Core
         /// <summary>Deprecated: auto-load is handled by WinterMP FastBoot. Flag is ignored.</summary>
         public bool AutoLoadSave { get; private set; }
 
+        /// <summary>
+        /// Launcher host/join fast path: zero splash grace, early Steam attach, host/join
+        /// before main-menu settle when safe.
+        /// </summary>
+        public bool FastSessionLaunch { get; private set; }
+
         public static LaunchOptions FromCommandLine(string[] args)
         {
             var options = new LaunchOptions();
@@ -53,6 +59,7 @@ namespace WinterMP.Core
                 {
                     options.Mode = LaunchMode.Join;
                     options.LobbyId = lobbyFromSteam;
+                    options.FastSessionLaunch = true;
                     continue; // Steam invite wins over -wintermp, but keep scanning for the name override
                 }
 
@@ -66,6 +73,12 @@ namespace WinterMP.Core
                 if (string.Equals(args[i], "-wintermp-autoload", StringComparison.OrdinalIgnoreCase))
                 {
                     options.AutoLoadSave = true;
+                    continue;
+                }
+
+                if (string.Equals(args[i], "-wintermp-fast", StringComparison.OrdinalIgnoreCase))
+                {
+                    options.FastSessionLaunch = true;
                     continue;
                 }
 

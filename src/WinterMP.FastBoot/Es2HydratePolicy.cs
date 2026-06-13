@@ -32,6 +32,7 @@ namespace WinterMP.FastBoot
         private static bool _aggressiveSkip;
         private static bool _whitelistMode;
         private static bool _continueHydrateActive;
+        private static bool _deferredHydrateActive;
 
         /// <summary>Only hydrate tags needed to boot; skip everything else in whitelist mode.</summary>
         private static readonly string[] BootKeepPrefixes =
@@ -45,7 +46,10 @@ namespace WinterMP.FastBoot
         public static int SkippedTagChecks { get; private set; }
         public static int SkippedTagReads { get; private set; }
 
-        public static bool ShouldApply => _skipTagsEnabled && _continueHydrateActive;
+        public static bool DeferredHydrateActive => _deferredHydrateActive;
+
+        public static bool ShouldApply =>
+            _skipTagsEnabled && (_continueHydrateActive || _deferredHydrateActive);
 
         public static void Configure(bool skipTagsEnabled, bool aggressiveSkip, bool whitelistMode, string? extraPrefixesCsv)
         {
@@ -83,9 +87,20 @@ namespace WinterMP.FastBoot
             _continueHydrateActive = false;
         }
 
+        public static void BeginDeferredHydrate()
+        {
+            _deferredHydrateActive = true;
+        }
+
+        public static void EndDeferredHydrate()
+        {
+            _deferredHydrateActive = false;
+        }
+
         public static void ResetBoot()
         {
             _continueHydrateActive = false;
+            _deferredHydrateActive = false;
             SkippedTagChecks = 0;
             SkippedTagReads = 0;
         }
@@ -93,7 +108,20 @@ namespace WinterMP.FastBoot
         public static bool TryShortCircuitTag(string? tag, out bool exists)
         {
             exists = false;
-            if (!ShouldApply || !ShouldSkipTag(tag))
+            if (!_skipTagsEnabled || string.IsNullOrEmpty(tag))
+                return false;
+
+            if (_deferredHydrateActive)
+            {
+                if (!IsBootKeepTag(tag))
+                    return false;
+
+                exists = true;
+                NoteSkippedCheck();
+                return true;
+            }
+
+            if (!_continueHydrateActive || !ShouldSkipTag(tag))
                 return false;
 
             NoteSkippedCheck();
@@ -103,6 +131,9 @@ namespace WinterMP.FastBoot
         public static bool ShouldSkipTag(string? tag)
         {
             if (string.IsNullOrEmpty(tag)) return false;
+
+            if (_deferredHydrateActive)
+                return IsBootKeepTag(tag);
 
             if (_whitelistMode && _continueHydrateActive)
             {
@@ -138,6 +169,17 @@ namespace WinterMP.FastBoot
             for (int i = 0; i < _skipPrefixes.Length; i++)
             {
                 if (tag.StartsWith(_skipPrefixes[i], StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsBootKeepTag(string tag)
+        {
+            for (int i = 0; i < BootKeepPrefixes.Length; i++)
+            {
+                if (tag.StartsWith(BootKeepPrefixes[i], StringComparison.Ordinal))
                     return true;
             }
 

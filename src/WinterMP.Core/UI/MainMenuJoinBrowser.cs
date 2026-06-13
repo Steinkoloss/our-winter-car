@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using WinterMP.Core.Session;
 
@@ -9,7 +10,11 @@ namespace WinterMP.Core.UI
     /// </summary>
     public sealed class MainMenuJoinBrowser : MonoBehaviour
     {
-        private const float RefreshIntervalSeconds = 2.5f;
+        private const float RefreshIntervalSeconds = 5f;
+        private const string JoinButtonName = "WinterMP_Join";
+        private const string NoFriendsButtonName = "WinterMP_NoFriends";
+        private const string SteamFriendsButtonName = "WinterMP_SteamFriends";
+        private const string CloseButtonName = "WinterMP_Close";
 
         private string _lastLevel = string.Empty;
         private bool _listOpen;
@@ -20,6 +25,9 @@ namespace WinterMP.Core.UI
         private bool? _continueWasActive;
         private bool? _newGameWasActive;
         private bool _hidVanillaButtons;
+        private string _friendsSignature = string.Empty;
+        private readonly List<MainMenuUiFactory.HiddenMenuButton> _hiddenSiblings =
+            new List<MainMenuUiFactory.HiddenMenuButton>();
 #if STEAMWORKS
         private readonly List<Steam.SteamFriendBrowser.FriendEntry> _friends =
             new List<Steam.SteamFriendBrowser.FriendEntry>();
@@ -41,6 +49,7 @@ namespace WinterMP.Core.UI
             {
                 _lastLevel = level;
                 TeardownUi();
+                MainMenuUiFactory.ResetLayoutCache();
             }
 
             var session = SessionManager.Instance;
@@ -56,29 +65,33 @@ namespace WinterMP.Core.UI
 
             HideVanillaButtons();
 
+            if (_modRoot == null)
+            {
+                EnsureJoinButton();
+                return;
+            }
+
 #if STEAMWORKS
             if (_listOpen && Time.unscaledTime >= _nextRefreshAt)
             {
                 RefreshFriends();
-                RebuildButtons(session!);
+                if (FriendsSignatureChanged())
+                    SyncFriendList(session!);
                 _nextRefreshAt = Time.unscaledTime + RefreshIntervalSeconds;
             }
 #endif
-
-            if (_modRoot == null)
-                EnsureJoinButton(session!);
         }
 
-        private void EnsureJoinButton(SessionManager session)
+        private void EnsureJoinButton()
         {
             _modRoot = MainMenuUiFactory.EnsureModRoot();
             if (_modRoot == null) return;
 
-            MainMenuUiFactory.CreateButton(
+            MainMenuUiFactory.SyncButton(
                 _modRoot,
-                "WinterMP_Join",
+                JoinButtonName,
                 "Join",
-                MainMenuUiFactory.AnchorPosition(),
+                row: 0,
                 OpenFriendList,
                 clickEnabled: true);
         }
@@ -86,26 +99,31 @@ namespace WinterMP.Core.UI
         private void OpenFriendList()
         {
             _listOpen = true;
+            _friendsSignature = string.Empty;
             _nextRefreshAt = 0f;
+            MainMenuUiFactory.HideVanillaSiblings(hide: true, _hiddenSiblings);
+
 #if STEAMWORKS
             Steam.SteamBootstrap.EnsureInitialized();
             Steam.SteamLobbyManager.EnsureCallbacksRegistered();
             RefreshFriends();
 #endif
+
             var session = SessionManager.Instance;
             if (session != null)
-                RebuildButtons(session);
+                SyncFriendList(session);
         }
 
         private void CloseFriendList()
         {
             _listOpen = false;
+            _friendsSignature = string.Empty;
+            MainMenuUiFactory.HideVanillaSiblings(hide: false, _hiddenSiblings);
+
             if (_modRoot != null)
                 MainMenuUiFactory.DestroyChildren(_modRoot);
 
-            var session = SessionManager.Instance;
-            if (session != null)
-                EnsureJoinButton(session);
+            EnsureJoinButton();
         }
 
 #if STEAMWORKS
@@ -115,23 +133,40 @@ namespace WinterMP.Core.UI
             _friends.AddRange(Steam.SteamFriendBrowser.ListFriendsInMwc());
         }
 
-        private void RebuildButtons(SessionManager session)
+        private bool FriendsSignatureChanged()
+        {
+            var sb = new StringBuilder(_friends.Count * 24);
+            foreach (var friend in _friends)
+            {
+                sb.Append(friend.SteamId);
+                sb.Append(':');
+                sb.Append(friend.LobbyId);
+                sb.Append(';');
+            }
+
+            string signature = sb.ToString();
+            if (signature == _friendsSignature)
+                return false;
+
+            _friendsSignature = signature;
+            return true;
+        }
+
+        private void SyncFriendList(SessionManager session)
         {
             if (_modRoot == null) return;
 
-            MainMenuUiFactory.DestroyChildren(_modRoot);
-
-            float rowStep = MainMenuUiFactory.RowStep();
-            Vector3 anchor = MainMenuUiFactory.AnchorPosition();
+            var keep = new HashSet<string>();
             int row = 0;
 
             if (_friends.Count == 0)
             {
-                MainMenuUiFactory.CreateButton(
+                keep.Add(NoFriendsButtonName);
+                MainMenuUiFactory.SyncButton(
                     _modRoot,
-                    "WinterMP_NoFriends",
+                    NoFriendsButtonName,
                     "No friends in MWC",
-                    OffsetRow(anchor, rowStep, row++),
+                    row++,
                     onClick: null,
                     clickEnabled: false);
             }
@@ -139,48 +174,45 @@ namespace WinterMP.Core.UI
             {
                 foreach (var friend in _friends)
                 {
-                    string label = BuildFriendLabel(friend);
+                    string key = "WinterMP_Friend_" + friend.SteamId;
+                    keep.Add(key);
+
+                    string label = friend.LobbyId != 0
+                        ? friend.Name + "  (hosting)"
+                        : friend.Name;
                     ulong lobbyId = friend.LobbyId;
-                    MainMenuUiFactory.CreateButton(
+
+                    MainMenuUiFactory.SyncButton(
                         _modRoot,
-                        "WinterMP_Friend_" + friend.SteamId,
+                        key,
                         label,
-                        OffsetRow(anchor, rowStep, row++),
+                        row++,
                         () => session.RequestJoinFromSteam(lobbyId),
                         clickEnabled: lobbyId != 0);
                 }
             }
 
-            MainMenuUiFactory.CreateButton(
+            keep.Add(SteamFriendsButtonName);
+            MainMenuUiFactory.SyncButton(
                 _modRoot,
-                "WinterMP_SteamFriends",
+                SteamFriendsButtonName,
                 "Steam friends list",
-                OffsetRow(anchor, rowStep, row++),
+                row++,
                 Steam.SteamFriendBrowser.OpenSteamFriendsOverlay,
                 clickEnabled: true);
 
-            MainMenuUiFactory.CreateButton(
+            keep.Add(CloseButtonName);
+            MainMenuUiFactory.SyncButton(
                 _modRoot,
-                "WinterMP_Close",
+                CloseButtonName,
                 "Close",
-                OffsetRow(anchor, rowStep, row++),
+                row++,
                 CloseFriendList,
                 clickEnabled: true);
-        }
 
-        private static string BuildFriendLabel(Steam.SteamFriendBrowser.FriendEntry friend)
-        {
-            if (friend.LobbyId != 0)
-                return friend.Name + "  (hosting)";
-
-            return friend.Name;
+            MainMenuUiFactory.RemoveExcept(_modRoot, keep);
         }
 #endif
-
-        private static Vector3 OffsetRow(Vector3 anchor, float rowStep, int row)
-        {
-            return new Vector3(anchor.x, anchor.y - rowStep * row, anchor.z);
-        }
 
         private void HideVanillaButtons()
         {
@@ -192,6 +224,8 @@ namespace WinterMP.Core.UI
 
         private void RestoreVanillaButtons()
         {
+            MainMenuUiFactory.HideVanillaSiblings(hide: false, _hiddenSiblings);
+
             EnsureVanillaButtonsCached();
             _continueWasActive = null;
             _newGameWasActive = null;
@@ -247,6 +281,9 @@ namespace WinterMP.Core.UI
         private void TeardownUi()
         {
             _listOpen = false;
+            _friendsSignature = string.Empty;
+            MainMenuUiFactory.HideVanillaSiblings(hide: false, _hiddenSiblings);
+
             if (_modRoot != null)
             {
                 MainMenuUiFactory.DestroyChildren(_modRoot);

@@ -9,7 +9,7 @@ namespace WinterMP.Launcher.Services
     /// Applies the launcher FastBoot speed profile before host/join launches.
     ///
     /// Enabled: splash/config skip, fast Continue, ES2 whitelist hydrate, async GAME preload,
-    /// loading-FSM nudge, host Continue without waiting for a guest.
+    /// loading-FSM nudge, host Continue without waiting for a guest, deferred ES2 catch-up after GAME.
     ///
     /// Excluded: direct GAME load (skips ES2 entirely — crashes), ES2 save scan at startup.
     /// </summary>
@@ -23,7 +23,7 @@ namespace WinterMP.Launcher.Services
             ("SkipSplashScreen", "true"),
             ("SkipConfigScreen", "true"),
             ("AutoLoadSave", "true"),
-            ("SplashGraceSeconds", "0.3"),
+            ("SplashGraceSeconds", "0"),
             ("MenuSettleSeconds", "0"),
             ("SaveCheckTimeoutSeconds", "0"),
             ("ContinueStepDelaySeconds", "0"),
@@ -36,7 +36,9 @@ namespace WinterMP.Launcher.Services
             ("DevSkipEs2Tags", "true"),
             ("DevEs2Whitelist", "true"),
             ("DevSkipEs2ExtraPrefixes", string.Empty),
-            ("LogTimings", "true"),
+            ("LogTimings", "false"),
+            ("DeferredEs2Hydrate", "true"),
+            ("DeferredHydrateDelaySeconds", "3"),
             ("AnalyzeEs2SaveOnStartup", "false"),
         };
 

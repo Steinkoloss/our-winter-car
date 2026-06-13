@@ -37,6 +37,8 @@ namespace WinterMP.FastBoot
         private ConfigEntry<string> _devSkipEs2ExtraPrefixes = null!;
         private ConfigEntry<bool> _logTimings = null!;
         private ConfigEntry<bool> _analyzeEs2OnStartup = null!;
+        private ConfigEntry<bool> _deferredEs2Hydrate = null!;
+        private ConfigEntry<float> _deferredHydrateDelaySeconds = null!;
 
         private bool _fastContinue;
         private bool _bypassHostWait;
@@ -114,18 +116,25 @@ namespace WinterMP.FastBoot
                 "Boot", "DevSkipEs2ExtraPrefixes", string.Empty,
                 "Extra comma-separated ES2 tag prefixes to skip during dev hydrate.");
             _logTimings = Config.Bind(
-                "Boot", "LogTimings", true,
+                "Boot", "LogTimings", false,
                 "Log boot phase timings and a summary when GAME loads.");
             _analyzeEs2OnStartup = Config.Bind(
                 "Boot", "AnalyzeEs2SaveOnStartup", false,
                 "Scan savefile.txt tag names at plugin load (dev diagnostics only — costs startup time).");
+            _deferredEs2Hydrate = Config.Bind(
+                "Boot", "DeferredEs2Hydrate", true,
+                "After GAME loads, background-hydrate ES2 tags skipped by the boot whitelist.");
+            _deferredHydrateDelaySeconds = Config.Bind(
+                "Boot", "DeferredHydrateDelaySeconds", 3f,
+                "Seconds after GAME before deferred hydrate (lets MP snapshot apply first).");
 
             if (HasCommandLineFlag("-no-fastboot"))
                 _enabled.Value = false;
 
             bool cmdlineFast = HasCommandLineFlag("-fastboot-dev");
-            _fastContinue = _devMode.Value || cmdlineFast;
-            _bypassHostWait = _bypassHostContinueWait.Value || cmdlineFast;
+            bool mpFast = HasCommandLineFlag("-wintermp-fast");
+            _fastContinue = _devMode.Value || cmdlineFast || mpFast;
+            _bypassHostWait = _bypassHostContinueWait.Value || cmdlineFast || mpFast;
             _devDirectActive = (_fastContinue || cmdlineFast) && _devDirectGameLoad.Value;
             _es2WhitelistActive = _devEs2Whitelist.Value;
             _es2SkipActive = _devSkipEs2Tags.Value || _es2WhitelistActive;
@@ -147,6 +156,8 @@ namespace WinterMP.FastBoot
                 _fastContinue || _es2SkipActive,
                 _es2WhitelistActive,
                 _devSkipEs2ExtraPrefixes.Value);
+            Es2DeferredHydrator.Enabled = _deferredEs2Hydrate.Value && _es2WhitelistActive;
+            Es2DeferredHydrator.DelaySeconds = _deferredHydrateDelaySeconds.Value;
             SessionGate.Configure(_bypassHostWait);
             HarmonyBootstrap.Apply(Logger);
 
@@ -187,6 +198,7 @@ namespace WinterMP.FastBoot
             if (_devDirectActive) parts.Add("direct GAME (experimental)");
             if (_es2SkipActive) parts.Add("ES2 skip");
             if (_es2WhitelistActive) parts.Add("ES2 whitelist");
+            if (_deferredEs2Hydrate.Value && _es2WhitelistActive) parts.Add("deferred ES2");
             if (_bypassHostWait) parts.Add("host wait bypass");
             if (_fastContinue) parts.Add("fast Continue");
             if (_skipMenuLoadWaits.Value) parts.Add("skip menu load waits");
@@ -282,6 +294,9 @@ namespace WinterMP.FastBoot
                 Logger.LogInfo("FastBoot: boot complete — " + _timer.FormatSummary() + ".");
                 LoadPipeline.WriteReport(Logger, _timer.ContinueAt, _timer.GameAt);
             }
+
+            if (_deferredEs2Hydrate.Value && _es2WhitelistActive)
+                StartCoroutine(Es2DeferredHydrator.Run(Logger, _es2WhitelistActive));
         }
 
         private void UpdateSplashSkip(string level, float now)
@@ -298,7 +313,7 @@ namespace WinterMP.FastBoot
                 _splashSeenAt = now;
 
             if (_splashSkipScheduled) return;
-            if (now - _splashSeenAt < _splashGraceSeconds.Value) return;
+            if (now - _splashSeenAt < SplashGraceSeconds()) return;
 
             _splashSkipScheduled = true;
             try
@@ -353,6 +368,14 @@ namespace WinterMP.FastBoot
             }
         }
 
+
+        private float SplashGraceSeconds()
+        {
+            if (HasCommandLineFlag("-wintermp-fast") || HasCommandLineFlag("-fastboot-dev"))
+                return 0f;
+
+            return _splashGraceSeconds.Value;
+        }
 
         private static bool HasCommandLineFlag(string flag)
         {

@@ -3,6 +3,7 @@ using System;
 using System.Text;
 using Steamworks;
 using UnityEngine;
+using WinterMP.Core.Session;
 
 namespace WinterMP.Core.Steam
 {
@@ -21,6 +22,8 @@ namespace WinterMP.Core.Steam
     {
         private const float InitRetryIntervalSeconds = 0.2f;
         private const float ModuleWaitRetryIntervalSeconds = 0.35f;
+        private const float FastInitRetryIntervalSeconds = 0.08f;
+        private const float FastModuleWaitRetryIntervalSeconds = 0.12f;
 
         private static bool _initialized;
         private static float _lastWaitLogAt = -1f;
@@ -41,14 +44,14 @@ namespace WinterMP.Core.Steam
             {
                 if (!AreNativeSteamModulesLoaded())
                 {
-                    ScheduleRetry(now, ModuleWaitRetryIntervalSeconds);
+                    ScheduleRetry(now, ModuleWaitDelaySeconds);
                     return false;
                 }
 
                 if (!SteamAPI.IsSteamRunning())
                 {
                     LogWaiting("Steam client not running yet");
-                    ScheduleRetry(now, InitRetryIntervalSeconds);
+                    ScheduleRetry(now, InitRetryDelaySeconds);
                     return false;
                 }
 
@@ -57,7 +60,7 @@ namespace WinterMP.Core.Steam
                     // FastBoot can reach MainMenu before the game's own Steam init finishes.
                     // Init() is safe to retry — a later call attaches to the live session.
                     LogWaiting("SteamAPI.Init() not ready yet (waiting for the game to connect)");
-                    ScheduleRetry(now, InitRetryIntervalSeconds);
+                    ScheduleRetry(now, InitRetryDelaySeconds);
                     return false;
                 }
 
@@ -70,10 +73,20 @@ namespace WinterMP.Core.Steam
             catch (Exception e)
             {
                 LogWaiting($"Steam init exception (will retry): {e.Message}");
-                ScheduleRetry(now, InitRetryIntervalSeconds);
+                ScheduleRetry(now, InitRetryDelaySeconds);
                 return false;
             }
         }
+
+        private static float InitRetryDelaySeconds =>
+            SessionLaunchPolicy.FastSessionLaunch
+                ? FastInitRetryIntervalSeconds
+                : InitRetryIntervalSeconds;
+
+        private static float ModuleWaitDelaySeconds =>
+            SessionLaunchPolicy.FastSessionLaunch
+                ? FastModuleWaitRetryIntervalSeconds
+                : ModuleWaitRetryIntervalSeconds;
 
         /// <summary>Call when MainMenu loads so the first attach attempt happens immediately.</summary>
         public static void NoteMainMenuReady()

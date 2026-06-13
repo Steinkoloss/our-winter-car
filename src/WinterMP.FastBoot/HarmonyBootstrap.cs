@@ -193,7 +193,8 @@ namespace WinterMP.FastBoot
     {
         public static void LoadAllPrefix()
         {
-            Es2HydratePolicy.BeginContinueHydrate();
+            if (!Es2HydratePolicy.DeferredHydrateActive)
+                Es2HydratePolicy.BeginContinueHydrate();
             LoadPipeline.NoteEs2OpenBegin();
         }
 
@@ -232,7 +233,7 @@ namespace WinterMP.FastBoot
     {
         public static void Postfix(ref string[] __result)
         {
-            if (!Es2HydratePolicy.ShouldApply) return;
+            if (!Es2HydratePolicy.ShouldApply || Es2HydratePolicy.DeferredHydrateActive) return;
             __result = Es2HydratePolicy.FilterTags(__result);
         }
     }

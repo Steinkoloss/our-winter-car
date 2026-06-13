@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using HutongGames.PlayMaker;
 using UnityEngine;
 
@@ -12,6 +13,10 @@ namespace WinterMP.Core.UI
         public const string NewGamePath = "Interface/Buttons/ButtonNewgame";
         private const string TemplatePath = NewGamePath;
         private const string ModRootName = "WinterMP_JoinBrowser";
+
+        private static Vector3? _continuePos;
+        private static Vector3? _newGamePos;
+        private static float? _rowStep;
 
         public static Transform? EnsureModRoot()
         {
@@ -29,52 +34,72 @@ namespace WinterMP.Core.UI
             return root.transform;
         }
 
-        public static float RowStep()
+        public static void ResetLayoutCache()
         {
-            var continueBtn = GameObject.Find(ContinuePath);
-            var newGameBtn = GameObject.Find(NewGamePath);
-            if (continueBtn == null || newGameBtn == null) return 0.08f;
-
-            return Mathf.Abs(continueBtn.transform.localPosition.y - newGameBtn.transform.localPosition.y);
+            _continuePos = null;
+            _newGamePos = null;
+            _rowStep = null;
         }
 
-        public static Vector3 AnchorPosition()
+        public static float RowStep()
         {
-            var continueBtn = GameObject.Find(ContinuePath);
-            if (continueBtn != null) return continueBtn.transform.localPosition;
+            if (_rowStep.HasValue) return _rowStep.Value;
 
-            var newGameBtn = GameObject.Find(NewGamePath);
-            if (newGameBtn != null) return newGameBtn.transform.localPosition;
+            EnsureLayoutCache();
+            return _rowStep ?? 0.08f;
+        }
 
-            return Vector3.zero;
+        public static Vector3 RowPosition(int row)
+        {
+            EnsureLayoutCache();
+
+            Vector3 continuePos = _continuePos ?? Vector3.zero;
+            Vector3 newGamePos = _newGamePos ?? continuePos;
+            float rowStep = _rowStep ?? 0.08f;
+
+            if (row <= 0) return continuePos;
+            if (row == 1) return newGamePos;
+            return new Vector3(newGamePos.x, newGamePos.y - rowStep * (row - 1), newGamePos.z);
+        }
+
+        public static GameObject? SyncButton(
+            Transform parent,
+            string objectName,
+            string label,
+            int row,
+            Action? onClick,
+            bool clickEnabled)
+        {
+            var button = parent.Find(objectName)?.gameObject;
+            if (button == null)
+            {
+                button = CreateButton(parent, objectName, label, row, onClick, clickEnabled);
+                return button;
+            }
+
+            SetButtonLabel(button, label);
+            ConfigureClick(button, onClick, clickEnabled);
+            button.transform.localPosition = RowPosition(row);
+            if (!button.activeSelf)
+                button.SetActive(true);
+            return button;
         }
 
         public static GameObject? CreateButton(
             Transform parent,
             string objectName,
             string label,
-            Vector3 localPosition,
+            int row,
             Action? onClick,
             bool clickEnabled)
         {
             var template = GameObject.Find(TemplatePath);
             if (template == null) return null;
 
-            var existing = parent.Find(objectName);
-            if (existing != null)
-            {
-                var existingButton = existing.gameObject;
-                SetButtonLabel(existingButton, label);
-                ConfigureClick(existingButton, onClick, clickEnabled);
-                existingButton.transform.localPosition = localPosition;
-                existingButton.SetActive(true);
-                return existingButton;
-            }
-
             var clone = UnityEngine.Object.Instantiate(template);
             clone.name = objectName;
             clone.transform.parent = parent;
-            clone.transform.localPosition = localPosition;
+            clone.transform.localPosition = RowPosition(row);
             clone.transform.localRotation = template.transform.localRotation;
             clone.transform.localScale = template.transform.localScale;
 
@@ -85,10 +110,63 @@ namespace WinterMP.Core.UI
             return clone;
         }
 
+        public static void RemoveExcept(Transform parent, HashSet<string> keepNames)
+        {
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                var child = parent.GetChild(i);
+                if (keepNames.Contains(child.name)) continue;
+                UnityEngine.Object.Destroy(child.gameObject);
+            }
+        }
+
         public static void DestroyChildren(Transform root)
         {
             for (int i = root.childCount - 1; i >= 0; i--)
                 UnityEngine.Object.Destroy(root.GetChild(i).gameObject);
+        }
+
+        public static void HideVanillaSiblings(bool hide, IList<HiddenMenuButton> hidden)
+        {
+            var buttons = GameObject.Find(ButtonsPath);
+            if (buttons == null) return;
+
+            if (hide)
+            {
+                hidden.Clear();
+                foreach (Transform child in buttons.transform)
+                {
+                    if (child.name == ModRootName) continue;
+
+                    var go = child.gameObject;
+                    hidden.Add(new HiddenMenuButton(go, go.activeSelf));
+                    go.SetActive(false);
+                }
+                return;
+            }
+
+            for (int i = 0; i < hidden.Count; i++)
+            {
+                var entry = hidden[i];
+                if (entry.Button != null)
+                    entry.Button.SetActive(entry.WasActive);
+            }
+
+            hidden.Clear();
+        }
+
+        private static void EnsureLayoutCache()
+        {
+            if (_continuePos.HasValue && _newGamePos.HasValue && _rowStep.HasValue) return;
+
+            var continueBtn = GameObject.Find(ContinuePath);
+            var newGameBtn = GameObject.Find(NewGamePath);
+
+            _continuePos = continueBtn != null ? continueBtn.transform.localPosition : Vector3.zero;
+            _newGamePos = newGameBtn != null ? newGameBtn.transform.localPosition : _continuePos.Value;
+            _rowStep = Mathf.Abs(_continuePos.Value.y - _newGamePos.Value.y);
+            if (_rowStep.Value <= 0.0001f)
+                _rowStep = 0.08f;
         }
 
         private static void ConfigureClick(GameObject button, Action? onClick, bool clickEnabled)
@@ -102,7 +180,7 @@ namespace WinterMP.Core.UI
 
         private static void StripActionFsms(GameObject button)
         {
-            foreach (var fsm in button.GetComponents<PlayMakerFSM>())
+            foreach (var fsm in button.GetComponentsInChildren<PlayMakerFSM>(true))
             {
                 if (fsm.FsmName == "SetSize") continue;
                 fsm.enabled = false;
@@ -113,13 +191,17 @@ namespace WinterMP.Core.UI
         {
             foreach (var text in button.GetComponentsInChildren<TextMesh>(true))
                 text.text = label;
+        }
 
-            foreach (var fsm in button.GetComponents<PlayMakerFSM>())
+        internal struct HiddenMenuButton
+        {
+            public readonly GameObject? Button;
+            public readonly bool WasActive;
+
+            public HiddenMenuButton(GameObject button, bool wasActive)
             {
-                if (fsm.FsmName != "Text") continue;
-
-                foreach (var variable in fsm.FsmVariables.StringVariables)
-                    variable.Value = label;
+                Button = button;
+                WasActive = wasActive;
             }
         }
     }

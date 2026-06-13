@@ -74,6 +74,7 @@ first — that's the loop that runs in CI.
 |---|---|
 | `-wintermp host` | Create a friends-only lobby after boot (what the launcher's HOST does) |
 | `-wintermp join <lobbyId>` | Join a specific lobby |
+| `-wintermp-fast` | Launcher host/join fast path: zero splash grace, early Steam attach, lobby setup on splash when possible |
 | `+connect_lobby <lobbyId>` | Set by Steam's invite/Join Game flow; honored automatically |
 | `-wintermp hostlocal [port]` | Host a localhost UDP test session (no Steam) |
 | `-wintermp joinlocal [addr:port]` | Join a localhost UDP test session |

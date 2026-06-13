@@ -165,5 +165,27 @@ namespace WinterMP.FastBoot
                 return false;
             }
         }
+
+        /// <summary>
+        /// Deferred ES2 hydrate restores skipped save tags after GAME. MP guests rely on host snapshot instead.
+        /// </summary>
+        public static bool ShouldRunDeferredHydrate()
+        {
+            if (!TryGetSession(out object? session) || session == null)
+                return true;
+
+            try
+            {
+                bool isHost = (bool)_isHostProperty!.GetValue(session, null)!;
+                if (isHost) return true;
+
+                string state = _stateProperty!.GetValue(session, null)?.ToString() ?? string.Empty;
+                return state != "Connected";
+            }
+            catch
+            {
+                return true;
+            }
+        }
     }
 }

@@ -20,6 +20,7 @@ namespace WinterMP.Launcher
         private bool _updateCheckInProgress;
         private InfoWindow? _openInfoWindow;
         private string _updateStatusText = "Checking…";
+        private bool _fastBootProfileSeeded;
 
         public MainWindow()
         {
@@ -329,6 +330,12 @@ namespace WinterMP.Launcher
             HostButton.IsEnabled = playable && !_installInProgress;
             JoinButton.IsEnabled = playable && !_installInProgress;
 
+            if (playable && !_fastBootProfileSeeded)
+            {
+                _fastBootProfileSeeded = true;
+                FastBootConfigSeed.ApplyProductionProfile(_game.GameDir);
+            }
+
             if (!ModPayload.PayloadPresent())
                 ShowWarning($"Mod payload missing from launcher — reinstall {Branding.ProductName}.");
 
@@ -542,7 +549,7 @@ namespace WinterMP.Launcher
 
             try
             {
-                LaunchGame("-wintermp host");
+                LaunchGame("-wintermp host -wintermp-fast");
                 AppendLog("Launching as HOST (save backup in background)…");
 
                 _ = Task.Run(() => SaveBackupService.CreateBackup())
@@ -577,7 +584,7 @@ namespace WinterMP.Launcher
 
             try
             {
-                LaunchGame("-wintermp join");
+                LaunchGame("-wintermp join -wintermp-fast");
                 AppendLog("Launching to join via Steam (not hosting).");
             }
             catch (Exception ex)
