@@ -2,6 +2,7 @@
 using System;
 using System.Text;
 using Steamworks;
+using UnityEngine;
 
 namespace WinterMP.Core.Steam
 {
@@ -18,8 +19,12 @@ namespace WinterMP.Core.Steam
     /// </summary>
     internal static class SteamBootstrap
     {
+        private const float InitRetryIntervalSeconds = 0.2f;
+        private const float ModuleWaitRetryIntervalSeconds = 0.35f;
+
         private static bool _initialized;
-        private static bool _initFailed;
+        private static float _lastWaitLogAt = -1f;
+        private static float _nextInitAttemptAt = -1f;
 
         /// <summary>Set true when the game does not appear to pump Steam callbacks itself.</summary>
         public static bool SelfPump;
@@ -27,28 +32,78 @@ namespace WinterMP.Core.Steam
         public static bool EnsureInitialized()
         {
             if (_initialized) return true;
-            if (_initFailed) return false;
+
+            float now = Time.unscaledTime;
+            if (_nextInitAttemptAt >= 0f && now < _nextInitAttemptAt)
+                return false;
 
             try
             {
-                _initialized = SteamAPI.Init();
-                if (!_initialized)
+                if (!AreNativeSteamModulesLoaded())
                 {
-                    _initFailed = true;
-                    WinterMPPlugin.Log.LogError("SteamAPI.Init() failed — is Steam running and logged in?");
+                    ScheduleRetry(now, ModuleWaitRetryIntervalSeconds);
                     return false;
                 }
 
+                if (!SteamAPI.IsSteamRunning())
+                {
+                    LogWaiting("Steam client not running yet");
+                    ScheduleRetry(now, InitRetryIntervalSeconds);
+                    return false;
+                }
+
+                if (!SteamAPI.Init())
+                {
+                    // FastBoot can reach MainMenu before the game's own Steam init finishes.
+                    // Init() is safe to retry — a later call attaches to the live session.
+                    LogWaiting("SteamAPI.Init() not ready yet (waiting for the game to connect)");
+                    ScheduleRetry(now, InitRetryIntervalSeconds);
+                    return false;
+                }
+
+                _initialized = true;
+                _nextInitAttemptAt = -1f;
                 WinterMPPlugin.Log.LogInfo(
                     $"Steam attached: {SteamFriends.GetPersonaName()} ({SteamUser.GetSteamID().m_SteamID})");
                 return true;
             }
             catch (Exception e)
             {
-                _initFailed = true;
-                WinterMPPlugin.Log.LogError($"Steam init exception (Steamworks API mismatch?): {e}");
+                LogWaiting($"Steam init exception (will retry): {e.Message}");
+                ScheduleRetry(now, InitRetryIntervalSeconds);
                 return false;
             }
+        }
+
+        /// <summary>Call when MainMenu loads so the first attach attempt happens immediately.</summary>
+        public static void NoteMainMenuReady()
+        {
+            if (_initialized) return;
+            _nextInitAttemptAt = -1f;
+        }
+
+        private static void ScheduleRetry(float now, float delaySeconds)
+        {
+            _nextInitAttemptAt = now + delaySeconds;
+        }
+
+        private static bool AreNativeSteamModulesLoaded()
+        {
+            return GetModuleHandle("steam_api64.dll") != IntPtr.Zero
+                || GetModuleHandle("CSteamworks.dll") != IntPtr.Zero
+                || GetModuleHandle("steam_api.dll") != IntPtr.Zero;
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        private static void LogWaiting(string detail)
+        {
+            float now = Time.unscaledTime;
+            if (_lastWaitLogAt >= 0f && now - _lastWaitLogAt < 5f) return;
+
+            _lastWaitLogAt = now;
+            WinterMPPlugin.Log.LogWarning($"Steam not ready: {detail}");
         }
 
         /// <summary>Called once per frame; only pumps when the self-pump fallback is active.</summary>

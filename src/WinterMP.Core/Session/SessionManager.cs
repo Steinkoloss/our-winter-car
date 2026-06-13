@@ -82,6 +82,7 @@ namespace WinterMP.Core.Session
         private ulong _pendingLobbyId;
         private bool _steamCallbacksRegistered;
         private bool _bypassHostPlayerGate;
+        private bool _steamMainMenuNotified;
         private bool _joinBrowseActive;
 
         /// <summary>Launcher join path — show friend picker on the main menu.</summary>
@@ -171,12 +172,33 @@ namespace WinterMP.Core.Session
         {
 #if STEAMWORKS
             if (_steamCallbacksRegistered) return;
-            if (!IsMainMenuReady() && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds) return;
 
-            Steam.SteamBootstrap.EnsureInitialized();
+            bool menuReady = IsMainMenuReady();
+            if (menuReady && !_steamMainMenuNotified)
+            {
+                _steamMainMenuNotified = true;
+                Steam.SteamBootstrap.NoteMainMenuReady();
+            }
+
+            if (!menuReady && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds) return;
+            if (!Steam.SteamBootstrap.EnsureInitialized()) return;
+
             Steam.SteamLobbyManager.EnsureCallbacksRegistered();
             Steam.SteamBootstrap.SelfPump = true;
             _steamCallbacksRegistered = true;
+#endif
+        }
+
+        private bool TryEnsureSteamReady(string waitingStatus)
+        {
+#if STEAMWORKS
+            if (Steam.SteamBootstrap.EnsureInitialized()) return true;
+
+            if (State == SessionState.Idle && StatusText != waitingStatus)
+                SetState(SessionState.Idle, waitingStatus);
+            return false;
+#else
+            return false;
 #endif
         }
 
@@ -188,6 +210,14 @@ namespace WinterMP.Core.Session
 
             bool menuReady = IsMainMenuReady();
             if (!menuReady && Time.realtimeSinceStartup < PendingLaunchTimeoutSeconds) return;
+
+#if STEAMWORKS
+            if (_pendingMode == LaunchMode.Host || _pendingMode == LaunchMode.Join)
+            {
+                if (!TryEnsureSteamReady("Waiting for Steam before hosting…"))
+                    return;
+            }
+#endif
 
             var mode = _pendingMode;
             _pendingMode = LaunchMode.None;
@@ -254,6 +284,9 @@ namespace WinterMP.Core.Session
 #if STEAMWORKS
             try
             {
+                if (!TryEnsureSteamReady("Waiting for Steam…"))
+                    return;
+
                 _bypassHostPlayerGate = HostLaunchPolicy.BypassPlayerGate;
                 IsHost = true;
                 LocalPlayerId = 0;
@@ -323,6 +356,9 @@ namespace WinterMP.Core.Session
 #if STEAMWORKS
             try
             {
+                if (!TryEnsureSteamReady("Waiting for Steam…"))
+                    return;
+
                 IsHost = false;
                 _steamOpStartedAt = Time.unscaledTime;
                 RefreshPlayerNameFromSteam();

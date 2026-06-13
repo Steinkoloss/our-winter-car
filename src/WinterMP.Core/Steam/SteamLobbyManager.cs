@@ -41,7 +41,7 @@ namespace WinterMP.Core.Steam
         {
             if (!SteamBootstrap.EnsureInitialized())
             {
-                onFailure("Steam is not available.");
+                onFailure("Steam isn't ready yet — still waiting for the game to connect.");
                 return;
             }
 
@@ -58,7 +58,7 @@ namespace WinterMP.Core.Steam
         {
             if (!SteamBootstrap.EnsureInitialized())
             {
-                onFailure("Steam is not available.");
+                onFailure("Steam isn't ready yet — still waiting for the game to connect.");
                 return;
             }
 

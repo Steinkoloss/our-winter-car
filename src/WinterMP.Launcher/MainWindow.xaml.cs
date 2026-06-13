@@ -637,6 +637,7 @@ namespace WinterMP.Launcher
                     Arguments = launchArgs,
                     WorkingDirectory = _game.GameDir,
                     UseShellExecute = false,
+                    Environment = { ["SteamAppId"] = GameLocator.AppId },
                 });
                 AppendLog("Launching game directly (Steam is running — faster than -applaunch).");
                 return;
@@ -661,6 +662,7 @@ namespace WinterMP.Launcher
                 Arguments = launchArgs,
                 WorkingDirectory = _game.GameDir,
                 UseShellExecute = false,
+                Environment = { ["SteamAppId"] = GameLocator.AppId },
             });
         }
 
