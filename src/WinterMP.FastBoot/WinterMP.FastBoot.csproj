@@ -38,7 +38,7 @@
   </Target>
 
   <Target Name="DeployToGame" AfterTargets="Build"
-          Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
+          Condition="'$(DeployToGame)' != 'false' AND '$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
     <Copy SourceFiles="$(TargetDir)WinterMP.FastBoot.dll"
           DestinationFolder="$(MwcGamePath)\BepInEx\plugins\WinterMP" SkipUnchangedFiles="true" />
     <Message Importance="high" Text="WinterMP.FastBoot deployed to $(MwcGamePath)\BepInEx\plugins\WinterMP" />

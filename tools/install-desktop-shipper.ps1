@@ -20,12 +20,12 @@ echo  ===================================
 echo.
 echo  This will:
 echo    1. Bump the patch version
-echo    2. Build installer + update zips
+echo    2. Build update zips (fast — no installer)
 echo    3. Commit, push, and publish to GitHub
 echo.
-echo  Your friends can update from the launcher a few minutes later.
+echo  For a full installer build, run tools\ship-release.ps1 without -Fast.
 echo.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$shipScript" -NonInteractive
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$shipScript" -NonInteractive -Fast -SkipFetch
 if errorlevel 1 (
     echo.
     echo  SHIP FAILED - see errors above.

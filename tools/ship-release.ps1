@@ -1,6 +1,8 @@
 # One-click release: bump version, build, commit, push, and publish a GitHub release.
 # Usage:
-#   .\tools\ship-release.ps1                  # bump patch, ship
+#   .\tools\quick-ship.ps1 -Notes "Fixed X"     # fast path (~half the time)
+#   .\tools\ship-release.ps1                  # bump patch, full ship (+ installer)
+#   .\tools\ship-release.ps1 -Fast            # zips only — enough for launcher updates
 #   .\tools\ship-release.ps1 -Bump minor      # 0.1.5 -> 0.2.0
 #   .\tools\ship-release.ps1 -SkipBump        # ship current version (rebuild only)
 #   .\tools\ship-release.ps1 -Notes "Fixed X" # override "What's new" bullets
@@ -9,7 +11,9 @@ param(
     [string]$Bump = 'patch',
     [string]$Notes = '',
     [switch]$SkipBump,
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+    [switch]$Fast,
+    [switch]$SkipFetch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -101,8 +105,19 @@ function Get-ProtocolVersion {
     return [int]$match.Groups[1].Value
 }
 
+function Invoke-TimedStep([string]$Label, [scriptblock]$Action) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    & $Action
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label failed."
+    }
+    Write-Host "    done in $($sw.Elapsed.TotalSeconds.ToString('0.0'))s" -ForegroundColor DarkGray
+}
+
 function Get-RecentChangeSubjects {
-    git fetch --tags origin 2>$null | Out-Null
+    if (-not $SkipFetch -and $Notes.Trim().Length -eq 0) {
+        git fetch --tags origin 2>$null | Out-Null
+    }
     $lastTag = git describe --tags --abbrev=0 2>$null
     $range = if ($lastTag) { "$lastTag..HEAD" } else { 'HEAD' }
     return @(git log $range --pretty=format:'%s' 2>$null | Where-Object { $_ -and $_ -notmatch '^Release v' })
@@ -222,14 +237,25 @@ if (-not $NonInteractive) {
     if ($answer -match '^[nN]') { throw 'Aborted.' }
 }
 
-Write-Step "Building installer and release zips"
-Invoke-Checked { & (Join-Path $PSScriptRoot 'build-installer.ps1') } 'Build failed.'
+Write-Step "Building release zips$(if ($Fast) { ' (fast — no installer)' } else { ' + installer' })"
+$buildSw = [System.Diagnostics.Stopwatch]::StartNew()
+if ($Fast) {
+    Invoke-Checked { & (Join-Path $PSScriptRoot 'publish-release.ps1') } 'Build failed.'
+} else {
+    Invoke-Checked { & (Join-Path $PSScriptRoot 'build-installer.ps1') } 'Build failed.'
+}
+Write-Host "    total build: $($buildSw.Elapsed.TotalSeconds.ToString('0.0'))s" -ForegroundColor DarkGray
 
 $setup = Join-Path $root 'dist\OurWinterCar-Setup.exe'
 $payload = Join-Path $root 'dist\OurWinterCar-payload.zip'
 $launcher = Join-Path $root 'dist\OurWinterCar-Launcher-win-x64.zip'
 
-foreach ($asset in @($setup, $payload, $launcher)) {
+$assets = @($payload, $launcher)
+if (-not $Fast) {
+    $assets = @($setup) + $assets
+}
+
+foreach ($asset in $assets) {
     if (-not (Test-Path $asset)) {
         throw "Missing build output: $asset"
     }
@@ -263,13 +289,13 @@ try {
 if ($LASTEXITCODE -eq 0 -and $existingRelease) {
     Write-Host "Release $tag already exists - updating notes and assets."
     Invoke-Checked { gh release edit $tag --title $title --notes-file $notesFile } 'Release edit failed.'
-    Invoke-Checked { gh release upload $tag $setup $payload $launcher --clobber } 'Release upload failed.'
+    Invoke-Checked { gh release upload $tag @assets --clobber } 'Release upload failed.'
 } else {
     Invoke-Checked {
         gh release create $tag `
             --title $title `
             --notes-file $notesFile `
-            $setup $payload $launcher
+            @assets
     } 'Release create failed.'
 }
 
