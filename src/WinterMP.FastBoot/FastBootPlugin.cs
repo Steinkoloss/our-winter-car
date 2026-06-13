@@ -75,10 +75,10 @@ namespace WinterMP.FastBoot
                 "Boot", "SplashGraceSeconds", 0.4f,
                 "Seconds on SplashScreen before LoadLevel(MainMenu).");
             _menuSettleSeconds = Config.Bind(
-                "Boot", "MenuSettleSeconds", 0.35f,
+                "Boot", "MenuSettleSeconds", 0f,
                 "Seconds on MainMenu before clicking Continue.");
             _saveCheckTimeoutSeconds = Config.Bind(
-                "Boot", "SaveCheckTimeoutSeconds", 2.0f,
+                "Boot", "SaveCheckTimeoutSeconds", 0.5f,
                 "Max wait for Check Save FSM before clicking Continue anyway.");
             _continueStepDelaySeconds = Config.Bind(
                 "Boot", "ContinueStepDelaySeconds", 0f,
@@ -93,16 +93,16 @@ namespace WinterMP.FastBoot
                 "Boot", "PreloadGameAsync", true,
                 "Start LoadLevelAsync(GAME) on Continue, overlapping ES2 hydrate.");
             _devMode = Config.Bind(
-                "Boot", "DevMode", true,
-                "DEV shortcuts (fast Continue, ES2 tag skip). Set false before release builds.");
+                "Boot", "DevMode", false,
+                "DEV shortcuts (fast Continue, ES2 tag skip). Local2PTest uses -fastboot-dev.");
             _devDirectGameLoad = Config.Bind(
                 "Boot", "DevDirectGameLoad", false,
                 "EXPERIMENTAL: skip Continue + ES2 and LoadLevel(GAME) from MainMenu. Often crashes — leave false.");
             _devSkipEs2Tags = Config.Bind(
-                "Boot", "DevSkipEs2Tags", true,
+                "Boot", "DevSkipEs2Tags", false,
                 "DEV: skip nonessential ES2 tags during Continue hydrate.");
             _devEs2Whitelist = Config.Bind(
-                "Boot", "DevEs2Whitelist", true,
+                "Boot", "DevEs2Whitelist", false,
                 "DEV: only hydrate core boot tags (World*, Player*, vehicles). Much faster; dev only.");
             _devSkipEs2ExtraPrefixes = Config.Bind(
                 "Boot", "DevSkipEs2ExtraPrefixes", string.Empty,

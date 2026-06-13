@@ -639,6 +639,13 @@ namespace WinterMP.Launcher
             string launchArgs = UnityDisplayPrefs.WithScreenArgs(_settings, args);
             UnityDisplayPrefs.Apply(_settings, launchArgs);
 
+            if (_game != null)
+            {
+                string fastBootNote = FastBootConfigSeed.ApplyProductionProfile(_game.GameDir);
+                if (!string.Equals(fastBootNote, "FastBoot production defaults already set.", StringComparison.Ordinal))
+                    AppendLog(fastBootNote);
+            }
+
             string? steamExe = GameLocator.FindSteamExe();
             if (steamExe != null)
             {

@@ -83,6 +83,7 @@ namespace WinterMP.Launcher.Services
 
             messages.Add(EnsureConfig(gameDir, status));
             messages.Add(ModPayload.Deploy(gameDir));
+            messages.Add(FastBootConfigSeed.ApplyProductionProfile(gameDir));
             GameInstall? install = GameLocator.FindInstall(gameDir);
             if (MainDataBootPatch.TryDisableResolutionDialog(gameDir, install?.BuildId, out string? bootPatch))
                 messages.Add(bootPatch ?? string.Empty);

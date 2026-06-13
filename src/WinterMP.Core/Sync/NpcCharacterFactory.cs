@@ -100,6 +100,12 @@ namespace WinterMP.Core.Sync
             CopyBonePose(source, dest);
         }
 
+        internal static void CopyPivotPose(Transform sourcePivot, Transform destPivot)
+        {
+            if (sourcePivot == null || destPivot == null) return;
+            CopyBonePose(sourcePivot, destPivot);
+        }
+
         internal static void BindMoveTarget(PlayMakerFSM? moveFsm, GameObject lookTarget)
         {
             if (moveFsm == null) return;
@@ -126,6 +132,7 @@ namespace WinterMP.Core.Sync
 
             StripDriverSimulation(driver);
             SetRenderersEnabled(driver, false);
+            TryApplyStandingPoseToDriver(driver.transform);
 
             var driverPivot = driver.transform.Find("Pivot");
             rig.MoveDriver = driver;
@@ -151,8 +158,24 @@ namespace WinterMP.Core.Sync
             rig.LookTarget = lookTarget.transform;
 
             NeutralizeMoveFsm(rig);
-            CopySkeletonPose(rig.DriverSkeleton, rig.Skeleton);
+            if (rig.DriverPivot != null)
+                CopyPivotPose(rig.DriverPivot, rig.Root.transform);
             return true;
+        }
+
+        private static void TryApplyStandingPoseToDriver(Transform driverRoot)
+        {
+            var referencePivot = FindStandingReferencePivot();
+            if (referencePivot == null) return;
+
+            var driverPivot = driverRoot.Find("Pivot");
+            if (driverPivot == null) return;
+
+            var sourceSkeleton = referencePivot.Find("Char/skeleton");
+            var destSkeleton = driverPivot.Find("Char/skeleton");
+            if (sourceSkeleton == null || destSkeleton == null) return;
+
+            CopyBonePose(sourceSkeleton, destSkeleton);
         }
 
         private static GameObject? FindTemplate(byte playerId)
@@ -237,7 +260,7 @@ namespace WinterMP.Core.Sync
         {
             DestroyChild(root.transform, "RagDoll");
             DestroyChild(root.transform, "HumanTriggerCrime");
-            StripComponents(root, destroyAllFsms: true);
+            StripComponents(root, destroyAllFsms: true, destroyAnimation: true);
         }
 
         private static void StripDriverSimulation(GameObject root)
@@ -256,10 +279,10 @@ namespace WinterMP.Core.Sync
                 }
             }
 
-            StripComponents(root, destroyAllFsms: false);
+            StripComponents(root, destroyAllFsms: false, destroyAnimation: false);
         }
 
-        private static void StripComponents(GameObject root, bool destroyAllFsms)
+        private static void StripComponents(GameObject root, bool destroyAllFsms, bool destroyAnimation)
         {
             var fsms = root.GetComponentsInChildren<PlayMakerFSM>(true);
             for (int i = 0; i < fsms.Length; i++)
@@ -286,8 +309,11 @@ namespace WinterMP.Core.Sync
                 UnityEngine.Object.Destroy(audioSources[i]);
 
             var animations = root.GetComponentsInChildren<Animation>(true);
-            for (int i = 0; i < animations.Length; i++)
-                UnityEngine.Object.Destroy(animations[i]);
+            if (destroyAnimation)
+            {
+                for (int i = 0; i < animations.Length; i++)
+                    UnityEngine.Object.Destroy(animations[i]);
+            }
         }
 
         private static void SetRenderersEnabled(GameObject root, bool enabled)

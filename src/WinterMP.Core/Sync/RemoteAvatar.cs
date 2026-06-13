@@ -222,6 +222,9 @@ namespace WinterMP.Core.Sync
         private void LateUpdate()
         {
             if (!_hasTarget) return;
+
+            bool walking = _characterAnimator != null && _characterAnimator.IsWalking;
+            PinMoveDriver(walking);
             _characterAnimator?.Tick();
         }
 
@@ -237,17 +240,20 @@ namespace WinterMP.Core.Sync
                 _rigRoot.localPosition = _rigFootOffset;
                 _rigRoot.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
             }
+        }
 
-            if (_moveDriver != null)
+        private void PinMoveDriver(bool walking)
+        {
+            if (_moveDriver == null) return;
+            if (walking) return;
+
+            _moveDriver.localPosition = _rigFootOffset;
+            _moveDriver.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
+
+            if (_driverPivot != null)
             {
-                _moveDriver.localPosition = _rigFootOffset;
-                _moveDriver.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
-
-                if (_driverPivot != null)
-                {
-                    _driverPivot.localPosition = _driverPivotBaseLocalPos;
-                    _driverPivot.localRotation = _driverPivotBaseLocalRot;
-                }
+                _driverPivot.localPosition = _driverPivotBaseLocalPos;
+                _driverPivot.localRotation = _driverPivotBaseLocalRot;
             }
         }
 
