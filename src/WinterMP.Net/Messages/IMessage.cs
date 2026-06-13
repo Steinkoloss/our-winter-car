@@ -23,6 +23,12 @@ namespace WinterMP.Net.Messages
         PassengerState = 23,
         /// <summary>Host -> joining guest: feet position + yaw after join snapshot.</summary>
         GuestSpawn = 24,
+        /// <summary>Guest -> host: hunger/fatigue/thirst/urine snapshot.</summary>
+        PlayerNeedsReport = 25,
+        /// <summary>Host -> guests: sleep / time-skip consent round.</summary>
+        SleepConsentRequest = 26,
+        /// <summary>Guest -> host: sleep consent answer.</summary>
+        SleepConsentResponse = 27,
 
         // 40-59: world events (doors, switches, pickables) — M3
         FsmStateEnter = 40,

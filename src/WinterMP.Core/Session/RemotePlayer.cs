@@ -23,5 +23,8 @@ namespace WinterMP.Core.Session
 
         /// <summary>Round-trip time in milliseconds, measured by the ping loop.</summary>
         public int PingMs = -1;
+
+        /// <summary>Had a saved spawn pose on this host before this connection (handshake-time).</summary>
+        public bool ReturningGuest;
     }
 }

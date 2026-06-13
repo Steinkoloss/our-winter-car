@@ -3,8 +3,9 @@ using UnityEngine;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Drives a hidden Move FSM walker and copies its animated pivot onto the visible mesh.
-    /// Facing stays on the avatar root rotation.
+    /// Drives a hidden Move FSM walker and copies its skeleton onto the visible mesh.
+    /// Facing stays on the avatar root rotation; only bone poses are copied (never the
+    /// rig root transform — that keeps foot offset and look-yaw intact).
     /// </summary>
     internal sealed class RemoteCharacterAnimator
     {
@@ -19,11 +20,11 @@ namespace WinterMP.Core.Sync
 
         private readonly Transform _rigRoot;
         private readonly Transform _bodyPivot;
-        private readonly Transform? _driverPivot;
+        private readonly Transform? _driverSkeleton;
+        private readonly Transform? _visibleSkeleton;
         private readonly PlayMakerFSM? _moveFsm;
         private readonly HutongGames.PlayMaker.FsmFloat? _moveDistance;
         private readonly float _modelHeight;
-        private readonly Renderer[] _renderers;
         private readonly Vector3 _bodyBaseLocalPos;
 
         private byte _lastMoveState;
@@ -37,10 +38,10 @@ namespace WinterMP.Core.Sync
         {
             _rigRoot = rig.Root.transform;
             _bodyPivot = rig.BodyPivot;
-            _driverPivot = rig.DriverPivot;
+            _driverSkeleton = rig.DriverSkeleton;
+            _visibleSkeleton = rig.Skeleton;
             _moveFsm = rig.MoveFsm;
             _modelHeight = rig.ModelHeight;
-            _renderers = rig.Root.GetComponentsInChildren<Renderer>(true);
             _bodyBaseLocalPos = _bodyPivot.localPosition;
 
             if (_moveFsm != null)
@@ -51,6 +52,7 @@ namespace WinterMP.Core.Sync
 
             ApplyBodyLayout();
             SendLocomotion(false);
+            CopySkeletonPose();
         }
 
         public bool IsWalking =>
@@ -70,10 +72,7 @@ namespace WinterMP.Core.Sync
             _lastMoveState = moveState;
             _lastSeated = seated;
 
-            bool swimming = PlayerMoveState.Has(moveState, PlayerMoveState.Swimming);
-            SetVisible(!swimming);
-
-            if (swimming)
+            if (PlayerMoveState.Has(moveState, PlayerMoveState.Swimming))
             {
                 _lastWalking = false;
                 ResetBob();
@@ -106,11 +105,13 @@ namespace WinterMP.Core.Sync
 
         public void Tick()
         {
-            if (_driverPivot != null)
-                NpcCharacterFactory.CopyPivotPose(_driverPivot, _rigRoot);
+            CopySkeletonPose();
 
             if (_lastSeated || PlayerMoveState.Has(_lastMoveState, PlayerMoveState.Swimming))
+            {
+                ResetBob();
                 return;
+            }
 
             if (IsWalking)
             {
@@ -125,11 +126,6 @@ namespace WinterMP.Core.Sync
             {
                 ResetBob();
             }
-        }
-
-        public void SnapDriverHome(Vector3 footOffset)
-        {
-            SendLocomotion(false);
         }
 
         private void UpdateLocomotion()
@@ -179,6 +175,12 @@ namespace WinterMP.Core.Sync
             catch { /* FSM variable unavailable */ }
         }
 
+        private void CopySkeletonPose()
+        {
+            if (_driverSkeleton == null || _visibleSkeleton == null) return;
+            NpcCharacterFactory.CopySkeletonPose(_driverSkeleton, _visibleSkeleton);
+        }
+
         private void ResetBob()
         {
             _bobPhase = 0f;
@@ -197,16 +199,6 @@ namespace WinterMP.Core.Sync
             {
                 float y = _rigRoot.localPosition.y + _modelHeight * _bodyHeightScale;
                 return Mathf.Max(1.2f, y) + 0.2f;
-            }
-        }
-
-        private void SetVisible(bool visible)
-        {
-            if (_renderers == null) return;
-            for (int i = 0; i < _renderers.Length; i++)
-            {
-                if (_renderers[i] != null)
-                    _renderers[i].enabled = visible;
             }
         }
     }

@@ -106,6 +106,23 @@ namespace WinterMP.Core.Sync
             CopyBonePose(sourcePivot, destPivot);
         }
 
+        /// <summary>
+        /// Copies animated child bones (Char, etc.) without touching the pivot root transform.
+        /// The visible rig root keeps network foot offset and look-yaw from <see cref="RemoteAvatar"/>.
+        /// </summary>
+        internal static void CopyAnimatedPose(Transform sourcePivot, Transform destPivot)
+        {
+            if (sourcePivot == null || destPivot == null) return;
+
+            for (int i = 0; i < destPivot.childCount; i++)
+            {
+                var destChild = destPivot.GetChild(i);
+                var sourceChild = sourcePivot.Find(destChild.name);
+                if (sourceChild != null)
+                    CopyBonePose(sourceChild, destChild);
+            }
+        }
+
         internal static void BindMoveTarget(PlayMakerFSM? moveFsm, GameObject lookTarget)
         {
             if (moveFsm == null) return;

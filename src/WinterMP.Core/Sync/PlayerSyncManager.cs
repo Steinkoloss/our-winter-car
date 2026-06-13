@@ -39,8 +39,11 @@ namespace WinterMP.Core.Sync
         private string _lastLevel = string.Empty;
         private bool _playerSyncDisabled;
         private readonly GuestSpawnRelocator _guestRelocator = new GuestSpawnRelocator();
+        private readonly PlayerNeedsSync _needsSync = new PlayerNeedsSync();
+        private readonly PlayerSleepHook _sleepHook = new PlayerSleepHook();
 
         internal GuestSpawnRelocator GuestRelocator => _guestRelocator;
+        internal PlayerNeedsSync NeedsSync => _needsSync;
 
         private void Awake()
         {
@@ -94,6 +97,16 @@ namespace WinterMP.Core.Sync
             WatchLevelChanges();
             if (_guestRelocator.HasPending)
                 _guestRelocator.TryApply();
+
+            try { _needsSync.Locate(); _needsSync.UpdateGuest(session); }
+            catch (Exception e) { WinterMPPlugin.Log.LogWarning($"PlayerNeedsSync: {e.Message}"); }
+
+            if (session.IsHost)
+            {
+                try { _sleepHook.Probe(session); }
+                catch (Exception e) { WinterMPPlugin.Log.LogWarning($"PlayerSleepHook: {e.Message}"); }
+            }
+
             SendLocalTransform(session);
             UpdateAvatars(session);
         }
@@ -118,6 +131,8 @@ namespace WinterMP.Core.Sync
             _localController = null;
             _standingControllerHeight = -1f;
             _moveStateReader.Reset();
+            _needsSync.Reset();
+            _sleepHook.Reset();
             NpcCharacterFactory.ClearCache();
             _nextSearchAt = 0f;
             _avatars.Clear();
@@ -127,7 +142,8 @@ namespace WinterMP.Core.Sync
 
         private void SendLocalTransform(SessionManager session)
         {
-            if (session.PlayerCount == 0) return;
+            // Host only streams once someone has joined; guests always stream to the host.
+            if (session.IsHost && session.PlayerCount == 0) return;
 
             if (_localPlayer == null)
             {
@@ -188,7 +204,17 @@ namespace WinterMP.Core.Sync
                 _avatars.TryGetValue(player.PlayerId, out var avatar);
                 if (avatar == null) // includes destroyed-by-scene-load Unity fake-null
                 {
-                    avatar = RemoteAvatar.Create(player.PlayerId, player.Name);
+                    try
+                    {
+                        avatar = RemoteAvatar.Create(player.PlayerId, player.Name);
+                    }
+                    catch (Exception e)
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"PlayerSync: avatar rig failed for {player.Name} (id {player.PlayerId}): {e.Message}");
+                        avatar = RemoteAvatar.CreateCapsule(player.PlayerId, player.Name);
+                    }
+
                     _avatars[player.PlayerId] = avatar;
                     WinterMPPlugin.Log.LogInfo($"PlayerSync: avatar created for {player.Name} (id {player.PlayerId}).");
                 }

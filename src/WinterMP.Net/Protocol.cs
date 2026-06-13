@@ -23,7 +23,8 @@ namespace WinterMP.Net
         // v19: per-object state requests + ownership-transfer pause on bad links (client-side).
         // v20: GuestSpawn (24) — host tells joiners where to place PLAYER after snapshot.
         // v21: GuestSpawn carries host + last saved pose; guest picks locally.
-        public const ushort Version = 21;
+        // v22: GuestSpawn adds saved needs; PlayerNeedsReport + sleep consent messages.
+        public const ushort Version = 22;
     }
 
     /// <summary>

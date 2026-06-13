@@ -6,7 +6,8 @@ using WinterMP.Net.Messages;
 namespace WinterMP.Core.UI
 {
     /// <summary>
-    /// Guest-only: after the join snapshot, choose spawn at the host or last saved pose.
+    /// Guest-only: returning guests pick spawn at the host or last saved pose;
+    /// first-time joiners snap to the host immediately.
     /// </summary>
     public sealed class GuestSpawnPrompt : MonoBehaviour
     {
@@ -42,6 +43,23 @@ namespace WinterMP.Core.UI
                 relocator.ApplyImmediate(offer.HostPosition, offer.HostRotation);
                 _offer = null;
             }
+        }
+
+        private void ApplySavedNeeds(GuestSpawn offer)
+        {
+            if (!offer.HasSavedNeeds) return;
+
+            var needsSync = PlayerSyncManager.Instance?.NeedsSync;
+            if (needsSync == null) return;
+
+            needsSync.ApplySnapshot(new Session.GuestProfileStore.NeedsSnapshot
+            {
+                Hunger = offer.Hunger,
+                Fatigue = offer.Fatigue,
+                Thirst = offer.Thirst,
+                Urine = offer.Urine,
+                Valid = true,
+            });
         }
 
         public bool IsBlockingInput =>
@@ -106,6 +124,7 @@ namespace WinterMP.Core.UI
             if (relocator == null) return;
 
             relocator.ApplyImmediate(_offer.LastPosition, _offer.LastRotation);
+            ApplySavedNeeds(_offer);
             WinterMPPlugin.Log.LogInfo("PlayerSync: guest chose last saved position.");
             _offer = null;
         }

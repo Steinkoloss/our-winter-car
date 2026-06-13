@@ -237,7 +237,7 @@ namespace WinterMP.Core.Session
 #if STEAMWORKS
             try
             {
-                _bypassHostPlayerGate = false;
+                _bypassHostPlayerGate = HostLaunchPolicy.BypassPlayerGate;
                 IsHost = true;
                 LocalPlayerId = 0;
                 _steamOpStartedAt = Time.unscaledTime;
@@ -582,7 +582,27 @@ namespace WinterMP.Core.Session
             }
 
             if (!IsHost)
-                SetState(SessionState.Failed, $"Lost connection to host: {reason}");
+            {
+                string guestMessage = FormatGuestDisconnectReason(reason);
+                SetState(SessionState.Failed, guestMessage);
+            }
+        }
+
+        private static string FormatGuestDisconnectReason(string reason)
+        {
+            if (string.IsNullOrEmpty(reason))
+                return "Lost connection to host.";
+
+            string lower = reason.ToLowerInvariant();
+            if (lower.Contains("game closed")
+                || lower.Contains("shutdown")
+                || lower.Contains("host ended")
+                || lower.Contains("idle"))
+            {
+                return "Host ended the session.";
+            }
+
+            return "Lost connection to host: " + reason;
         }
 
         private void OnPacketReceived(PeerId peer, byte[] payload, Channel channel)
@@ -673,6 +693,18 @@ namespace WinterMP.Core.Session
 
                 case GuestSpawn guestSpawn when !IsHost:
                     Sync.PlayerSyncManager.Instance?.OnGuestSpawn(guestSpawn);
+                    break;
+
+                case PlayerNeedsReport needsReport when IsHost:
+                    HandlePlayerNeedsReport(needsReport);
+                    break;
+
+                case SleepConsentRequest sleepRequest when !IsHost:
+                    Sync.SleepConsentManager.Instance?.OnGuestRequest(sleepRequest);
+                    break;
+
+                case SleepConsentResponse sleepResponse when IsHost:
+                    Sync.SleepConsentManager.Instance?.OnRemoteResponse(sleepResponse);
                     break;
 
                 case FsmStateEnter stateEnter:
@@ -813,6 +845,7 @@ namespace WinterMP.Core.Session
                 Peer = peer,
                 SteamId = peer.Value,
                 Name = request.PlayerName,
+                ReturningGuest = GuestProfileStore.TryGet(peer.Value, out _, out _),
             };
 
             SendTo(peer, new HandshakeResponse
@@ -909,14 +942,43 @@ namespace WinterMP.Core.Session
                 offer.HostRotation = hostRot.ToNet();
             }
 
-            if (GuestProfileStore.TryGet(guest.SteamId, out NetVector3 lastPos, out NetQuaternion lastRot))
+            if (guest.ReturningGuest
+                && GuestProfileStore.TryGet(guest.SteamId, out NetVector3 lastPos, out NetQuaternion lastRot))
             {
                 offer.LastPosition = lastPos;
                 offer.LastRotation = lastRot;
                 offer.Flags |= GuestSpawn.FlagHasLastPosition;
             }
 
+            if (guest.ReturningGuest
+                && GuestProfileStore.TryGetNeeds(guest.SteamId, out GuestProfileStore.NeedsSnapshot needs))
+            {
+                offer.Hunger = needs.Hunger;
+                offer.Fatigue = needs.Fatigue;
+                offer.Thirst = needs.Thirst;
+                offer.Urine = needs.Urine;
+                offer.Flags |= GuestSpawn.FlagHasSavedNeeds;
+            }
+
             return offer;
+        }
+
+        private void HandlePlayerNeedsReport(PlayerNeedsReport report)
+        {
+            foreach (var player in _playersByPeer.Values)
+            {
+                if (player.PlayerId != report.PlayerId || player.SteamId == 0) continue;
+
+                GuestProfileStore.RememberNeeds(player.SteamId, new GuestProfileStore.NeedsSnapshot
+                {
+                    Hunger = report.Hunger,
+                    Fatigue = report.Fatigue,
+                    Thirst = report.Thirst,
+                    Urine = report.Urine,
+                    Valid = true,
+                });
+                return;
+            }
         }
 
         private static bool TryReadHostFeet(out Vector3 feet, out Quaternion lookRotation)
@@ -1013,9 +1075,13 @@ namespace WinterMP.Core.Session
             {
                 if (player.PlayerId != transform.PlayerId) continue;
 
-                // Drop stale unreliable packets (sequence wrap-aware).
-                ushort diff = (ushort)(transform.Sequence - player.LastTransformSequence);
-                if (diff == 0 || diff > short.MaxValue) return;
+                // Drop stale unreliable packets (sequence wrap-aware). Always accept the
+                // first pose so avatars appear even after a sender sequence reset.
+                if (player.LastTransformTime > 0f)
+                {
+                    ushort diff = (ushort)(transform.Sequence - player.LastTransformSequence);
+                    if (diff == 0 || diff > short.MaxValue) return;
+                }
 
                 player.LastTransformSequence = transform.Sequence;
                 player.Position = transform.Position.ToUnity();
@@ -1061,6 +1127,28 @@ namespace WinterMP.Core.Session
             else if (_hostPeer.HasValue)
                 SendTo(_hostPeer.Value, message, channel);
         }
+
+        /// <summary>Guest profile messages (needs reports, sleep consent answers).</summary>
+        public void SendPlayerProfileMessage(IMessage message)
+        {
+            if (State != SessionState.Hosting && State != SessionState.Connected) return;
+
+            if (IsHost)
+                Broadcast(message, Channel.ReliableOrdered);
+            else if (_hostPeer.HasValue)
+                SendTo(_hostPeer.Value, message, Channel.ReliableOrdered);
+        }
+
+        /// <summary>Host-only broadcast for sleep consent rounds.</summary>
+        public void BroadcastProfileMessage(IMessage message)
+        {
+            if (!IsHost || (State != SessionState.Hosting && State != SessionState.Connected)) return;
+            Broadcast(message, Channel.ReliableOrdered);
+        }
+
+        public void AddSystemChat(string line) => AddChatLine(line);
+
+        public string ResolvePlayerName(byte playerId) => ResolveName(playerId);
 
         public void SendChat(string text)
         {

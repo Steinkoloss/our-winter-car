@@ -85,14 +85,20 @@ namespace WinterMP.Net.Messages
     public sealed class GuestSpawn : IMessage
     {
         public const byte FlagHasLastPosition = 1;
+        public const byte FlagHasSavedNeeds = 2;
 
         public NetVector3 HostPosition;
         public NetQuaternion HostRotation = NetQuaternion.Identity;
         public NetVector3 LastPosition;
         public NetQuaternion LastRotation = NetQuaternion.Identity;
         public byte Flags;
+        public float Hunger;
+        public float Fatigue;
+        public float Thirst;
+        public float Urine;
 
         public bool HasLastPosition => (Flags & FlagHasLastPosition) != 0;
+        public bool HasSavedNeeds => (Flags & FlagHasSavedNeeds) != 0;
 
         public MessageId Id => MessageId.GuestSpawn;
 
@@ -103,6 +109,10 @@ namespace WinterMP.Net.Messages
             writer.WriteVector3(LastPosition);
             writer.WriteQuaternion(LastRotation);
             writer.WriteByte(Flags);
+            writer.WriteSingle(Hunger);
+            writer.WriteSingle(Fatigue);
+            writer.WriteSingle(Thirst);
+            writer.WriteSingle(Urine);
         }
 
         public void Read(NetReader reader)
@@ -112,6 +122,10 @@ namespace WinterMP.Net.Messages
             LastPosition = reader.ReadVector3();
             LastRotation = reader.ReadQuaternion();
             Flags = reader.ReadByte();
+            Hunger = reader.ReadSingle();
+            Fatigue = reader.ReadSingle();
+            Thirst = reader.ReadSingle();
+            Urine = reader.ReadSingle();
         }
     }
 

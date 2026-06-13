@@ -65,6 +65,19 @@ namespace WinterMP.Launcher.Services
             return File.Exists(exe) ? exe : null;
         }
 
+        /// <summary>True when the Steam client process is running (direct game launch is OK).</summary>
+        public static bool IsSteamClientRunning()
+        {
+            try
+            {
+                return System.Diagnostics.Process.GetProcessesByName("steam").Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static string? GetSteamPath()
         {
             string?[] candidates =

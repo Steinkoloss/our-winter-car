@@ -537,7 +537,7 @@ namespace WinterMP.Launcher
         private async void HostButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
-            if (!await PromptForUpdateAsync(required: true)) return;
+            if (!await PromptForUpdateAsync(required: false)) return;
             if (!EnsureReadyForLaunch()) return;
 
             try
@@ -572,7 +572,7 @@ namespace WinterMP.Launcher
         private async void JoinButton_Click(object sender, RoutedEventArgs e)
         {
             if (_game == null) return;
-            if (!await PromptForUpdateAsync(required: true)) return;
+            if (!await PromptForUpdateAsync(required: false)) return;
             if (!EnsureReadyForLaunch()) return;
 
             try
@@ -629,6 +629,19 @@ namespace WinterMP.Launcher
             }
 
             string? steamExe = GameLocator.FindSteamExe();
+            if (GameLocator.IsSteamClientRunning())
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = _game!.ExePath,
+                    Arguments = launchArgs,
+                    WorkingDirectory = _game.GameDir,
+                    UseShellExecute = false,
+                });
+                AppendLog("Launching game directly (Steam is running — faster than -applaunch).");
+                return;
+            }
+
             if (steamExe != null)
             {
                 Process.Start(new ProcessStartInfo
@@ -637,6 +650,7 @@ namespace WinterMP.Launcher
                     Arguments = $"-applaunch {GameLocator.AppId} {launchArgs}".TrimEnd(),
                     UseShellExecute = false,
                 });
+                AppendLog("Launching via Steam (-applaunch). Start Steam first next time for a faster boot.");
                 return;
             }
 

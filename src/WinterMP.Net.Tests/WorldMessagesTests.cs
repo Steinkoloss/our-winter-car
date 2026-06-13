@@ -298,12 +298,51 @@ namespace WinterMP.Net.Tests
                 HostRotation = NetQuaternion.Identity,
                 LastPosition = new NetVector3(10f, 0.1f, -8f),
                 LastRotation = new NetQuaternion(0f, 0.707f, 0f, 0.707f),
-                Flags = GuestSpawn.FlagHasLastPosition,
+                Flags = GuestSpawn.FlagHasLastPosition | GuestSpawn.FlagHasSavedNeeds,
+                Hunger = 12.5f,
+                Fatigue = 88f,
+                Thirst = 40f,
+                Urine = 5f,
             };
             var decoded = Assert.IsType<GuestSpawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.HostPosition.X, decoded.HostPosition.X, 3);
             Assert.Equal(original.LastPosition.Z, decoded.LastPosition.Z, 3);
             Assert.True(decoded.HasLastPosition);
+            Assert.True(decoded.HasSavedNeeds);
+            Assert.Equal(original.Hunger, decoded.Hunger, 3);
+            Assert.Equal(original.Urine, decoded.Urine, 3);
+        }
+
+        [Fact]
+        public void PlayerNeedsReport_RoundTrips()
+        {
+            var original = new PlayerNeedsReport
+            {
+                PlayerId = 2,
+                Hunger = 10f,
+                Fatigue = 20f,
+                Thirst = 30f,
+                Urine = 40f,
+                Sequence = 7,
+            };
+            var decoded = Assert.IsType<PlayerNeedsReport>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.PlayerId, decoded.PlayerId);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.Equal(original.Thirst, decoded.Thirst, 3);
+        }
+
+        [Fact]
+        public void SleepConsent_RoundTrips()
+        {
+            var request = new SleepConsentRequest { RequestId = 3, InitiatorPlayerId = 0 };
+            var decodedRequest = Assert.IsType<SleepConsentRequest>(
+                PacketCodec.Decode(PacketCodec.Encode(request)));
+            Assert.Equal(request.RequestId, decodedRequest.RequestId);
+
+            var response = new SleepConsentResponse { RequestId = 3, PlayerId = 2, Accepted = true };
+            var decodedResponse = Assert.IsType<SleepConsentResponse>(
+                PacketCodec.Decode(PacketCodec.Encode(response)));
+            Assert.True(decodedResponse.Accepted);
         }
 
         [Fact]

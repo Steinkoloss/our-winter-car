@@ -24,13 +24,11 @@ namespace WinterMP.Core.Sync
             "Get scroll",
         };
 
+        // Only the actual in-water state counts — other Swim FSM states (Randomize,
+        // Out water, etc.) are idle/transition states on dry land and must not hide avatars.
         private static readonly string[] SwimActiveStates =
         {
             "In water",
-            "Jump",
-            "Out water",
-            "Test drunk",
-            "Randomize",
         };
 
         private static readonly string[] CrouchActiveStates =

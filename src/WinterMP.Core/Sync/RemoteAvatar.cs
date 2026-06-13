@@ -50,47 +50,71 @@ namespace WinterMP.Core.Sync
         {
             var root = new GameObject($"WinterMP_Avatar_{playerId}");
             var avatar = root.AddComponent<RemoteAvatar>();
-
-            var rig = NpcCharacterFactory.TryCreate(playerId);
-            if (rig != null)
-            {
-                rig.Root.transform.parent = root.transform;
-                avatar._rigRoot = rig.Root.transform;
-                avatar._rigFootOffset = new Vector3(0f, rig.FootOffsetY, 0f);
-                avatar._modelYawOffset = rig.ModelYawOffset;
-                avatar._rigRoot.localPosition = avatar._rigFootOffset;
-                avatar._rigRoot.localRotation = Quaternion.Euler(0f, avatar._modelYawOffset, 0f);
-
-                if (rig.MoveDriver != null)
-                {
-                    rig.MoveDriver.transform.parent = root.transform;
-                    avatar._moveDriver = rig.MoveDriver.transform;
-                    avatar._driverPivot = rig.DriverPivot;
-                    avatar._driverPivotBaseLocalPos = rig.DriverPivotBaseLocalPos;
-                    avatar._driverPivotBaseLocalRot = rig.DriverPivotBaseLocalRot;
-                    avatar._moveDriver.localPosition = avatar._rigFootOffset;
-                    avatar._moveDriver.localRotation = Quaternion.Euler(0f, avatar._modelYawOffset, 0f);
-
-                    avatar._lookTarget = rig.LookTarget;
-                    if (avatar._lookTarget != null)
-                    {
-                        avatar._lookTarget.parent = root.transform;
-                        avatar._lookTarget.localPosition = LookTargetLocalOffset;
-                        NpcCharacterFactory.BindMoveTarget(rig.MoveFsm, avatar._lookTarget.gameObject);
-                    }
-                }
-
-                avatar._characterAnimator = new RemoteCharacterAnimator(rig);
-                avatar._bodyTransform = rig.BodyPivot;
-            }
-            else
-            {
-                avatar.CreateCapsuleFallback(playerId);
-            }
-
+            avatar.BuildBody(playerId);
             avatar.CreateNameTag(playerName);
             root.SetActive(false);
             return avatar;
+        }
+
+        /// <summary>Minimal visible fallback when the NPC rig fails to build.</summary>
+        public static RemoteAvatar CreateCapsule(byte playerId, string playerName)
+        {
+            var root = new GameObject($"WinterMP_Avatar_{playerId}");
+            var avatar = root.AddComponent<RemoteAvatar>();
+            avatar.CreateCapsuleFallback(playerId);
+            avatar.CreateNameTag(playerName);
+            root.SetActive(false);
+            return avatar;
+        }
+
+        private void BuildBody(byte playerId)
+        {
+            var rig = NpcCharacterFactory.TryCreate(playerId);
+            if (rig != null)
+            {
+                rig.Root.transform.parent = transform;
+                _rigRoot = rig.Root.transform;
+                _rigFootOffset = new Vector3(0f, rig.FootOffsetY, 0f);
+                _modelYawOffset = rig.ModelYawOffset;
+                _rigRoot.localPosition = _rigFootOffset;
+                _rigRoot.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
+
+                if (rig.MoveDriver != null)
+                {
+                    rig.MoveDriver.transform.parent = transform;
+                    _moveDriver = rig.MoveDriver.transform;
+                    _driverPivot = rig.DriverPivot;
+                    _driverPivotBaseLocalPos = rig.DriverPivotBaseLocalPos;
+                    _driverPivotBaseLocalRot = rig.DriverPivotBaseLocalRot;
+                    _moveDriver.localPosition = _rigFootOffset;
+                    _moveDriver.localRotation = Quaternion.Euler(0f, _modelYawOffset, 0f);
+
+                    _lookTarget = rig.LookTarget;
+                    if (_lookTarget != null)
+                    {
+                        _lookTarget.parent = transform;
+                        _lookTarget.localPosition = LookTargetLocalOffset;
+                        NpcCharacterFactory.BindMoveTarget(rig.MoveFsm, _lookTarget.gameObject);
+                    }
+                }
+
+                _characterAnimator = new RemoteCharacterAnimator(rig);
+                _bodyTransform = rig.BodyPivot;
+                EnsureRenderersEnabled(rig.Root);
+                return;
+            }
+
+            CreateCapsuleFallback(playerId);
+        }
+
+        private static void EnsureRenderersEnabled(GameObject root)
+        {
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null)
+                    renderers[i].enabled = true;
+            }
         }
 
         private void CreateCapsuleFallback(byte playerId)
@@ -226,6 +250,7 @@ namespace WinterMP.Core.Sync
             bool walking = _characterAnimator != null && _characterAnimator.IsWalking;
             PinMoveDriver(walking);
             _characterAnimator?.Tick();
+            PinRigRoot();
         }
 
         private void ApplyLookYaw(float yawDegrees)

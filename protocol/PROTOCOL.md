@@ -1,6 +1,6 @@
 # WinterMP wire protocol
 
-Protocol version: **21** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+Protocol version: **22** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
 Any breaking change to framing, message layout or semantics bumps the version;
 hosts refuse mismatched clients during handshake.
 
@@ -43,7 +43,9 @@ client                          host
   |<----- TimeSync ---------------|   clock + weather + calendar (also re-broadcast every 30 s)
   |<----- WalletState ------------|   shared wallet (also re-broadcast every ~2 s while balance changes)
   |<----- PassengerState * n -----|   current vehicle seat occupancy (also in join snapshot)
-  |<----- GuestSpawn -------------|   host pose + optional last saved pose; guest picks locally
+  |<----- GuestSpawn -------------|   host pose + optional last saved pose + needs; guest picks locally
+  |<-----> PlayerNeedsReport -----|   guest -> host every ~12 s (needs sidecar)
+  |<-----> SleepConsent * --------|   host sleep attempt -> guest accept/decline
   |<-----> Chat / PlayerTransform / ItemTransform / FsmStateEnter ...
 ```
 
@@ -64,7 +66,10 @@ transforms to other guests and is authoritative for all world state.
 | 21 | PlayerDespawn | 0 | playerId, reason |
 | 22 | PlayerTransform | 1 | playerId, seq, pos, rot, moveState |
 | 23 | PassengerState | 0 | playerId, vehicleId, seatIndex (0 front passenger, 1 rear left, 2 rear right, 255 none); re-broadcast every ~8 s while seated; same-seat races resolved by lowest player id |
-| 24 | GuestSpawn | 0 | host -> joining guest after snapshot: host position + rotation, last saved position + rotation, flags (bit 0 = last position valid). Guest shows spawn picker when bit 0 is set; otherwise snaps to host immediately. |
+| 24 | GuestSpawn | 0 | host -> joining guest after snapshot: host position + rotation, last saved position + rotation, flags (bit 0 = last position valid, bit 1 = saved needs valid), hunger/fatigue/thirst/urine floats. Bit 0 is set only for **returning** guests (known to the host's sidecar before this connection). Guest shows spawn picker when bit 0 is set; otherwise snaps to host immediately. When guest picks last position and bit 1 is set, local need globals are restored from the sidecar values. |
+| 25 | PlayerNeedsReport | 0 | guest -> host every ~12 s: playerId, hunger, fatigue, thirst, urine, seq — host stores in `wintermp-guests.json` sidecar |
+| 26 | SleepConsentRequest | 0 | host -> all guests when host enters a sleep/time-skip FSM state: requestId, initiatorPlayerId |
+| 27 | SleepConsentResponse | 0 | guest -> host: requestId, playerId, accepted (byte 0/1) — host waits for all guests; aborts sleep if any decline |
 | 40 | FsmStateEnter | 0 | netId + state name; receiver replays via injected MP_* global transition (doors, ignitions, vehicle controls, car parts Bolted/Unbolted/Stop/Install/Remove, shop Buy/CashRegister Purchase/Cashier/Add, Peräpörtti restaurant Cashier/State 1, inspection Pay, post-package Close box/Remove order, post-office Spawn, phone-order Spawn package, Fleetari Pending cost/State 3, service brochure Fleetari 2, engine run/stall on SORBET/CORRIS Starter FSMs) |
 | 41 | FsmRawEvent | 0 | netId + event name; receiver whitelists (TIGHTEN/UNTIGHTEN on bolts) |
 | 42 | ItemTransform | 1 (final: 0) | itemId, ownerPlayerId, seq, flags, pos, rot — items *and* vehicles |
