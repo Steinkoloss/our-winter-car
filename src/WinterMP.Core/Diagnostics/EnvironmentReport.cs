@@ -8,8 +8,8 @@ namespace WinterMP.Core.Diagnostics
 {
     /// <summary>
     /// Writes a full environment report to the BepInEx log and to
-    /// &lt;game&gt;\WinterMP\diagnostics.log. Run once at startup and once ~30s later
-    /// (the delayed pass catches lazily-loaded Steam modules and the game's Steam init).
+    /// &lt;game&gt;\WinterMP\diagnostics.log. The startup pass is lightweight
+    /// (no assembly list, no Steam); the delayed pass (~30s) is complete.
     /// This is the primary data source for the M0/M1 verification runs.
     /// </summary>
     internal static class EnvironmentReport
@@ -20,7 +20,11 @@ namespace WinterMP.Core.Diagnostics
         /// boot phase (MonoBehaviour entrypoint) is a native-crash risk on this old
         /// CSteamworks-based wrapper, so the startup pass must stay Steam-free.
         /// </param>
-        public static void Write(string phase, bool includeSteam)
+        /// <param name="includeAssemblyList">
+        /// Full <c>AppDomain</c> assembly enumeration is deferred to the delayed pass to
+        /// avoid a first-frame hitch right after BepInEx chainload.
+        /// </param>
+        public static void Write(string phase, bool includeSteam, bool includeAssemblyList)
         {
             var sb = new StringBuilder(8 * 1024);
             sb.AppendLine($"=== WinterMP environment report ({phase}) ===");
@@ -39,26 +43,33 @@ namespace WinterMP.Core.Diagnostics
             Try(sb, "os", () => Environment.OSVersion.ToString());
             Try(sb, "commandLine", () => string.Join(" ", Environment.GetCommandLineArgs()));
 
-            BootTrace.Crumb($"env({phase}): managed assemblies");
-            sb.AppendLine("-- loaded managed assemblies:");
-            try
+            if (includeAssemblyList)
             {
-                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                BootTrace.Crumb($"env({phase}): managed assemblies");
+                sb.AppendLine("-- loaded managed assemblies:");
+                try
                 {
-                    try
+                    foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                     {
-                        var name = assembly.GetName();
-                        sb.AppendLine($"   {name.Name} {name.Version}");
-                    }
-                    catch
-                    {
-                        // dynamic assemblies can refuse identity queries
+                        try
+                        {
+                            var name = assembly.GetName();
+                            sb.AppendLine($"   {name.Name} {name.Version}");
+                        }
+                        catch
+                        {
+                            // dynamic assemblies can refuse identity queries
+                        }
                     }
                 }
+                catch (Exception e)
+                {
+                    sb.AppendLine($"   <error: {e.Message}>");
+                }
             }
-            catch (Exception e)
+            else
             {
-                sb.AppendLine($"   <error: {e.Message}>");
+                sb.AppendLine("-- loaded managed assemblies: deferred to delayed report");
             }
 
             // NEVER use Process.GetCurrentProcess().Modules here: enumerating

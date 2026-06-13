@@ -3,11 +3,9 @@ using Microsoft.Win32;
 namespace WinterMP.Launcher.Services
 {
     /// <summary>
-    /// Skips Unity 5's native ScreenSelector ("Play!" config dialog) by passing
-    /// <c>-screen-*</c> command-line args at launch. Registry PlayerPrefs are also
-    /// written so settings persist for non-launcher starts. BepInEx loads too late to
-    /// dismiss the native dialog in-process.
-    /// Key names verified against My Winter Car (Unity 5.0, company Amistech).
+    /// Writes Unity display PlayerPrefs and launch args. The native ScreenSelector is
+    /// disabled by <see cref="MainDataBootPatch"/> (mainData displayResolutionDialog);
+    /// registry + <c>-screen-*</c> args here apply the launcher's graphics settings.
     /// </summary>
     public static class UnityDisplayPrefs
     {
@@ -46,6 +44,7 @@ namespace WinterMP.Launcher.Services
             string quality = MwcDisplayOptions.QualityNames[qualityIndex];
 
             return string.Join(" ",
+                "-no-dialogs",
                 $"-screen-fullscreen {fullscreen}",
                 $"-screen-width {settings.DisplayWidth}",
                 $"-screen-height {settings.DisplayHeight}",

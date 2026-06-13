@@ -6,10 +6,10 @@ hosts refuse mismatched clients during handshake.
 
 ## Transport & framing
 
-Datagram transports (Steam Networking Sockets P2P; loopback for dev). Per packet:
+Datagram transports (classic Steam P2P via `SteamNetworking.SendP2PPacket`; loopback for dev). Per packet:
 
 ```
-[1 byte channel]     -- only on the Steam transport (sockets have no channels)
+[1 byte channel]     -- only on the Steam transport (classic P2P has per-channel send)
 [2 bytes messageId]  -- little-endian ushort
 [payload]            -- message-specific, see below
 ```

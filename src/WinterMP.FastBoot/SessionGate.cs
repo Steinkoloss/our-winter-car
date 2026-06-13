@@ -11,11 +11,17 @@ namespace WinterMP.FastBoot
     internal static class SessionGate
     {
         private static bool _resolved;
+        private static bool _devBypassHostWait;
         private static Type? _sessionManagerType;
         private static PropertyInfo? _instanceProperty;
         private static PropertyInfo? _isHostProperty;
         private static PropertyInfo? _playerCountProperty;
         private static PropertyInfo? _stateProperty;
+
+        public static void Configure(bool devBypassHostWait)
+        {
+            _devBypassHostWait = devBypassHostWait;
+        }
 
         public static bool CanAutoLoadContinue()
         {
@@ -30,7 +36,7 @@ namespace WinterMP.FastBoot
 
                 bool isHost = (bool)_isHostProperty!.GetValue(session, null)!;
                 int playerCount = (int)_playerCountProperty!.GetValue(session, null)!;
-                if (isHost && playerCount == 0)
+                if (isHost && playerCount == 0 && !_devBypassHostWait)
                     return false;
 
                 return true;

@@ -1,3 +1,4 @@
+using System.IO;
 using UnityEngine;
 using WinterMP.Core.Session;
 using WinterMP.Core.Steam;
@@ -11,7 +12,7 @@ namespace WinterMP.Core.UI
     public sealed class MainMenuHostGate : MonoBehaviour
     {
         private const string ContinuePath = "Interface/Buttons/ButtonContinue";
-        private const string NewGamePath = "Interface/Buttons/ButtonNewGame";
+        private const string NewGamePath = "Interface/Buttons/ButtonNewgame";
 
         private const float AvatarSize = 40f;
         private const float RowHeight = 48f;
@@ -141,8 +142,30 @@ namespace WinterMP.Core.UI
 
         private void RestoreLoadButtons()
         {
-            SetButtonHidden(_continueButton, ref _continueWasActive, false);
-            SetButtonHidden(_newGameButton, ref _newGameWasActive, false);
+            EnsureButtonsCached();
+            _continueWasActive = null;
+            _newGameWasActive = null;
+
+            if (_newGameButton != null)
+                _newGameButton.SetActive(true);
+
+            // Host gate hides before the game's Check Save FSM enables Continue; restoring
+            // the captured wasActive flag left Continue stuck off even when savefile.txt exists.
+            if (_continueButton != null)
+                _continueButton.SetActive(HasSaveOnDisk());
+        }
+
+        private static bool HasSaveOnDisk()
+        {
+            try
+            {
+                string path = Path.Combine(Application.persistentDataPath, "savefile.txt");
+                return File.Exists(path) && new FileInfo(path).Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void EnsureButtonsCached()

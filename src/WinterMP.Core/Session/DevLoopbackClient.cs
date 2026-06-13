@@ -64,6 +64,7 @@ namespace WinterMP.Core.Session
         private void OnConnected(PeerId hostPeer)
         {
             _hostPeer = hostPeer;
+            SyncCatalog.EnsureLoaded();
             var request = new HandshakeRequest
             {
                 ProtocolVersion = ProtocolInfo.Version,

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 
 namespace WinterMP.Launcher.Services
@@ -11,7 +12,19 @@ namespace WinterMP.Launcher.Services
                 return $"{Branding.ProductName} is not installed.";
 
             Directory.Delete(modDir, recursive: true);
-            return $"Removed {Branding.ProductName} from the game. BepInEx remains installed.";
+
+            var lines = new List<string>
+            {
+                $"Removed {Branding.ProductName} from the game. BepInEx remains installed.",
+            };
+
+            if (MainDataBootPatch.TryRestoreResolutionDialog(gameDir, out string? restoreMessage)
+                && !string.IsNullOrWhiteSpace(restoreMessage))
+            {
+                lines.Add(restoreMessage);
+            }
+
+            return string.Join("\n", lines);
         }
     }
 }

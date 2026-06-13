@@ -19,6 +19,14 @@ namespace WinterMP.Core.Catalog
 
         public static bool Loaded { get; private set; }
         public static uint Hash { get; private set; }
+
+        /// <summary>Loads the catalog on first use (session connect / handshake), not at plugin Awake.</summary>
+        public static void EnsureLoaded()
+        {
+            if (Loaded) return;
+            Load();
+        }
+
         public static int ControlCount => _controls.Count;
         public static int SwitchRuleCount => _switchRules.Count;
         public static int BuyRuleCount => _buys.Count;

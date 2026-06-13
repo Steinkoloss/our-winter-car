@@ -1,7 +1,5 @@
-# Pre-seed Unity 5 display PlayerPrefs for My Winter Car.
-# Registry alone does NOT skip the native "Play!" ScreenSelector — the exe also needs
-#   -screen-width / -screen-height / -screen-fullscreen / -screen-quality
-# on the command line (see Local2PTest.bat). Used here for persistence + dev scripts.
+# Pre-seed Unity 5 display PlayerPrefs for My Winter Car (persists graphics between launches).
+# Skipping the native "Play!" ScreenSelector requires patch-mwc-maindata.ps1 (mainData edit).
 param(
     [int]$Width = 1280,
     [int]$Height = 720,

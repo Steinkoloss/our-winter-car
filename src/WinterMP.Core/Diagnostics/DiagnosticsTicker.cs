@@ -26,13 +26,13 @@ namespace WinterMP.Core.Diagnostics
             if (!_startupDone)
             {
                 _startupDone = true;
-                EnvironmentReport.Write("startup", includeSteam: false);
+                EnvironmentReport.Write("startup", includeSteam: false, includeAssemblyList: false);
             }
 
             if (!_delayedDone && Time.realtimeSinceStartup - _startedAt > DelayedReportAfterSeconds)
             {
                 _delayedDone = true;
-                EnvironmentReport.Write("delayed", includeSteam: true);
+                EnvironmentReport.Write("delayed", includeSteam: true, includeAssemblyList: true);
             }
 
             string level;

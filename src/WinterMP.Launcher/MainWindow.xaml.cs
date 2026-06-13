@@ -16,6 +16,8 @@ namespace WinterMP.Launcher
         private bool _installInProgress;
         private DateTime _lastAutoInstallAttempt = DateTime.MinValue;
         private readonly DispatcherTimer _statusTimer;
+        private readonly DispatcherTimer _updateTimer;
+        private bool _updateCheckInProgress;
         private InfoWindow? _openInfoWindow;
         private string _updateStatusText = "Not checked yet";
 
@@ -37,6 +39,9 @@ namespace WinterMP.Launcher
                 TryAutoInstallIfNeeded();
             };
 
+            _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            _updateTimer.Tick += async (_, _) => await RunPeriodicUpdateCheckAsync();
+
             RefreshStatus();
             ShowLastInstallFailureIfAny();
             ShowWelcomeIfNeeded();
@@ -44,13 +49,18 @@ namespace WinterMP.Launcher
             Loaded += async (_, _) =>
             {
                 _statusTimer.Start();
+                _updateTimer.Start();
                 TryAutoInstallIfNeeded();
                 await CheckForUpdatesAsync(showUpToDate: false);
                 if (_pendingUpdate?.AnyUpdateAvailable == true)
                     await PromptForUpdateAsync(required: false);
             };
 
-            Closed += (_, _) => _statusTimer.Stop();
+            Closed += (_, _) =>
+            {
+                _statusTimer.Stop();
+                _updateTimer.Stop();
+            };
         }
 
         private static string LastInstallLogPath => Path.Combine(
@@ -95,11 +105,21 @@ namespace WinterMP.Launcher
             _settings.Save();
         }
 
-        internal async Task CheckForUpdatesAsync(bool showUpToDate)
+        private async Task RunPeriodicUpdateCheckAsync()
         {
+            if (_updateCheckInProgress || _updateBusy) return;
+            await CheckForUpdatesAsync(showUpToDate: false, quiet: true);
+        }
+
+        internal async Task CheckForUpdatesAsync(bool showUpToDate, bool quiet = false)
+        {
+            if (_updateCheckInProgress) return;
+            _updateCheckInProgress = true;
+
+            bool hadUpdate = _pendingUpdate?.AnyUpdateAvailable == true;
             try
             {
-                AppendLog("Checking for updates...");
+                if (!quiet) AppendLog("Checking for updates...");
                 var result = await UpdateChecker.CheckAsync(_game?.GameDir, _settings.GitHubToken);
                 _settings.LastUpdateCheckUtc = DateTime.UtcNow;
                 _settings.Save();
@@ -110,7 +130,8 @@ namespace WinterMP.Launcher
                 if (!result.IsSuccess)
                 {
                     _updateStatusText = result.ErrorMessage ?? "Update check failed";
-                    AppendLog($"Update check failed: {result.ErrorMessage}");
+                    if (!quiet)
+                        AppendLog($"Update check failed: {result.ErrorMessage}");
                     RefreshOpenInfoWindow();
                     return;
                 }
@@ -118,7 +139,8 @@ namespace WinterMP.Launcher
                 if (result.AnyUpdateAvailable)
                 {
                     _updateStatusText = result.StatusSummary;
-                    AppendLog($"Update available: {result.StatusSummary} ({result.ReleaseUrl})");
+                    if (!quiet || !hadUpdate)
+                        AppendLog($"Update available: {result.StatusSummary} ({result.ReleaseUrl})");
                     RefreshOpenInfoWindow();
                     if (showUpToDate)
                         await PromptForUpdateAsync(required: false);
@@ -126,7 +148,8 @@ namespace WinterMP.Launcher
                 }
 
                 _updateStatusText = $"Up to date ({result.Tag})";
-                AppendLog($"Up to date ({result.Tag}).");
+                if (!quiet)
+                    AppendLog($"Up to date ({result.Tag}).");
                 if (showUpToDate)
                 {
                     MessageBox.Show(this,
@@ -139,8 +162,13 @@ namespace WinterMP.Launcher
             catch (Exception ex)
             {
                 _updateStatusText = "Update check failed";
-                AppendLog($"Update check failed: {ex.Message}");
+                if (!quiet)
+                    AppendLog($"Update check failed: {ex.Message}");
                 RefreshOpenInfoWindow();
+            }
+            finally
+            {
+                _updateCheckInProgress = false;
             }
         }
 
@@ -600,6 +628,14 @@ namespace WinterMP.Launcher
 
         private void LaunchGame(string args)
         {
+            if (_game != null
+                && MainDataBootPatch.TryDisableResolutionDialog(_game.GameDir, _game.BuildId, out string? bootPatch)
+                && !string.IsNullOrWhiteSpace(bootPatch)
+                && bootPatch != "Resolution dialog already disabled in mainData.")
+            {
+                AppendLog(bootPatch);
+            }
+
             string launchArgs = UnityDisplayPrefs.WithScreenArgs(_settings, args);
             UnityDisplayPrefs.Apply(_settings, launchArgs);
 

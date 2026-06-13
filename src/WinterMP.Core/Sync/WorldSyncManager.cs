@@ -35,6 +35,8 @@ namespace WinterMP.Core.Sync
         private readonly TimeWeatherSync _timeWeather = new TimeWeatherSync();
         private readonly WalletSync _wallet = new WalletSync();
 
+        private bool _syncReady;
+
         private WorldSyncBridge _bridge = null!;
         private FsmWorldSync _fsm = null!;
         private ItemWorldSync _items = null!;
@@ -66,11 +68,11 @@ namespace WinterMP.Core.Sync
 
         public static WorldSyncManager? Instance { get; private set; }
 
-        public int DoorCount => _fsm.DoorCount;
-        public int PartCount => _fsm.PartCount;
-        public int BuyCount => _fsm.BuyCount;
-        public int BoltCount => _fsm.BoltCount;
-        public int ItemCount => _items.ItemCount;
+        public int DoorCount => _syncReady ? _fsm.DoorCount : 0;
+        public int PartCount => _syncReady ? _fsm.PartCount : 0;
+        public int BuyCount => _syncReady ? _fsm.BuyCount : 0;
+        public int BoltCount => _syncReady ? _fsm.BoltCount : 0;
+        public int ItemCount => _syncReady ? _items.ItemCount : 0;
         public uint IdHash { get; private set; }
 
         public void Configure(LaunchOptions launch)
@@ -82,7 +84,14 @@ namespace WinterMP.Core.Sync
         private void Awake()
         {
             Instance = this;
-            SyncCatalog.Load();
+        }
+
+        private void EnsureSyncReady()
+        {
+            if (_syncReady) return;
+
+            SyncCatalog.EnsureLoaded();
+            Util.BootTrace.Crumb("WorldSyncManager: lazy init");
 
             _bridge = new WorldSyncBridge(this, _hookedFsms);
             _items = new ItemWorldSync(_bridge);
@@ -91,6 +100,7 @@ namespace WinterMP.Core.Sync
             _bridge.BindItems(_items);
             _bridge.BindWallet(_wallet);
             _fsm = new FsmWorldSync(_bridge, _vehicles);
+            _syncReady = true;
         }
 
         private void OnDestroy()
@@ -114,7 +124,10 @@ namespace WinterMP.Core.Sync
 
         private void LateUpdate()
         {
-            if (_worldSyncDisabled || !_wasSessionActive || Time.unscaledTime < _syncErrorBackoffUntil) return;
+            if (!_syncReady || _worldSyncDisabled || !_wasSessionActive || Time.unscaledTime < _syncErrorBackoffUntil)
+                return;
+
+            if (!IsGameLevel()) return;
 
             try
             {
@@ -164,6 +177,13 @@ namespace WinterMP.Core.Sync
                 return;
             }
 
+            if (!IsGameLevel())
+            {
+                _wasSessionActive = true;
+                return;
+            }
+
+            EnsureSyncReady();
             _wasSessionActive = true;
 
             if (Time.unscaledTime >= _nextScanAt)
@@ -220,6 +240,18 @@ namespace WinterMP.Core.Sync
                 HandleDevKeys(session);
         }
 
+        private static bool IsGameLevel()
+        {
+            try
+            {
+                return Application.loadedLevelName == "GAME";
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private void WatchLevelChanges()
         {
             string level;
@@ -234,6 +266,8 @@ namespace WinterMP.Core.Sync
 
             if (level == _lastLevel) return;
             _lastLevel = level;
+
+            if (!_syncReady) return;
 
             _fsm.Clear();
             _items.Clear();
@@ -374,7 +408,7 @@ namespace WinterMP.Core.Sync
 
         public WorldStateChecksum? BuildStateChecksum()
         {
-            if (_fsm.DoorCount == 0) return null;
+            if (!_syncReady || _fsm.DoorCount == 0) return null;
 
             return new WorldStateChecksum
             {
@@ -388,6 +422,8 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteStateChecksum(WorldStateChecksum message)
         {
+            if (!_syncReady) return;
+
             var session = SessionManager.Instance;
             if (session == null || session.IsHost || !_snapshotRequested || _fsm.DoorCount == 0) return;
             if (Time.unscaledTime < _nextResyncRequestAt) return;
@@ -425,6 +461,8 @@ namespace WinterMP.Core.Sync
 
         public IEnumerable<IMessage> BuildResyncMessages(byte flags)
         {
+            if (!_syncReady) yield break;
+
             if ((flags & WorldResyncRequest.FlagWallet) != 0)
             {
                 var wallet = BuildWalletState();
@@ -478,6 +516,8 @@ namespace WinterMP.Core.Sync
 
         public IEnumerable<IMessage> BuildObjectStateMessages(uint netId)
         {
+            if (!_syncReady) yield break;
+
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) yield break;
 
@@ -522,6 +562,8 @@ namespace WinterMP.Core.Sync
 
         public IEnumerable<IMessage> BuildWorldSnapshot()
         {
+            if (!_syncReady) yield break;
+
             foreach (var chunk in _fsm.BuildDoorSnapshotChunks())
                 yield return chunk;
 
@@ -569,22 +611,22 @@ namespace WinterMP.Core.Sync
             _wallet.Apply(message);
         }
 
-        public void OnRemoteStateEnter(FsmStateEnter message) => _fsm.OnRemoteStateEnter(message);
-        public void OnRemoteRawEvent(FsmRawEvent message) => _fsm.OnRemoteRawEvent(message);
-        public void OnRemoteBoltState(BoltState message) => _fsm.OnRemoteBoltState(message);
-        public void OnRemotePartState(PartState message) => _fsm.OnRemotePartState(message);
-        public void OnRemoteDoorSnapshot(WorldDoorSnapshot message) => _fsm.OnRemoteDoorSnapshot(message);
-        public void OnRemoteBoltSnapshot(WorldBoltSnapshot message) => _fsm.OnRemoteBoltSnapshot(message);
-        public void OnRemotePartSnapshot(WorldPartSnapshot message) => _fsm.OnRemotePartSnapshot(message);
-        public void OnHostPurchaseIntent(PurchaseIntent intent) => _fsm.OnHostPurchaseIntent(intent);
+        public void OnRemoteStateEnter(FsmStateEnter message) { EnsureSyncReady(); _fsm.OnRemoteStateEnter(message); }
+        public void OnRemoteRawEvent(FsmRawEvent message) { EnsureSyncReady(); _fsm.OnRemoteRawEvent(message); }
+        public void OnRemoteBoltState(BoltState message) { EnsureSyncReady(); _fsm.OnRemoteBoltState(message); }
+        public void OnRemotePartState(PartState message) { EnsureSyncReady(); _fsm.OnRemotePartState(message); }
+        public void OnRemoteDoorSnapshot(WorldDoorSnapshot message) { EnsureSyncReady(); _fsm.OnRemoteDoorSnapshot(message); }
+        public void OnRemoteBoltSnapshot(WorldBoltSnapshot message) { EnsureSyncReady(); _fsm.OnRemoteBoltSnapshot(message); }
+        public void OnRemotePartSnapshot(WorldPartSnapshot message) { EnsureSyncReady(); _fsm.OnRemotePartSnapshot(message); }
+        public void OnHostPurchaseIntent(PurchaseIntent intent) { EnsureSyncReady(); _fsm.OnHostPurchaseIntent(intent); }
 
-        public void OnRemoteItemDespawn(ItemDespawn message) => _items.OnRemoteItemDespawn(message);
-        public void OnRemoteItemTransform(ItemTransform message) => _items.OnRemoteItemTransform(message);
-        public void OnRemoteItemSnapshot(WorldItemSnapshot message) => _items.OnRemoteItemSnapshot(message);
-        public void OnRemoteItemDespawnSnapshot(WorldItemDespawnSnapshot message) => _items.OnRemoteItemDespawnSnapshot(message);
+        public void OnRemoteItemDespawn(ItemDespawn message) { EnsureSyncReady(); _items.OnRemoteItemDespawn(message); }
+        public void OnRemoteItemTransform(ItemTransform message) { EnsureSyncReady(); _items.OnRemoteItemTransform(message); }
+        public void OnRemoteItemSnapshot(WorldItemSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemSnapshot(message); }
+        public void OnRemoteItemDespawnSnapshot(WorldItemDespawnSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemDespawnSnapshot(message); }
 
-        public void OnRemoteVehicleState(VehicleState message) => _vehicles.OnRemoteVehicleState(message);
-        public void OnRemoteVehicleClimate(VehicleClimate message) => _vehicles.OnRemoteVehicleClimate(message);
+        public void OnRemoteVehicleState(VehicleState message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleState(message); }
+        public void OnRemoteVehicleClimate(VehicleClimate message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleClimate(message); }
 
         public struct VehicleInfo
         {
@@ -592,14 +634,27 @@ namespace WinterMP.Core.Sync
             public Rigidbody Body;
         }
 
-        public void CollectVehicles(List<VehicleInfo> results) => _items.CollectVehicles(results);
-        public bool TryGetDriverAnchor(byte playerId, out Transform? seat, out Transform? vehicle) =>
-            _items.TryGetDriverAnchor(playerId, out seat, out vehicle);
+        public void CollectVehicles(List<VehicleInfo> results)
+        {
+            EnsureSyncReady();
+            _items.CollectVehicles(results);
+        }
 
-        public bool IsLocalPlayerDrivingAny() => _items.IsLocalPlayerDrivingAny();
+        public bool TryGetDriverAnchor(byte playerId, out Transform? seat, out Transform? vehicle)
+        {
+            EnsureSyncReady();
+            return _items.TryGetDriverAnchor(playerId, out seat, out vehicle);
+        }
+
+        public bool IsLocalPlayerDrivingAny()
+        {
+            if (!_syncReady) return false;
+            return _items.IsLocalPlayerDrivingAny();
+        }
 
         public uint? FindNearestResyncTarget(float maxDistance = 15f)
         {
+            EnsureSyncReady();
             FindLocalPlayer();
             if (LocalPlayer == null) return null;
 
@@ -644,6 +699,8 @@ namespace WinterMP.Core.Sync
 
         private void ReleaseEverything()
         {
+            if (!_syncReady) return;
+
             _items.ReleaseSession();
             _fsm.Clear();
             _nextObjectRequestAt.Clear();
@@ -654,7 +711,11 @@ namespace WinterMP.Core.Sync
             SyncEventLog.Clear();
         }
 
-        internal bool IsLocalPlayerDriving(SyncedItem item) => _items.IsLocalPlayerDriving(item);
+        internal bool IsLocalPlayerDriving(SyncedItem item)
+        {
+            if (!_syncReady) return false;
+            return _items.IsLocalPlayerDriving(item);
+        }
 
         public bool IsDisabled => _worldSyncDisabled;
 

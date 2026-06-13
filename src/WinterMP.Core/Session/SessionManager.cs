@@ -497,6 +497,7 @@ namespace WinterMP.Core.Session
             if (!IsHost)
             {
                 _hostPeer = peer;
+                SyncCatalog.EnsureLoaded();
 
                 // We just reached the host: introduce ourselves.
                 var request = new HandshakeRequest
@@ -725,6 +726,8 @@ namespace WinterMP.Core.Session
 
         private void HandleHandshakeRequest(PeerId peer, HandshakeRequest request)
         {
+            SyncCatalog.EnsureLoaded();
+
             string? refusal = null;
             string hostGameVersion = Util.SafeApp.GameVersion;
             if (request.ProtocolVersion != ProtocolInfo.Version)
