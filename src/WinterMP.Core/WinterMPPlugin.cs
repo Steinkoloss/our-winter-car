@@ -16,12 +16,13 @@ namespace WinterMP.Core
 
         static WinterMPPlugin()
         {
-            Util.BootTrace.Crumb("plugin type cctor");
         }
 
         private void Awake()
         {
             Log = Logger;
+            Util.InstanceLogRedirect.TryConfigure();
+            Util.BootTrace.Crumb("Awake begin");
 
             // Breadcrumbs survive native crashes (BepInEx's disk log is buffered).
             // Do NOT touch Steam in here — the MonoBehaviour entrypoint runs before
@@ -39,13 +40,7 @@ namespace WinterMP.Core
             var launch = LaunchOptions.FromCommandLine(Environment.GetCommandLineArgs());
             Util.BootTrace.Crumb("Awake step 2b: mode=" + launch.Mode);
 
-            if (launch.Mode == LaunchMode.HostLocal)
-            {
-                Util.BootTrace.Crumb("Awake step 3: hostlocal single-instance unlock");
-                TryReleaseHostLocalMutex("early");
-            }
-
-            Util.BootTrace.Crumb("Awake step 4: creating WinterMP GameObject");
+            Util.BootTrace.Crumb("Awake step 3: creating WinterMP GameObject");
             var root = new GameObject("WinterMP");
             root.hideFlags = HideFlags.HideAndDontSave;
             DontDestroyOnLoad(root);
@@ -63,20 +58,24 @@ namespace WinterMP.Core
             session.Initialize(launch);
 
             Util.BootTrace.Crumb("Awake done");
+
             if (launch.Mode == LaunchMode.HostLocal)
-                TryReleaseHostLocalMutex("late");
+                TryReleaseHostLocalMutex();
 
             Log.LogInfo($"WinterMP {MyPluginInfo.PLUGIN_VERSION} loaded (mode: {launch.Mode}, protocol v{WinterMP.Net.ProtocolInfo.Version}).");
         }
 
-        private static void TryReleaseHostLocalMutex(string phase)
+        private static void TryReleaseHostLocalMutex()
         {
-            if (Util.HostLocalReadySignal.IsPresent()) return;
-
             if (Util.SingleInstanceUnlocker.Release())
+            {
+                Log.LogInfo("HostLocal: single-instance mutex released (second instance can start).");
                 Util.HostLocalReadySignal.MarkReady();
+            }
             else
-                Log.LogWarning($"HostLocal mutex release ({phase}) did not find the lock yet.");
+            {
+                Log.LogWarning("HostLocal: single-instance mutex not found to release.");
+            }
         }
     }
 }

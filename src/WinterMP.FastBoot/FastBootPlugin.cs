@@ -11,6 +11,7 @@ namespace WinterMP.FastBoot
     /// All PlayMaker automation is restricted to SplashScreen / MainMenu — never GAME.
     /// </summary>
     [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+    [BepInDependency("com.ourwintercar.wintermp", BepInDependency.DependencyFlags.HardDependency)]
     public sealed class FastBootPlugin : BaseUnityPlugin
     {
         internal static FastBootPlugin? Instance { get; private set; }

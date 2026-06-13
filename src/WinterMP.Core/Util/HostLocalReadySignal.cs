@@ -4,9 +4,8 @@ using System.IO;
 namespace WinterMP.Core.Util
 {
     /// <summary>
-    /// Written as soon as the host-local test instance releases Unity's
-    /// single-instance mutex so <c>tools/Local2PTest.bat</c> can poll instead of
-    /// sleeping for a fixed interval.
+    /// Written when host-local BepInEx releases the single-instance mutex so
+    /// <c>tools/Local2PTest.bat</c> can start the guest as soon as possible.
     /// </summary>
     internal static class HostLocalReadySignal
     {
@@ -14,13 +13,15 @@ namespace WinterMP.Core.Util
 
         public static void MarkReady()
         {
+            if (IsPresent()) return;
+
             try
             {
                 string dir = Path.Combine(BepInEx.Paths.GameRootPath, "WinterMP");
                 Directory.CreateDirectory(dir);
                 string path = Path.Combine(dir, FileName);
                 File.WriteAllText(path, DateTime.UtcNow.Ticks.ToString());
-                WinterMPPlugin.Log.LogInfo($"HostLocal ready signal written: {path}");
+                WinterMPPlugin.Log.LogInfo($"HostLocal ready (mutex released): {path}");
             }
             catch (Exception e)
             {

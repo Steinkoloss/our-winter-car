@@ -35,7 +35,10 @@ namespace WinterMP.Core.Util
 
             string dir = Path.Combine(BepInEx.Paths.GameRootPath, "WinterMP");
             Directory.CreateDirectory(dir);
-            string path = Path.Combine(dir, "boot-trace.log");
+            string fileName = string.IsNullOrEmpty(InstanceLogRedirect.Role)
+                ? "boot-trace.log"
+                : "boot-trace-" + InstanceLogRedirect.Role + ".log";
+            string path = Path.Combine(dir, fileName);
             _writer = new StreamWriter(path, true, Encoding.UTF8);
             _writer.WriteLine($"---- new process {DateTime.Now:yyyy-MM-dd HH:mm:ss} ----");
             _writer.Flush();

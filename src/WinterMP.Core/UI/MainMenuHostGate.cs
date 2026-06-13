@@ -37,13 +37,14 @@ namespace WinterMP.Core.UI
                 return;
             }
 
+            var session = SessionManager.Instance;
+
             if (level != _lastLevel)
             {
                 _lastLevel = level;
                 ClearCachedButtons();
             }
 
-            var session = SessionManager.Instance;
             bool blocking = session != null
                 && session.ShouldBlockHostMainMenuLoad
                 && level == "MainMenu";

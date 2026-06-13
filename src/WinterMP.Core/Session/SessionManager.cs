@@ -78,6 +78,7 @@ namespace WinterMP.Core.Session
 
         /// <summary>Alias kept for world-sync auto-load gating.</summary>
         public bool IsHostWaitingForPlayers => ShouldBlockHostMainMenuLoad;
+
         private float _failedAt = -1f;
         private const float FailedRecoverySeconds = 45f;
 

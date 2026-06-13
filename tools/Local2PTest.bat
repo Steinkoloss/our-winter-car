@@ -24,13 +24,15 @@ if exist "%READY_FLAG%" del /f /q "%READY_FLAG%" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOLS%patch-mwc-maindata.ps1" -GameDir "%GAME_DIR%"
 if errorlevel 1 goto script_failed
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOLS%seed-mwc-display.ps1" -Width 1280 -Height 720 -Fullscreen 0
+powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOLS%seed-mwc-display.ps1" -Width 960 -Height 540 -Fullscreen 0
 if errorlevel 1 goto script_failed
 
 cd /d "%GAME_DIR%"
-start "WinterMP Host" mywintercar.exe -no-dialogs -fastboot-dev -wintermp hostlocal -screen-fullscreen 0 -screen-width 1280 -screen-height 720
+set "WINTERMP_LOG_ROLE=host"
+set "HOST_UNITY_LOG=%GAME_DIR%\BepInEx\LogOutput-host-unity.log"
+start "WinterMP Host" mywintercar.exe -no-dialogs -fastboot-dev -wintermp hostlocal -screen-fullscreen 0 -screen-width 960 -screen-height 540 -logFile "%HOST_UNITY_LOG%"
 
-echo       Waiting for host to release the single-instance lock (up to %MAX_WAIT%s)...
+echo       Waiting for host single-instance unlock (up to %MAX_WAIT%s)...
 set /a WAITED=0
 
 :wait_host
@@ -42,16 +44,16 @@ goto wait_host
 
 :host_timeout
 echo.
-echo ERROR: Host never signaled ready within %MAX_WAIT% seconds.
-echo        Check BepInEx\LogOutput.log for "HostLocal ready signal"
+echo ERROR: Host never released the single-instance lock within %MAX_WAIT% seconds.
+echo        Check BepInEx\LogOutput-host.log for "HostLocal ready (mutex released)"
 echo        and make sure the latest WinterMP.Core.dll is deployed.
 echo.
 pause
 exit /b 1
 
 :host_ready
-echo       Host ready after !WAITED! second(s).
-echo [2/2] Starting GUEST instance (windowed, no Steam)...
+echo       Host unlocked after !WAITED! second(s).
+echo [2/2] Starting GUEST instance...
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOLS%patch-mwc-maindata.ps1" -GameDir "%GAME_DIR%"
 if errorlevel 1 goto script_failed
@@ -60,10 +62,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOLS%seed-mwc-display.ps1
 if errorlevel 1 goto script_failed
 
 cd /d "%GAME_DIR%"
-start "WinterMP Guest" mywintercar.exe -no-dialogs -fastboot-dev -wintermp joinlocal -wintermp-playername Guest -screen-fullscreen 0 -screen-width 960 -screen-height 540
+set "WINTERMP_LOG_ROLE=guest"
+set "GUEST_UNITY_LOG=%GAME_DIR%\BepInEx\LogOutput-guest-unity.log"
+start "WinterMP Guest" mywintercar.exe -no-dialogs -fastboot-dev -wintermp joinlocal -wintermp-playername Guest -screen-fullscreen 0 -screen-width 960 -screen-height 540 -logFile "%GUEST_UNITY_LOG%"
 
 echo.
 echo Both instances are starting (FastBoot DEV: fast Continue + ES2 tag skip, async GAME preload).
+echo.
+echo   Logs: BepInEx\LogOutput-host.log  +  BepInEx\LogOutput-guest.log
+echo         WinterMP\boot-trace-host.log + WinterMP\boot-trace-guest.log
 echo.
 echo   - Hold TAB in either window: both players + the "World:" sync line.
 echo     The [id hash] must be IDENTICAL in both windows.
