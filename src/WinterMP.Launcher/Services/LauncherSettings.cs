@@ -9,10 +9,7 @@ namespace WinterMP.Launcher.Services
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WinterMP", "launcher-settings.json");
 
-        public bool SeenWelcome { get; set; }
         public DateTime? LastUpdateCheckUtc { get; set; }
-        /// <summary>GitHub PAT with repo read access — required for updates while the repo is private.</summary>
-        public string? GitHubToken { get; set; }
         /// <summary>Manual override when Steam library detection fails.</summary>
         public string? CustomGameDir { get; set; }
 

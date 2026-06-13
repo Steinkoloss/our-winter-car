@@ -9,10 +9,10 @@ namespace WinterMP.Launcher.Services
     /// </summary>
     public static class UnityDisplayPrefs
     {
-        public const int DefaultWidth = 1280;
-        public const int DefaultHeight = 720;
+        public const int DefaultWidth = 960;
+        public const int DefaultHeight = 540;
         public const int DefaultFullscreen = 0;
-        public const int DefaultQuality = 5;
+        public const int DefaultQuality = 3;
         public const int DefaultMonitor = 0;
 
         private const string RegistrySubKey = @"Software\Amistech\My Winter Car";

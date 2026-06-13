@@ -29,7 +29,7 @@ namespace WinterMP.Launcher
             InitializeComponent();
             Title = $"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}";
             SubtitleText.Text =
-                $"Co-op multiplayer only · protocol v{ModMeta.ProtocolVersion}";
+                $"Host or join via Steam · protocol v{ModMeta.ProtocolVersion}";
             AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
 
             _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -44,7 +44,6 @@ namespace WinterMP.Launcher
 
             RefreshStatus();
             ShowLastInstallFailureIfAny();
-            ShowWelcomeIfNeeded();
 
             Loaded += async (_, _) =>
             {
@@ -86,25 +85,6 @@ namespace WinterMP.Launcher
             }
         }
 
-        private void ShowWelcomeIfNeeded()
-        {
-            if (_settings.SeenWelcome) return;
-
-            MessageBox.Show(this,
-                $"Welcome to {Branding.ProductName}!\n\n" +
-                "This launcher is for multiplayer co-op only — not single player.\n\n" +
-                "• HOST GAME — backs up your save and opens a Steam lobby. You cannot start until a friend joins.\n" +
-                "• JOIN GAME — launch so you can join a host via Steam → right-click them → Join Game.\n\n" +
-                "For single player, launch My Winter Car from Steam directly (without this launcher).\n\n" +
-                "Never save the game as a guest.",
-                Branding.ProductName,
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-
-            _settings.SeenWelcome = true;
-            _settings.Save();
-        }
-
         private async Task RunPeriodicUpdateCheckAsync()
         {
             if (_updateCheckInProgress || _updateBusy) return;
@@ -120,7 +100,7 @@ namespace WinterMP.Launcher
             try
             {
                 if (!quiet) AppendLog("Checking for updates...");
-                var result = await UpdateChecker.CheckAsync(_game?.GameDir, _settings.GitHubToken);
+                var result = await UpdateChecker.CheckAsync(_game?.GameDir);
                 _settings.LastUpdateCheckUtc = DateTime.UtcNow;
                 _settings.Save();
 
@@ -453,7 +433,7 @@ namespace WinterMP.Launcher
             {
                 AppendLog($"Downloading mod update {_pendingUpdate.Tag}...");
                 string result = await UpdateChecker.DownloadAndApplyPayloadAsync(
-                    _pendingUpdate.PayloadDownloadUrl, _game.GameDir, _settings.GitHubToken);
+                    _pendingUpdate.PayloadDownloadUrl, _game.GameDir);
                 AppendLog(result);
                 AppendLog("Mod updated — restarting launcher.");
                 UpdateChecker.RestartApplication();
@@ -490,7 +470,7 @@ namespace WinterMP.Launcher
             {
                 AppendLog($"Downloading launcher update {_pendingUpdate.Tag}...");
                 string setupPath = await UpdateChecker.DownloadLauncherSetupAsync(
-                    _pendingUpdate.SetupDownloadUrl, _settings.GitHubToken);
+                    _pendingUpdate.SetupDownloadUrl);
                 AppendLog("Installing update — launcher will restart.");
                 UpdateChecker.RunLauncherSetup(setupPath);
                 Application.Current.Shutdown();
@@ -585,14 +565,6 @@ namespace WinterMP.Launcher
             if (!await PromptForUpdateAsync(required: true)) return;
             if (!EnsureReadyForLaunch()) return;
 
-            MessageBox.Show(this,
-                "Our Winter Car is for multiplayer only.\n\n" +
-                "To join a friend: in Steam, right-click the host → Join Game.\n\n" +
-                "For single player, launch My Winter Car from Steam (not this launcher).",
-                "Join Game",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-
             try
             {
                 LaunchGame(string.Empty);
@@ -642,7 +614,7 @@ namespace WinterMP.Launcher
             if (_game != null)
             {
                 string fastBootNote = FastBootConfigSeed.ApplyProductionProfile(_game.GameDir);
-                if (!string.Equals(fastBootNote, "FastBoot production defaults already set.", StringComparison.Ordinal))
+                if (!string.Equals(fastBootNote, "FastBoot speed profile already set.", StringComparison.Ordinal))
                     AppendLog(fastBootNote);
             }
 

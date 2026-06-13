@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace WinterMP.FastBoot
 {
     /// <summary>
-    /// DEV-only: treat nonessential ES2 tags as missing during Continue→GAME hydrate.
+    /// Treat nonessential ES2 tags as missing during Continue→GAME hydrate only.
     /// Must NOT run during MainMenu save-check (Check Save FSM) — that slowed splash→menu.
     /// </summary>
     internal static class Es2HydratePolicy
@@ -33,12 +33,13 @@ namespace WinterMP.FastBoot
         private static bool _whitelistMode;
         private static bool _continueHydrateActive;
 
-        /// <summary>DEV: only hydrate tags needed to boot; skip everything else.</summary>
+        /// <summary>Only hydrate tags needed to boot; skip everything else in whitelist mode.</summary>
         private static readonly string[] BootKeepPrefixes =
         {
             "WorldTime", "WorldDay", "WorldDaysPassed", "WorldWeeksPassed", "Weather",
             "PlayerTransform", "PlayerMoney", "PlayerName", "PlayerHunger", "PlayerFatigue",
-            "GameStartDate", "Satsuma", "Gifu", "Kekmet", "SOORBT", "CarBattery", "CarBuyStage",
+            "GameStartDate", "Satsuma", "Gifu", "Kekmet", "SOORBT", "CarBattery",
+            "CarBuyStage", "House", "Flat", "Mail", "Fuel",
         };
 
         public static int SkippedTagChecks { get; private set; }

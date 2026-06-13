@@ -30,6 +30,7 @@ namespace WinterMP.FastBoot
         private ConfigEntry<float> _forceGameLoadAfterSeconds = null!;
         private ConfigEntry<bool> _preloadGameAsync = null!;
         private ConfigEntry<bool> _devMode = null!;
+        private ConfigEntry<bool> _bypassHostContinueWait = null!;
         private ConfigEntry<bool> _devDirectGameLoad = null!;
         private ConfigEntry<bool> _devSkipEs2Tags = null!;
         private ConfigEntry<bool> _devEs2Whitelist = null!;
@@ -37,9 +38,11 @@ namespace WinterMP.FastBoot
         private ConfigEntry<bool> _logTimings = null!;
         private ConfigEntry<bool> _analyzeEs2OnStartup = null!;
 
-        private bool _devActive;
+        private bool _fastContinue;
+        private bool _bypassHostWait;
         private bool _devDirectActive;
-        private bool _devSkipTagsActive;
+        private bool _es2SkipActive;
+        private bool _es2WhitelistActive;
 
         private bool _bootComplete;
         private bool _splashSkipScheduled;
@@ -93,17 +96,20 @@ namespace WinterMP.FastBoot
                 "Boot", "PreloadGameAsync", true,
                 "Start LoadLevelAsync(GAME) on Continue, overlapping ES2 hydrate.");
             _devMode = Config.Bind(
-                "Boot", "DevMode", false,
-                "DEV shortcuts (fast Continue, ES2 tag skip). Local2PTest uses -fastboot-dev.");
+                "Boot", "DevMode", true,
+                "Fast Continue (zero menu settle / save-check wait). -fastboot-dev also enables this.");
+            _bypassHostContinueWait = Config.Bind(
+                "Boot", "BypassHostContinueWait", true,
+                "Hosts click Continue without waiting for a connected guest.");
             _devDirectGameLoad = Config.Bind(
                 "Boot", "DevDirectGameLoad", false,
-                "EXPERIMENTAL: skip Continue + ES2 and LoadLevel(GAME) from MainMenu. Often crashes — leave false.");
+                "EXPERIMENTAL: skip Continue + ES2 and LoadLevel(GAME) from MainMenu. Crashes — leave false.");
             _devSkipEs2Tags = Config.Bind(
-                "Boot", "DevSkipEs2Tags", false,
-                "DEV: skip nonessential ES2 tags during Continue hydrate.");
+                "Boot", "DevSkipEs2Tags", true,
+                "Skip nonessential ES2 tags during Continue hydrate.");
             _devEs2Whitelist = Config.Bind(
-                "Boot", "DevEs2Whitelist", false,
-                "DEV: only hydrate core boot tags (World*, Player*, vehicles). Much faster; dev only.");
+                "Boot", "DevEs2Whitelist", true,
+                "Only hydrate core boot tags (World*, Player*, vehicles). Much faster Continue→GAME.");
             _devSkipEs2ExtraPrefixes = Config.Bind(
                 "Boot", "DevSkipEs2ExtraPrefixes", string.Empty,
                 "Extra comma-separated ES2 tag prefixes to skip during dev hydrate.");
@@ -117,9 +123,12 @@ namespace WinterMP.FastBoot
             if (HasCommandLineFlag("-no-fastboot"))
                 _enabled.Value = false;
 
-            _devActive = _devMode.Value || HasCommandLineFlag("-fastboot-dev");
-            _devDirectActive = _devActive && _devDirectGameLoad.Value;
-            _devSkipTagsActive = _devActive && _devSkipEs2Tags.Value;
+            bool cmdlineFast = HasCommandLineFlag("-fastboot-dev");
+            _fastContinue = _devMode.Value || cmdlineFast;
+            _bypassHostWait = _bypassHostContinueWait.Value || cmdlineFast;
+            _devDirectActive = (_fastContinue || cmdlineFast) && _devDirectGameLoad.Value;
+            _es2WhitelistActive = _devEs2Whitelist.Value;
+            _es2SkipActive = _devSkipEs2Tags.Value || _es2WhitelistActive;
 
             if (!_enabled.Value)
             {
@@ -130,29 +139,33 @@ namespace WinterMP.FastBoot
             if (_skipConfigScreen.Value)
                 ConfigScreenSkip.SeedDisplayPrefsFromCommandLine();
 
-            _continue.StepDelaySeconds = _devActive ? 0f : _continueStepDelaySeconds.Value;
+            _continue.StepDelaySeconds = _fastContinue ? 0f : _continueStepDelaySeconds.Value;
             LoadPipeline.PreloadEnabled = _preloadGameAsync.Value;
             LoadPipeline.LogTimings = _logTimings.Value;
             Es2HydratePolicy.Configure(
-                _devSkipTagsActive,
-                _devActive,
-                _devActive && _devEs2Whitelist.Value,
+                _es2SkipActive,
+                _fastContinue || _es2SkipActive,
+                _es2WhitelistActive,
                 _devSkipEs2ExtraPrefixes.Value);
-            SessionGate.Configure(_devActive);
+            SessionGate.Configure(_bypassHostWait);
             HarmonyBootstrap.Apply(Logger);
 
-            if (_devActive && _analyzeEs2OnStartup.Value)
+            if (_analyzeEs2OnStartup.Value)
                 Es2SaveAnalyzer.TryWriteOfflineReport(Logger);
 
-            if (_devActive)
+            if (_fastContinue || _es2SkipActive || _bypassHostWait)
             {
                 Logger.LogInfo(
-                    "FastBoot DEV mode: direct GAME="
-                    + (_devDirectActive ? "on (experimental)" : "off")
-                    + ", fast Continue="
-                    + (!_devDirectActive ? "on" : "off")
+                    "FastBoot speed: fast Continue="
+                    + (_fastContinue ? "on" : "off")
+                    + ", host wait bypass="
+                    + (_bypassHostWait ? "on" : "off")
+                    + ", ES2 skip="
+                    + (_es2SkipActive ? "on" : "off")
                     + ", ES2 whitelist="
-                    + (_devActive && _devEs2Whitelist.Value ? "on" : "off")
+                    + (_es2WhitelistActive ? "on" : "off")
+                    + ", direct GAME="
+                    + (_devDirectActive ? "on (experimental)" : "off")
                     + ".");
             }
 
@@ -171,9 +184,11 @@ namespace WinterMP.FastBoot
             if (_skipConfigScreen.Value) parts.Add("skip config");
             if (_autoLoadSave.Value) parts.Add("auto-load save");
             if (_preloadGameAsync.Value) parts.Add("async GAME preload");
-            if (_devDirectActive) parts.Add("DEV direct GAME");
-            if (_devSkipTagsActive) parts.Add("DEV ES2 skip");
-            if (_devActive && _devEs2Whitelist.Value) parts.Add("DEV ES2 whitelist");
+            if (_devDirectActive) parts.Add("direct GAME (experimental)");
+            if (_es2SkipActive) parts.Add("ES2 skip");
+            if (_es2WhitelistActive) parts.Add("ES2 whitelist");
+            if (_bypassHostWait) parts.Add("host wait bypass");
+            if (_fastContinue) parts.Add("fast Continue");
             if (_skipMenuLoadWaits.Value) parts.Add("skip menu load waits");
             return parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none";
         }
@@ -225,7 +240,7 @@ namespace WinterMP.FastBoot
                     _logTimings.Value,
                     _continue.ClickedAt,
                     _forceGameLoadAfterSeconds.Value,
-                    _devActive);
+                    _fastContinue);
             }
         }
 
@@ -313,8 +328,8 @@ namespace WinterMP.FastBoot
 
             if (_mainMenuSeenAt < 0f) return;
 
-            float menuSettle = _devActive ? 0f : _menuSettleSeconds.Value;
-            float saveTimeout = _devActive ? 0f : _saveCheckTimeoutSeconds.Value;
+            float menuSettle = _fastContinue ? 0f : _menuSettleSeconds.Value;
+            float saveTimeout = _fastContinue ? 0f : _saveCheckTimeoutSeconds.Value;
 
             if (!MainMenuSaveCheck.IsSaveValid()
                 && now - _mainMenuSeenAt < menuSettle)

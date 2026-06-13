@@ -11,20 +11,45 @@ namespace WinterMP.FastBoot
     internal static class SessionGate
     {
         private static bool _resolved;
-        private static bool _devBypassHostWait;
+        private static bool _bypassHostContinueWait;
         private static Type? _sessionManagerType;
         private static PropertyInfo? _instanceProperty;
         private static PropertyInfo? _isHostProperty;
         private static PropertyInfo? _playerCountProperty;
         private static PropertyInfo? _stateProperty;
+        private static MethodInfo? _setBypassHostPlayerGate;
 
-        public static void Configure(bool devBypassHostWait)
+        public static void Configure(bool bypassHostContinueWait)
         {
-            _devBypassHostWait = devBypassHostWait;
+            _bypassHostContinueWait = bypassHostContinueWait;
+            ApplyBypassToCore(bypassHostContinueWait);
+        }
+
+        internal static bool HostWaitBypassed => _bypassHostContinueWait;
+
+        /// <summary>FastBoot bypass must unblock Core's main-menu gate too, not just auto-load timing.</summary>
+        private static void ApplyBypassToCore(bool bypass)
+        {
+            EnsureResolved();
+            if (_setBypassHostPlayerGate == null) return;
+
+            try
+            {
+                object? session = _instanceProperty?.GetValue(null, null);
+                if (session == null) return;
+                _setBypassHostPlayerGate.Invoke(session, new object[] { bypass });
+            }
+            catch
+            {
+                // Core not loaded yet — CanAutoLoadContinue will retry on first menu tick.
+            }
         }
 
         public static bool CanAutoLoadContinue()
         {
+            if (_bypassHostContinueWait)
+                ApplyBypassToCore(true);
+
             if (!TryGetSession(out object? session) || session == null)
                 return true;
 
@@ -36,7 +61,7 @@ namespace WinterMP.FastBoot
 
                 bool isHost = (bool)_isHostProperty!.GetValue(session, null)!;
                 int playerCount = (int)_playerCountProperty!.GetValue(session, null)!;
-                if (isHost && playerCount == 0 && !_devBypassHostWait)
+                if (isHost && playerCount == 0 && !_bypassHostContinueWait)
                     return false;
 
                 return true;
@@ -85,6 +110,9 @@ namespace WinterMP.FastBoot
                     "PlayerCount", BindingFlags.Public | BindingFlags.Instance);
                 _stateProperty = _sessionManagerType.GetProperty(
                     "State", BindingFlags.Public | BindingFlags.Instance);
+                _setBypassHostPlayerGate = _sessionManagerType.GetMethod(
+                    "SetBypassHostPlayerGate",
+                    BindingFlags.Public | BindingFlags.Instance);
                 return;
             }
         }

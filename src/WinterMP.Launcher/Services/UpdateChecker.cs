@@ -3,7 +3,6 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace WinterMP.Launcher.Services
@@ -62,16 +61,16 @@ namespace WinterMP.Launcher.Services
         private static readonly string[] PayloadAssetNames = { "OurWinterCar-payload.zip", "WinterMP-payload.zip" };
         private static readonly string[] SetupAssetNames = { "OurWinterCar-Setup.exe", "WinterMP-Setup.exe" };
 
-        public static async Task<UpdateCheckResult> CheckAsync(string? gameDir = null, string? githubToken = null)
+        public static async Task<UpdateCheckResult> CheckAsync(string? gameDir = null)
         {
             try
             {
-                var (doc, status) = await FetchReleaseJsonAsync(githubToken).ConfigureAwait(false);
+                var (doc, status) = await FetchReleaseJsonAsync().ConfigureAwait(false);
                 if (doc == null)
                 {
                     return new UpdateCheckResult
                     {
-                        ErrorMessage = DescribeApiFailure(status ?? HttpStatusCode.NotFound, githubToken),
+                        ErrorMessage = DescribeApiFailure(status ?? HttpStatusCode.NotFound),
                     };
                 }
 
@@ -149,9 +148,9 @@ namespace WinterMP.Launcher.Services
         }
 
         public static async Task<string> DownloadAndApplyPayloadAsync(
-            string downloadUrl, string gameDir, string? githubToken = null)
+            string downloadUrl, string gameDir)
         {
-            string zipPath = await DownloadAssetAsync(downloadUrl, FileNameFromUrl(downloadUrl, "payload.zip"), githubToken)
+            string zipPath = await DownloadAssetAsync(downloadUrl, FileNameFromUrl(downloadUrl, "payload.zip"))
                 .ConfigureAwait(false);
 
             string downloadDir = Path.GetDirectoryName(zipPath)!;
@@ -168,9 +167,9 @@ namespace WinterMP.Launcher.Services
             return BepInExInstaller.InstallOrRepair(gameDir);
         }
 
-        public static async Task<string> DownloadLauncherSetupAsync(string downloadUrl, string? githubToken = null)
+        public static async Task<string> DownloadLauncherSetupAsync(string downloadUrl)
         {
-            return await DownloadAssetAsync(downloadUrl, FileNameFromUrl(downloadUrl, "Setup.exe"), githubToken)
+            return await DownloadAssetAsync(downloadUrl, FileNameFromUrl(downloadUrl, "Setup.exe"))
                 .ConfigureAwait(false);
         }
 
@@ -230,8 +229,7 @@ namespace WinterMP.Launcher.Services
             return scriptPath;
         }
 
-        private static async Task<string> DownloadAssetAsync(
-            string downloadUrl, string fileName, string? githubToken)
+        private static async Task<string> DownloadAssetAsync(string downloadUrl, string fileName)
         {
             string downloadDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -239,7 +237,7 @@ namespace WinterMP.Launcher.Services
             Directory.CreateDirectory(downloadDir);
 
             string destPath = Path.Combine(downloadDir, fileName);
-            using var client = CreateClient(githubToken);
+            using var client = CreateClient();
             await using var stream = await client.GetStreamAsync(downloadUrl).ConfigureAwait(false);
             await using var file = File.Create(destPath);
             await stream.CopyToAsync(file).ConfigureAwait(false);
@@ -265,10 +263,9 @@ namespace WinterMP.Launcher.Services
             return null;
         }
 
-        private static async Task<(JsonDocument? Doc, HttpStatusCode? ErrorStatus)> FetchReleaseJsonAsync(
-            string? githubToken)
+        private static async Task<(JsonDocument? Doc, HttpStatusCode? ErrorStatus)> FetchReleaseJsonAsync()
         {
-            using var client = CreateClient(githubToken);
+            using var client = CreateClient();
             using var response = await client.GetAsync(ReleasesApi).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return (null, response.StatusCode);
@@ -277,36 +274,24 @@ namespace WinterMP.Launcher.Services
             return (JsonDocument.Parse(json), null);
         }
 
-        private static string DescribeApiFailure(HttpStatusCode status, string? githubToken)
+        private static string DescribeApiFailure(HttpStatusCode status)
         {
-            if (status == HttpStatusCode.NotFound && string.IsNullOrWhiteSpace(githubToken))
-            {
-                return "GitHub returned 404. The repo is private — open Settings and add a " +
-                       "GitHub token (read-only) or make the repo public.";
-            }
-
             if (status == HttpStatusCode.NotFound)
-                return "GitHub returned 404. Check your token or whether a release exists.";
+                return "No release found on GitHub.";
 
             if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden)
-                return "GitHub rejected the token. Check Settings → GitHub token.";
+                return "Could not access GitHub releases.";
 
             return $"GitHub API error ({(int)status}).";
         }
 
-        private static HttpClient CreateClient(string? githubToken)
+        private static HttpClient CreateClient()
         {
             var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("WinterMP-Launcher/0.1.1");
             client.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+                new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-
-            if (!string.IsNullOrWhiteSpace(githubToken))
-            {
-                client.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", githubToken.Trim());
-            }
 
             return client;
         }

@@ -6,13 +6,12 @@ using System.Text.RegularExpressions;
 namespace WinterMP.Launcher.Services
 {
     /// <summary>
-    /// Applies production-safe FastBoot settings before host/join launches.
+    /// Applies the launcher FastBoot speed profile before host/join launches.
     ///
-    /// Safe (enabled): splash/config skip, zero menu settle, async GAME preload,
-    /// loading-FSM nudge (boot scenes only), short splash grace.
+    /// Enabled: splash/config skip, fast Continue, ES2 whitelist hydrate, async GAME preload,
+    /// loading-FSM nudge, host Continue without waiting for a guest.
     ///
-    /// Unsafe (forced off): DevMode, ES2 tag skip/whitelist, direct GAME load,
-    /// forced LoadLevel fallback, ES2 save scan at startup — desync/crash risk in MP.
+    /// Excluded: direct GAME load (skips ES2 entirely — crashes), ES2 save scan at startup.
     /// </summary>
     public static class FastBootConfigSeed
     {
@@ -26,15 +25,16 @@ namespace WinterMP.Launcher.Services
             ("AutoLoadSave", "true"),
             ("SplashGraceSeconds", "0.3"),
             ("MenuSettleSeconds", "0"),
-            ("SaveCheckTimeoutSeconds", "0.5"),
+            ("SaveCheckTimeoutSeconds", "0"),
             ("ContinueStepDelaySeconds", "0"),
             ("SkipMenuLoadWaits", "true"),
-            ("ForceGameLoadAfterSeconds", "0"),
+            ("ForceGameLoadAfterSeconds", "90"),
             ("PreloadGameAsync", "true"),
-            ("DevMode", "false"),
+            ("DevMode", "true"),
+            ("BypassHostContinueWait", "true"),
             ("DevDirectGameLoad", "false"),
-            ("DevSkipEs2Tags", "false"),
-            ("DevEs2Whitelist", "false"),
+            ("DevSkipEs2Tags", "true"),
+            ("DevEs2Whitelist", "true"),
             ("DevSkipEs2ExtraPrefixes", string.Empty),
             ("LogTimings", "true"),
             ("AnalyzeEs2SaveOnStartup", "false"),
@@ -53,10 +53,10 @@ namespace WinterMP.Launcher.Services
             if (!string.Equals(before, after, StringComparison.Ordinal))
             {
                 File.WriteAllText(path, after, Encoding.UTF8);
-                return "Applied FastBoot production defaults (safe speed opts on, dev ES2 hacks off).";
+                return "Applied FastBoot speed profile (fast Continue + ES2 whitelist hydrate).";
             }
 
-            return "FastBoot production defaults already set.";
+            return "FastBoot speed profile already set.";
         }
 
         internal static string MergeBootKeys(string configText)
@@ -128,7 +128,7 @@ namespace WinterMP.Launcher.Services
         private static string BuildDefaultFile()
         {
             var sb = new StringBuilder();
-            sb.AppendLine("## FastBoot settings — production profile (managed by Our Winter Car launcher)");
+            sb.AppendLine("## FastBoot settings — speed profile (managed by Our Winter Car launcher)");
             sb.AppendLine("## Plugin GUID: com.ourwintercar.wintermp.fastboot");
             sb.AppendLine();
             sb.AppendLine("[Boot]");
