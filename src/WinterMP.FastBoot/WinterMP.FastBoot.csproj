@@ -8,7 +8,7 @@
     <Description>Boot accelerators for My Winter Car: skip splash, setup UI, auto-load save.</Description>
     <BepInExPluginGuid>com.ourwintercar.wintermp.fastboot</BepInExPluginGuid>
     <BepInExPluginName>WinterMP FastBoot</BepInExPluginName>
-    <Version>0.1.24</Version>
+    <Version>0.1.25</Version>
     <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
   </PropertyGroup>
 

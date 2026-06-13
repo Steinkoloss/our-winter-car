@@ -39,5 +39,16 @@ namespace WinterMP.Launcher.Services
             if (!TryParse(candidateText, out Version candidate)) return false;
             return IsNewerThan(candidate, baseline);
         }
+
+        public static bool VersionsMatch(string? a, string? b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
+                return false;
+
+            if (!TryParse(a, out Version va) || !TryParse(b, out Version vb))
+                return string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+            return Normalize(va).CompareTo(Normalize(vb)) == 0;
+        }
     }
 }

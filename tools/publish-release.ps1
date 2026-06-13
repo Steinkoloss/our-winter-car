@@ -41,56 +41,103 @@ function New-ReleaseZip([string]$SourceDir, [string]$ZipPath) {
     Compress-Archive -Path (Join-Path $SourceDir "*") -DestinationPath $ZipPath
 }
 
+function Read-ProjectVersion([string]$ProjectFile) {
+    if (-not (Test-Path $ProjectFile)) { return $null }
+    $match = [regex]::Match((Get-Content $ProjectFile -Raw), '<Version>([^<]+)</Version>')
+    if (-not $match.Success) { return $null }
+    return $match.Groups[1].Value.Trim()
+}
+
 function Sync-CompatManifest {
     $protocolFile = Join-Path $root "src\WinterMP.Net\Protocol.cs"
+    $coreProj = Join-Path $root "src\WinterMP.Core\WinterMP.Core.csproj"
     $compatFile = Join-Path $root "src\WinterMP.Launcher\Assets\wintermp-compat.json"
-    if (-not (Test-Path $protocolFile) -or -not (Test-Path $compatFile)) { return }
+    if (-not (Test-Path $compatFile)) { return }
 
-    $match = [regex]::Match((Get-Content $protocolFile -Raw), 'Version\s*=\s*(\d+)')
-    if (-not $match.Success) { return }
-
-    $protocol = [int]$match.Groups[1].Value
     $compat = Get-Content $compatFile -Raw | ConvertFrom-Json
-    if ([int]$compat.protocolVersion -ne $protocol) {
-        $compat.protocolVersion = $protocol
+    $changed = $false
+
+    $modVersion = Read-ProjectVersion $coreProj
+    if ($modVersion -and $compat.modVersion -ne $modVersion) {
+        $compat.modVersion = $modVersion
+        $changed = $true
+        Write-Host "Synced wintermp-compat.json modVersion -> $modVersion"
+    }
+
+    if (Test-Path $protocolFile) {
+        $match = [regex]::Match((Get-Content $protocolFile -Raw), 'Version\s*=\s*(\d+)')
+        if ($match.Success) {
+            $protocol = [int]$match.Groups[1].Value
+            if ([int]$compat.protocolVersion -ne $protocol) {
+                $compat.protocolVersion = $protocol
+                $changed = $true
+                Write-Host "Synced wintermp-compat.json protocolVersion -> $protocol"
+            }
+        }
+    }
+
+    if ($changed) {
         $compat | ConvertTo-Json -Depth 4 | Set-Content $compatFile -Encoding utf8
-        Write-Host "Synced wintermp-compat.json protocolVersion -> $protocol"
     }
 }
 
-function Invoke-ParallelModBuilds {
+function Normalize-VersionText([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    try {
+        $v = [Version]$Text.Trim()
+        return "$($v.Major).$($v.Minor).$([Math]::Max($v.Build, 0))"
+    }
+    catch {
+        return $Text.Trim()
+    }
+}
+
+function Assert-ReleasePayload {
+    param([string]$PublishDir)
+
+    $payloadDir = Join-Path $PublishDir "payload"
+    $coreDll = Join-Path $payloadDir "WinterMP.Core.dll"
+    $compatPath = Join-Path $payloadDir "wintermp-compat.json"
+
+    if (-not (Test-Path $coreDll)) {
+        throw "Release payload missing WinterMP.Core.dll (mod build did not run?)"
+    }
+    if (-not (Test-Path $compatPath)) {
+        throw "Release payload missing wintermp-compat.json"
+    }
+
+    $dllVersion = (Get-Item $coreDll).VersionInfo.FileVersion
+    $compat = Get-Content $compatPath -Raw | ConvertFrom-Json
+    $manifestVersion = [string]$compat.modVersion
+
+    $dllNorm = Normalize-VersionText $dllVersion
+    $manifestNorm = Normalize-VersionText $manifestVersion
+    if ($dllNorm -ne $manifestNorm) {
+        throw "Payload version mismatch: WinterMP.Core.dll is v$dllVersion but wintermp-compat.json says v$manifestVersion. " +
+              "This usually means an incremental build skipped recompiling after a version bump; rebuild with -t:Rebuild."
+    }
+
+    Write-Host "Payload OK: Core.dll v$dllVersion matches manifest v$manifestVersion"
+}
+
+function Invoke-ModBuilds {
     param([string[]]$DotnetArgs)
 
     $coreProj = Join-Path $root "src\WinterMP.Core\WinterMP.Core.csproj"
     $fastBootProj = Join-Path $root "src\WinterMP.FastBoot\WinterMP.FastBoot.csproj"
 
-    $buildBlock = {
-        param($WorkRoot, $Project, [string[]]$Args)
-        Set-Location $WorkRoot
-        & dotnet build $Project @Args
-        if ($LASTEXITCODE -ne 0) { throw "dotnet build failed: $Project" }
-    }
-
-    $coreJob = Start-Job -ScriptBlock $buildBlock -ArgumentList $root, $coreProj, $DotnetArgs
-    $fbJob = Start-Job -ScriptBlock $buildBlock -ArgumentList $root, $fastBootProj, $DotnetArgs
-    Wait-Job $coreJob, $fbJob | Out-Null
-
-    try {
-        Receive-Job $coreJob, $fbJob -ErrorAction Stop | Out-Null
-    }
-    catch {
-        Receive-Job $coreJob, $fbJob -ErrorAction SilentlyContinue | Write-Host
-        throw
-    }
-    finally {
-        Remove-Job $coreJob, $fbJob -Force -ErrorAction SilentlyContinue
-    }
+    # Run in-process so Directory.Build.props.user (MwcGamePath) is always picked up.
+    dotnet build $coreProj @DotnetArgs
+    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed: $coreProj" }
+    dotnet build $fastBootProj @DotnetArgs
+    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed: $fastBootProj" }
 }
 
 Sync-CompatManifest
 & (Join-Path $PSScriptRoot "fetch-vendor.ps1")
 
-$dotnetArgs = @('-c', 'Release', '-p:DeployToGame=false', '-v', 'q', '/clp:ErrorsOnly')
+# Version-only bumps do not invalidate incremental builds; always rebuild mod DLLs for release.
+$dotnetArgs = @('-c', 'Release', '-p:DeployToGame=false', '-v', 'q', '/clp:ErrorsOnly', '-t:Rebuild')
 if ($SkipRestore) { $dotnetArgs += '--no-restore' }
 
 if (-not $SkipRestore) {
@@ -100,8 +147,8 @@ if (-not $SkipRestore) {
     $dotnetArgs += '--no-restore'
 }
 
-Invoke-TimedStep "mod builds (parallel)" {
-    Invoke-ParallelModBuilds -DotnetArgs $dotnetArgs
+Invoke-TimedStep "mod builds" {
+    Invoke-ModBuilds -DotnetArgs $dotnetArgs
 }
 
 $launcherProj = Join-Path $root "src\WinterMP.Launcher\WinterMP.Launcher.csproj"
@@ -111,6 +158,10 @@ Invoke-TimedStep "launcher publish" {
     dotnet publish $launcherProj -c Release -r win-x64 --self-contained true `
         -p:PublishSingleFile=false -p:DeployToGame=false -v q /clp:ErrorsOnly `
         --no-restore -o $publishDir
+}
+
+Invoke-TimedStep "payload verify" {
+    Assert-ReleasePayload -PublishDir $publishDir
 }
 
 $dist = Join-Path $root "dist"

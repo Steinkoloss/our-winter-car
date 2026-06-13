@@ -45,7 +45,7 @@ namespace WinterMP.Launcher.Services
             string? dllVersion = ReadCoreDllFileVersion();
             if (dllVersion != null
                 && !string.IsNullOrWhiteSpace(ModVersion)
-                && !string.Equals(dllVersion, ModVersion, StringComparison.OrdinalIgnoreCase))
+                && !ModVersionHelper.VersionsMatch(dllVersion, ModVersion))
             {
                 return $"Payload Core.dll is v{dllVersion} but manifest says v{ModVersion}. Reinstall {Branding.ProductName}.";
             }

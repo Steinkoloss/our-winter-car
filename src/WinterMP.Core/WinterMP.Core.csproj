@@ -10,7 +10,7 @@
     <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
     <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>
     <BepInExPluginName>Our Winter Car</BepInExPluginName>
-    <Version>0.1.24</Version>
+    <Version>0.1.25</Version>
     <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
   </PropertyGroup>
 
