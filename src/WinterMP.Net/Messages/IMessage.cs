@@ -21,6 +21,8 @@ namespace WinterMP.Net.Messages
         PlayerDespawn = 21,
         PlayerTransform = 22,
         PassengerState = 23,
+        /// <summary>Host -> joining guest: feet position + yaw after join snapshot.</summary>
+        GuestSpawn = 24,
 
         // 40-59: world events (doors, switches, pickables) — M3
         FsmStateEnter = 40,

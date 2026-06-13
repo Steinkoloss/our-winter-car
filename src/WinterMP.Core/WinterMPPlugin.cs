@@ -50,7 +50,9 @@ namespace WinterMP.Core
             Util.BootTrace.Crumb("Awake step 6: adding SessionManager");
             var session = root.AddComponent<SessionManager>();
             root.AddComponent<UI.MainMenuHostGate>();
+            root.AddComponent<UI.MainMenuJoinBrowser>();
             root.AddComponent<Sync.PlayerSyncManager>();
+            root.AddComponent<UI.GuestSpawnPrompt>();
             var worldSync = root.AddComponent<Sync.WorldSyncManager>();
             worldSync.Configure(launch);
             root.AddComponent<Sync.PassengerController>();

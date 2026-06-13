@@ -21,7 +21,9 @@ namespace WinterMP.Net
         // v17: periodic world-state checksums + guest soft-resync requests.
         // v18: checksums gain item + vehicle CRCs; soft resync covers item/vehicle groups.
         // v19: per-object state requests + ownership-transfer pause on bad links (client-side).
-        public const ushort Version = 19;
+        // v20: GuestSpawn (24) — host tells joiners where to place PLAYER after snapshot.
+        // v21: GuestSpawn carries host + last saved pose; guest picks locally.
+        public const ushort Version = 21;
     }
 
     /// <summary>

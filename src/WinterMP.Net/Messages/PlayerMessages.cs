@@ -79,6 +79,43 @@ namespace WinterMP.Net.Messages
     }
 
     /// <summary>
+    /// Host -> guest after the join snapshot: host pose plus optional last saved pose.
+    /// Guest picks locally in-game (GuestSpawnPrompt).
+    /// </summary>
+    public sealed class GuestSpawn : IMessage
+    {
+        public const byte FlagHasLastPosition = 1;
+
+        public NetVector3 HostPosition;
+        public NetQuaternion HostRotation = NetQuaternion.Identity;
+        public NetVector3 LastPosition;
+        public NetQuaternion LastRotation = NetQuaternion.Identity;
+        public byte Flags;
+
+        public bool HasLastPosition => (Flags & FlagHasLastPosition) != 0;
+
+        public MessageId Id => MessageId.GuestSpawn;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteVector3(HostPosition);
+            writer.WriteQuaternion(HostRotation);
+            writer.WriteVector3(LastPosition);
+            writer.WriteQuaternion(LastRotation);
+            writer.WriteByte(Flags);
+        }
+
+        public void Read(NetReader reader)
+        {
+            HostPosition = reader.ReadVector3();
+            HostRotation = reader.ReadQuaternion();
+            LastPosition = reader.ReadVector3();
+            LastRotation = reader.ReadQuaternion();
+            Flags = reader.ReadByte();
+        }
+    }
+
+    /// <summary>
     /// A player sat down in (or left) a passenger seat of a synced vehicle.
     /// Broadcast on enter/exit and re-sent every few seconds while seated so late
     /// joiners learn current occupancy. Receivers anchor that player's avatar to

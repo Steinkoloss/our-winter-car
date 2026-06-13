@@ -37,7 +37,8 @@ namespace WinterMP.FastBoot
             if (_finished) return false;
 
             if (!ResolveContinueFsm()) return false;
-            if (_button == null || !_button.activeSelf) return false;
+            if (_button == null) return false;
+            if (!_button.activeSelf && !SessionGate.HostWaitBypassed) return false;
             if (_fsm == null) return false;
 
             if (!_clicked)
@@ -78,7 +79,11 @@ namespace WinterMP.FastBoot
                 _button = GameObject.Find(ContinuePath);
             if (_button == null) return false;
 
-            foreach (var component in _button.GetComponents<PlayMakerFSM>())
+            var fsms = _button.GetComponents<PlayMakerFSM>();
+            if (fsms == null || fsms.Length == 0)
+                fsms = _button.GetComponentsInChildren<PlayMakerFSM>(true);
+
+            foreach (var component in fsms)
             {
                 if (component.FsmName != SetSizeFsm) continue;
                 _fsm = component;

@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace WinterMP.Launcher.Services
@@ -55,6 +56,9 @@ namespace WinterMP.Launcher.Services
     /// <summary>Checks GitHub releases and downloads mod payload or launcher setup updates.</summary>
     public static class UpdateChecker
     {
+        /// <summary>Background poll interval. GitHub allows 60 unauthenticated API calls/hour (~40 at 90s).</summary>
+        public static readonly TimeSpan BackgroundCheckInterval = TimeSpan.FromSeconds(90);
+
         private const string ReleasesApi =
             "https://api.github.com/repos/Steinkoloss/our-winter-car/releases/latest";
 
@@ -65,12 +69,12 @@ namespace WinterMP.Launcher.Services
         {
             try
             {
-                var (doc, status) = await FetchReleaseJsonAsync().ConfigureAwait(false);
+                var (doc, status, errorBody) = await FetchReleaseJsonAsync().ConfigureAwait(false);
                 if (doc == null)
                 {
                     return new UpdateCheckResult
                     {
-                        ErrorMessage = DescribeApiFailure(status ?? HttpStatusCode.NotFound),
+                        ErrorMessage = DescribeApiFailure(status ?? HttpStatusCode.NotFound, errorBody),
                     };
                 }
 
@@ -147,8 +151,7 @@ namespace WinterMP.Launcher.Services
             }
         }
 
-        public static async Task<string> DownloadAndApplyPayloadAsync(
-            string downloadUrl, string gameDir)
+        public static async Task<string> DownloadAndApplyPayloadAsync(string downloadUrl, string gameDir)
         {
             string zipPath = await DownloadAssetAsync(downloadUrl, FileNameFromUrl(downloadUrl, "payload.zip"))
                 .ConfigureAwait(false);
@@ -263,23 +266,33 @@ namespace WinterMP.Launcher.Services
             return null;
         }
 
-        private static async Task<(JsonDocument? Doc, HttpStatusCode? ErrorStatus)> FetchReleaseJsonAsync()
+        private static async Task<(JsonDocument? Doc, HttpStatusCode? ErrorStatus, string? ErrorBody)> FetchReleaseJsonAsync()
         {
             using var client = CreateClient();
             using var response = await client.GetAsync(ReleasesApi).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                return (null, response.StatusCode);
+            {
+                string errorBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return (null, response.StatusCode, errorBody);
+            }
 
             string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            return (JsonDocument.Parse(json), null);
+            return (JsonDocument.Parse(json), null, null);
         }
 
-        private static string DescribeApiFailure(HttpStatusCode status)
+        private static string DescribeApiFailure(HttpStatusCode status, string? errorBody)
         {
+            if (status == HttpStatusCode.Forbidden
+                && errorBody != null
+                && errorBody.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "GitHub API rate limit reached (too many checks). Try again in about an hour.";
+            }
+
             if (status == HttpStatusCode.NotFound)
                 return "No release found on GitHub.";
 
-            if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden)
+            if (status == HttpStatusCode.Forbidden || status == HttpStatusCode.Unauthorized)
                 return "Could not access GitHub releases.";
 
             return $"GitHub API error ({(int)status}).";
@@ -288,11 +301,10 @@ namespace WinterMP.Launcher.Services
         private static HttpClient CreateClient()
         {
             var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("WinterMP-Launcher/0.1.1");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("OurWinterCar-Launcher/" + ModPayload.LauncherVersion);
             client.DefaultRequestHeaders.Accept.Add(
-                new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+                new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-
             return client;
         }
 

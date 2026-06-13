@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
+using WinterMP.Net;
 using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.Sync
@@ -20,6 +21,8 @@ namespace WinterMP.Core.Sync
         /// <summary>Avatar is hidden when no snapshot arrived for this long (e.g. peer in a menu).</summary>
         private const float StaleAfterSeconds = 5f;
 
+        public static PlayerSyncManager? Instance { get; private set; }
+
         /// <summary>The game's player root object in the GAME scene (verified in catalog dumps).</summary>
         private const string PlayerObjectName = "PLAYER";
 
@@ -35,6 +38,31 @@ namespace WinterMP.Core.Sync
         private ushort _sequence;
         private string _lastLevel = string.Empty;
         private bool _playerSyncDisabled;
+        private readonly GuestSpawnRelocator _guestRelocator = new GuestSpawnRelocator();
+
+        internal GuestSpawnRelocator GuestRelocator => _guestRelocator;
+
+        private void Awake()
+        {
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
+        public void OnGuestSpawn(GuestSpawn message)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || session.IsHost) return;
+
+            var prompt = UI.GuestSpawnPrompt.Instance;
+            if (prompt != null)
+                prompt.ShowOffer(message);
+            else if (!message.HasLastPosition)
+                _guestRelocator.ApplyImmediate(message.HostPosition, message.HostRotation);
+        }
 
         private void Update()
         {
@@ -64,6 +92,8 @@ namespace WinterMP.Core.Sync
             }
 
             WatchLevelChanges();
+            if (_guestRelocator.HasPending)
+                _guestRelocator.TryApply();
             SendLocalTransform(session);
             UpdateAvatars(session);
         }

@@ -304,6 +304,12 @@ namespace WinterMP.Core.Sync
                 VehicleId = vehicleId,
                 SeatIndex = seat,
             }, Channel.ReliableOrdered);
+            session.RecordPassengerState(new PassengerState
+            {
+                PlayerId = session.LocalPlayerId,
+                VehicleId = vehicleId,
+                SeatIndex = seat,
+            });
         }
 
         // ------------------------------------------------------------------ remote occupancy

@@ -7,6 +7,8 @@ namespace WinterMP.Core
         None,
         Host,
         Join,
+        /// <summary>Launcher "Join Game" — browse Steam friends in MWC on the main menu.</summary>
+        JoinBrowse,
         /// <summary>Host a localhost UDP session (two-instance test mode, no Steam).</summary>
         HostLocal,
         /// <summary>Join a localhost UDP session (two-instance test mode, no Steam).</summary>
@@ -15,7 +17,8 @@ namespace WinterMP.Core
 
     /// <summary>
     /// Parsed command line. Entry paths:
-    ///  - the launcher passes "-wintermp host" (or "-wintermp join &lt;lobbyId&gt;"),
+    ///  - the launcher passes "-wintermp host", "-wintermp join" (browse friends), or
+    ///    "-wintermp join &lt;lobbyId&gt;",
     ///  - Steam's "Join Game"/invite flow launches the game with "+connect_lobby &lt;lobbyId&gt;"
     ///    (driven by the rich presence "connect" key the host sets),
     ///  - the local two-instance test uses "-wintermp hostlocal [port]" and
@@ -86,11 +89,16 @@ namespace WinterMP.Core
                         break;
 
                     case "join":
-                        if (options.Mode == LaunchMode.None
-                            && i + 2 < args.Length && ulong.TryParse(args[i + 2], out ulong lobbyId))
+                        if (options.Mode != LaunchMode.None) break;
+
+                        if (i + 2 < args.Length && ulong.TryParse(args[i + 2], out ulong lobbyId))
                         {
                             options.Mode = LaunchMode.Join;
                             options.LobbyId = lobbyId;
+                        }
+                        else
+                        {
+                            options.Mode = LaunchMode.JoinBrowse;
                         }
                         break;
 

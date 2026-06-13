@@ -8,6 +8,6 @@ namespace WinterMP.Launcher.Services
         public string ModStatus { get; init; } = "—";
         public string BackupStatus { get; init; } = "—";
         public string BuildStatus { get; init; } = "—";
-        public string UpdateStatus { get; init; } = "Not checked yet";
+        public string UpdateStatus { get; init; } = "Checking…";
     }
 }

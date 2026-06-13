@@ -290,6 +290,23 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
+        public void GuestSpawn_RoundTrips()
+        {
+            var original = new GuestSpawn
+            {
+                HostPosition = new NetVector3(1f, 2f, 3f),
+                HostRotation = NetQuaternion.Identity,
+                LastPosition = new NetVector3(10f, 0.1f, -8f),
+                LastRotation = new NetQuaternion(0f, 0.707f, 0f, 0.707f),
+                Flags = GuestSpawn.FlagHasLastPosition,
+            };
+            var decoded = Assert.IsType<GuestSpawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.HostPosition.X, decoded.HostPosition.X, 3);
+            Assert.Equal(original.LastPosition.Z, decoded.LastPosition.Z, 3);
+            Assert.True(decoded.HasLastPosition);
+        }
+
+        [Fact]
         public void PassengerState_RoundTrips()
         {
             var original = new PassengerState { PlayerId = 3, VehicleId = 0xCAFEBABE, SeatIndex = 2 };

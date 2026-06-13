@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using WinterMP.Core;
 using WinterMP.Core.Catalog;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
@@ -47,6 +48,8 @@ namespace WinterMP.Core.Session
         private uint _pingNonce;
         private readonly Dictionary<uint, float> _pendingPings = new Dictionary<uint, float>();
 
+        private readonly Dictionary<byte, PassengerState> _passengerOccupancy = new Dictionary<byte, PassengerState>();
+
         public IEnumerable<RemotePlayer> Players => _playersByPeer.Values;
         public int PlayerCount => _playersByPeer.Count;
         public IList<string> ChatLog => _chatLog;
@@ -62,6 +65,13 @@ namespace WinterMP.Core.Session
         private ulong _pendingLobbyId;
         private bool _steamCallbacksRegistered;
         private bool _bypassHostPlayerGate;
+        private bool _joinBrowseActive;
+
+        /// <summary>Launcher join path — show friend picker on the main menu.</summary>
+        public bool ShowJoinBrowseUI =>
+            _joinBrowseActive
+            && !IsHost
+            && State == SessionState.Idle;
 
         /// <summary>Steam host on the main menu with no guests — load/resume is blocked.</summary>
         public bool ShouldBlockHostMainMenuLoad =>
@@ -78,6 +88,23 @@ namespace WinterMP.Core.Session
 
         /// <summary>Alias kept for world-sync auto-load gating.</summary>
         public bool IsHostWaitingForPlayers => ShouldBlockHostMainMenuLoad;
+
+        /// <summary>Called by FastBoot when BypassHostContinueWait is enabled.</summary>
+        public void SetBypassHostPlayerGate(bool bypass)
+        {
+            _bypassHostPlayerGate = bypass;
+        }
+
+        /// <summary>Host tracks seat occupancy so join snapshots can replay it immediately.</summary>
+        public void RecordPassengerState(PassengerState state)
+        {
+            if (!IsHost) return;
+
+            if (state.IsSeated)
+                _passengerOccupancy[state.PlayerId] = state;
+            else
+                _passengerOccupancy.Remove(state.PlayerId);
+        }
 
         private float _failedAt = -1f;
         private const float FailedRecoverySeconds = 45f;
@@ -103,9 +130,10 @@ namespace WinterMP.Core.Session
             // We act once the main menu is up (or after a timeout as a fallback).
             _pendingMode = launch.Mode;
             _pendingLobbyId = launch.LobbyId;
+            _joinBrowseActive = launch.Mode == LaunchMode.JoinBrowse;
 
             if (_pendingMode != LaunchMode.None)
-                SetState(SessionState.Idle, $"Waiting for game to boot before '{_pendingMode}'...");
+                SetState(SessionState.Idle, PendingLaunchStatus(launch.Mode));
 
             Util.BootTrace.Crumb("SessionManager.Initialize: done");
         }
@@ -156,12 +184,26 @@ namespace WinterMP.Core.Session
                 case LaunchMode.Join:
                     StartJoin(_pendingLobbyId);
                     break;
+                case LaunchMode.JoinBrowse:
+                    SetState(SessionState.Idle, "Pick a friend to join");
+                    break;
                 case LaunchMode.HostLocal:
                     StartHostLocal(_launch.LocalPort);
                     break;
                 case LaunchMode.JoinLocal:
                     StartJoinLocal(_launch.LocalAddress, _launch.LocalPort);
                     break;
+            }
+        }
+
+        private static string PendingLaunchStatus(LaunchMode mode)
+        {
+            switch (mode)
+            {
+                case LaunchMode.JoinBrowse:
+                    return "Waiting for main menu — pick a friend to join";
+                default:
+                    return "Waiting for game to boot before '" + mode + "'...";
             }
         }
 
@@ -258,6 +300,8 @@ namespace WinterMP.Core.Session
                 WinterMPPlugin.Log.LogWarning($"StartJoin ignored: session state is {State}.");
                 return;
             }
+
+            _joinBrowseActive = false;
 
 #if STEAMWORKS
             try
@@ -363,6 +407,7 @@ namespace WinterMP.Core.Session
             _steamOpStartedAt = -1f;
             _bypassHostPlayerGate = false;
             IsHost = false;
+            _joinBrowseActive = false;
             ConnectionQuality.Instance.Reset();
             SetState(SessionState.Idle, "Idle");
         }
@@ -518,7 +563,17 @@ namespace WinterMP.Core.Session
         {
             if (_playersByPeer.TryGetValue(peer, out var player))
             {
+                if (IsHost && player.SteamId != 0 && player.LastTransformTime > 0f)
+                {
+                    GuestProfileStore.Remember(
+                        player.SteamId,
+                        player.Position.ToNet(),
+                        player.Rotation.ToNet());
+                }
+
                 _playersByPeer.Remove(peer);
+                if (IsHost)
+                    _passengerOccupancy.Remove(player.PlayerId);
                 AddChatLine($"* {player.Name} left ({reason})");
                 PlayerLeft?.Invoke(player);
 
@@ -610,9 +665,14 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PassengerState passengerState:
+                    RecordPassengerState(passengerState);
                     Sync.PassengerController.Instance?.OnRemotePassengerState(passengerState);
                     if (IsHost)
                         Broadcast(passengerState, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case GuestSpawn guestSpawn when !IsHost:
+                    Sync.PlayerSyncManager.Instance?.OnGuestSpawn(guestSpawn);
                     break;
 
                 case FsmStateEnter stateEnter:
@@ -824,7 +884,54 @@ namespace WinterMP.Core.Session
                 messages++;
             }
 
+            foreach (var occupancy in _passengerOccupancy.Values)
+            {
+                SendTo(peer, occupancy, Channel.ReliableOrdered);
+                messages++;
+            }
+
+            if (_playersByPeer.TryGetValue(peer, out var joining))
+            {
+                SendTo(peer, BuildGuestSpawn(joining), Channel.ReliableOrdered);
+                messages++;
+            }
+
             WinterMPPlugin.Log.LogInfo($"Sent world snapshot to {peer} ({messages} messages).");
+        }
+
+        private static GuestSpawn BuildGuestSpawn(RemotePlayer guest)
+        {
+            var offer = new GuestSpawn();
+
+            if (TryReadHostFeet(out Vector3 hostFeet, out Quaternion hostRot))
+            {
+                offer.HostPosition = hostFeet.ToNet();
+                offer.HostRotation = hostRot.ToNet();
+            }
+
+            if (GuestProfileStore.TryGet(guest.SteamId, out NetVector3 lastPos, out NetQuaternion lastRot))
+            {
+                offer.LastPosition = lastPos;
+                offer.LastRotation = lastRot;
+                offer.Flags |= GuestSpawn.FlagHasLastPosition;
+            }
+
+            return offer;
+        }
+
+        private static bool TryReadHostFeet(out Vector3 feet, out Quaternion lookRotation)
+        {
+            feet = Vector3.zero;
+            lookRotation = Quaternion.identity;
+
+            var playerObject = GameObject.Find("PLAYER");
+            if (playerObject == null) return false;
+
+            var player = playerObject.transform;
+            var controller = playerObject.GetComponent<CharacterController>();
+            feet = Sync.PlayerPoseReader.ReadFeetPosition(player, controller);
+            lookRotation = Sync.PlayerPoseReader.ReadLookRotation(player);
+            return true;
         }
 
         private void HandleResyncRequest(PeerId peer, WorldResyncRequest request)
@@ -915,6 +1022,9 @@ namespace WinterMP.Core.Session
                 player.Rotation = transform.Rotation.ToUnity();
                 player.MoveState = transform.MoveState;
                 player.LastTransformTime = Time.unscaledTime;
+
+                if (IsHost && player.SteamId != 0)
+                    GuestProfileStore.Remember(player.SteamId, transform.Position, transform.Rotation);
                 break;
             }
 

@@ -25,8 +25,7 @@ If the game moved, update the folder path — install/repair runs automatically.
 2. Click **HOST GAME**.
    - Your save is backed up automatically before launch.
    - The game starts through Steam with a friends-only lobby.
-3. Wait on the main menu until a friend joins via Steam **Join Game**. You cannot
-   load your save until someone is in the lobby.
+3. The game loads automatically (FastBoot). Friends can join via Steam **Join Game** while you play or from the lobby.
 
 **Important:** Only the host should save the game. Guests must **never** save.
 
@@ -43,12 +42,11 @@ directly if you want to play alone.
 
 ## Updates
 
-The launcher checks GitHub on startup and shows a banner when a newer release
-is available.
+The launcher checks GitHub on startup, then every ~90 seconds, and shows a banner when a
+newer release is available.
 
 - **Update mod** — downloads the payload zip and installs into your game.
 - **Update launcher** — downloads and runs the setup exe (launcher closes).
-- **Check** (in the Info section) — manual update check anytime.
 
 ## Save backups
 

@@ -19,10 +19,7 @@ namespace WinterMP.Launcher
         private readonly DispatcherTimer _updateTimer;
         private bool _updateCheckInProgress;
         private InfoWindow? _openInfoWindow;
-        private string _updateStatusText = "Not checked yet";
-
-        internal UpdateCheckResult? PendingUpdate => _pendingUpdate;
-        internal bool IsUpdateBusy => _updateBusy;
+        private string _updateStatusText = "Checking…";
 
         public MainWindow()
         {
@@ -39,7 +36,7 @@ namespace WinterMP.Launcher
                 TryAutoInstallIfNeeded();
             };
 
-            _updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            _updateTimer = new DispatcherTimer { Interval = UpdateChecker.BackgroundCheckInterval };
             _updateTimer.Tick += async (_, _) => await RunPeriodicUpdateCheckAsync();
 
             RefreshStatus();
@@ -50,7 +47,7 @@ namespace WinterMP.Launcher
                 _statusTimer.Start();
                 _updateTimer.Start();
                 TryAutoInstallIfNeeded();
-                await CheckForUpdatesAsync(showUpToDate: false);
+                await CheckForUpdatesAsync();
                 if (_pendingUpdate?.AnyUpdateAvailable == true)
                     await PromptForUpdateAsync(required: false);
             };
@@ -88,10 +85,17 @@ namespace WinterMP.Launcher
         private async Task RunPeriodicUpdateCheckAsync()
         {
             if (_updateCheckInProgress || _updateBusy) return;
-            await CheckForUpdatesAsync(showUpToDate: false, quiet: true);
+            if (!ShouldRunBackgroundUpdateCheck()) return;
+            await CheckForUpdatesAsync(quiet: true);
         }
 
-        internal async Task CheckForUpdatesAsync(bool showUpToDate, bool quiet = false)
+        private bool ShouldRunBackgroundUpdateCheck()
+        {
+            if (!_settings.LastUpdateCheckUtc.HasValue) return true;
+            return DateTime.UtcNow - _settings.LastUpdateCheckUtc.Value >= UpdateChecker.BackgroundCheckInterval;
+        }
+
+        internal async Task CheckForUpdatesAsync(bool quiet = false)
         {
             if (_updateCheckInProgress) return;
             _updateCheckInProgress = true;
@@ -122,22 +126,12 @@ namespace WinterMP.Launcher
                     if (!quiet || !hadUpdate)
                         AppendLog($"Update available: {result.StatusSummary} ({result.ReleaseUrl})");
                     RefreshOpenInfoWindow();
-                    if (showUpToDate)
-                        await PromptForUpdateAsync(required: false);
                     return;
                 }
 
                 _updateStatusText = $"Up to date ({result.Tag})";
                 if (!quiet)
                     AppendLog($"Up to date ({result.Tag}).");
-                if (showUpToDate)
-                {
-                    MessageBox.Show(this,
-                        $"{Branding.ProductName} is up to date ({result.Tag}).",
-                        "No updates",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
             }
             catch (Exception ex)
             {
@@ -246,7 +240,7 @@ namespace WinterMP.Launcher
 
         private void RefreshOpenInfoWindow()
         {
-            _openInfoWindow?.ApplySnapshot(BuildInfoSnapshot(), _pendingUpdate);
+            _openInfoWindow?.ApplySnapshot(BuildInfoSnapshot());
         }
 
         private string BuildUpdatePromptMessage(bool required)
@@ -359,8 +353,8 @@ namespace WinterMP.Launcher
 
         private void InfoButton_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new InfoWindow(this) { Owner = this };
-            dialog.ApplySnapshot(BuildInfoSnapshot(), _pendingUpdate);
+            var dialog = new InfoWindow { Owner = this };
+            dialog.ApplySnapshot(BuildInfoSnapshot());
             _openInfoWindow = dialog;
             dialog.Closed += (_, _) => _openInfoWindow = null;
             dialog.ShowDialog();
@@ -548,10 +542,26 @@ namespace WinterMP.Launcher
 
             try
             {
-                string? backup = SaveBackupService.CreateBackup();
-                AppendLog(backup != null ? $"Save backed up: {backup}" : "No save yet — hosting without backup.");
                 LaunchGame("-wintermp host");
-                AppendLog("Launching as HOST.");
+                AppendLog("Launching as HOST (save backup in background)…");
+
+                _ = Task.Run(() => SaveBackupService.CreateBackup())
+                    .ContinueWith(t =>
+                    {
+                        Dispatcher.BeginInvoke(() =>
+                        {
+                            if (t.IsFaulted)
+                            {
+                                AppendLog($"Save backup failed: {t.Exception?.GetBaseException().Message}");
+                                return;
+                            }
+
+                            string? backup = t.Result;
+                            AppendLog(backup != null
+                                ? $"Save backed up: {backup}"
+                                : "No save yet — hosting without backup.");
+                        });
+                    }, TaskScheduler.Default);
             }
             catch (Exception ex)
             {
@@ -567,7 +577,7 @@ namespace WinterMP.Launcher
 
             try
             {
-                LaunchGame(string.Empty);
+                LaunchGame("-wintermp join");
                 AppendLog("Launching to join via Steam (not hosting).");
             }
             catch (Exception ex)

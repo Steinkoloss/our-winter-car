@@ -18,6 +18,7 @@ namespace WinterMP.Net.Messages
                 { MessageId.PlayerDespawn, () => new PlayerDespawn() },
                 { MessageId.PlayerTransform, () => new PlayerTransform() },
                 { MessageId.PassengerState, () => new PassengerState() },
+                { MessageId.GuestSpawn, () => new GuestSpawn() },
                 { MessageId.FsmStateEnter, () => new FsmStateEnter() },
                 { MessageId.FsmRawEvent, () => new FsmRawEvent() },
                 { MessageId.ItemTransform, () => new ItemTransform() },
