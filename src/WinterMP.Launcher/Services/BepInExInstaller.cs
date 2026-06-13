@@ -38,7 +38,26 @@ namespace WinterMP.Launcher.Services
 
         public static string? GetInstalledModVersion(string gameDir)
         {
-            string dll = Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP", "WinterMP.Core.dll");
+            string modDir = Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP");
+            string compatPath = Path.Combine(modDir, "wintermp-compat.json");
+            if (File.Exists(compatPath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(compatPath);
+                    var manifest = System.Text.Json.JsonSerializer.Deserialize<CompatManifest>(
+                        json,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (manifest != null && !string.IsNullOrWhiteSpace(manifest.ModVersion))
+                        return manifest.ModVersion.Trim();
+                }
+                catch
+                {
+                    // fall through to DLL file version
+                }
+            }
+
+            string dll = Path.Combine(modDir, "WinterMP.Core.dll");
             if (!File.Exists(dll)) return null;
 
             try
@@ -47,7 +66,7 @@ namespace WinterMP.Launcher.Services
             }
             catch
             {
-                return "unknown version";
+                return null;
             }
         }
 

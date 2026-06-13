@@ -87,29 +87,29 @@ namespace WinterMP.Launcher.Services
                 string? notes = root.TryGetProperty("body", out var body) ? body.GetString() : null;
                 Version remote = ParseTag(tag);
 
-                var launcherVersion = ParseVersion(ModPayload.LauncherVersion);
-                var bundledMod = ParseVersion(ModMeta.ModVersion);
+                var launcherVersion = ModVersionHelper.Normalize(ParseVersion(ModPayload.LauncherVersion));
+                var bundledMod = ModVersionHelper.Normalize(ParseVersion(ModMeta.ModVersion));
                 Version? installedMod = null;
                 if (!string.IsNullOrEmpty(gameDir))
                 {
                     string? installed = BepInExInstaller.GetInstalledModVersion(gameDir);
-                    if (installed != null)
-                        installedMod = ParseVersion(installed);
+                    if (ModVersionHelper.TryParse(installed, out Version parsed))
+                        installedMod = ModVersionHelper.Normalize(parsed);
                 }
 
                 string? payloadUrl = FindAssetUrl(root, PayloadAssetNames);
                 string? setupUrl = FindAssetUrl(root, SetupAssetNames);
 
-                bool launcherUpdate = remote > launcherVersion;
+                bool launcherUpdate = ModVersionHelper.IsNewerThan(remote, launcherVersion);
                 bool modUpdate = false;
                 if (!string.IsNullOrEmpty(gameDir))
                 {
                     if (installedMod != null)
-                        modUpdate = remote > installedMod;
-                    else if (remote > bundledMod)
+                        modUpdate = ModVersionHelper.IsNewerThan(remote, installedMod);
+                    else if (ModVersionHelper.IsNewerThan(remote, bundledMod))
                         modUpdate = true;
                 }
-                else if (remote > bundledMod)
+                else if (ModVersionHelper.IsNewerThan(remote, bundledMod))
                 {
                     modUpdate = true;
                 }
@@ -162,13 +162,24 @@ namespace WinterMP.Launcher.Services
             try
             {
                 ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
-                ScheduleModPayloadUpdate(extractDir, gameDir);
-                return "Mod update scheduled — launcher will restart and install into the game.";
+
+                string payloadDir = ModPayload.PayloadDir;
+                Directory.CreateDirectory(payloadDir);
+                try
+                {
+                    CopyPayloadFiles(extractDir, payloadDir);
+                }
+                catch (IOException)
+                {
+                    ScheduleModPayloadUpdate(extractDir, gameDir);
+                    return "Mod update scheduled — launcher will close and finish installing automatically.";
+                }
+
+                return BepInExInstaller.InstallOrRepair(gameDir);
             }
-            catch
+            finally
             {
                 try { Directory.Delete(extractDir, recursive: true); } catch { /* best effort */ }
-                throw;
             }
         }
 
@@ -179,7 +190,8 @@ namespace WinterMP.Launcher.Services
         {
             var copies = ResolvePayloadCopies(extractDir);
             string launcherExe = ResolveLauncherExePath();
-            string helper = WriteModPayloadUpdateScript(copies, gameDir, launcherExe);
+            int launcherPid = Process.GetCurrentProcess().Id;
+            string helper = WriteModPayloadUpdateScript(copies, gameDir, launcherExe, launcherPid);
             Process.Start(new ProcessStartInfo
             {
                 FileName = helper,
@@ -210,26 +222,46 @@ namespace WinterMP.Launcher.Services
         private static string WriteModPayloadUpdateScript(
             List<(string Source, string Dest)> copies,
             string gameDir,
-            string launcherExe)
+            string launcherExe,
+            int launcherPid)
         {
             string dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "WinterMP", "updates");
             Directory.CreateDirectory(dir);
 
+            string logPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WinterMP", "last-update.log");
+
             string scriptPath = Path.Combine(dir, $"mod-payload-{Guid.NewGuid():N}.cmd");
             var lines = new List<string>
             {
                 "@echo off",
-                "timeout /t 2 /nobreak >nul",
+                "setlocal",
+                $"set LOG=\"{logPath}\"",
+                $"echo [%date% %time%] Mod payload update started>>%LOG%",
+                $":wait",
+                $"tasklist /FI \"PID eq {launcherPid}\" 2>nul | find \"{launcherPid}\" >nul",
+                "if %ERRORLEVEL%==0 (timeout /t 1 /nobreak >nul & goto wait)",
             };
 
             for (int i = 0; i < copies.Count; i++)
             {
-                lines.Add($"copy /y \"{copies[i].Source}\" \"{copies[i].Dest}\" >nul");
+                lines.Add($"copy /y \"{copies[i].Source}\" \"{copies[i].Dest}\" >>%LOG% 2>&1");
+                lines.Add("if errorlevel 1 goto failed");
             }
 
-            lines.Add($"start \"\" \"{launcherExe}\" --install-mod --silent --game-dir \"{gameDir}\"");
+            lines.Add($"echo [%date% %time%] Payload copied, installing into game>>%LOG%");
+            lines.Add($"\"{launcherExe}\" --install-mod --silent --game-dir \"{gameDir}\" >>%LOG% 2>&1");
+            lines.Add("if errorlevel 1 goto failed");
+            lines.Add($"echo [%date% %time%] Mod install OK, restarting launcher>>%LOG%");
+            lines.Add($"start \"\" \"{launcherExe}\"");
+            lines.Add("goto done");
+            lines.Add(":failed");
+            lines.Add($"echo [%date% %time%] Mod update FAILED>>%LOG%");
+            lines.Add($"start \"\" \"{launcherExe}\"");
+            lines.Add(":done");
             lines.Add("del \"%~f0\"");
 
             File.WriteAllText(scriptPath, string.Join("\r\n", lines));
@@ -404,14 +436,15 @@ namespace WinterMP.Launcher.Services
         private static Version ParseTag(string tag)
         {
             string trimmed = tag.TrimStart('v', 'V');
-            return Version.TryParse(trimmed, out var v) ? v : new Version(0, 0, 0);
+            if (ModVersionHelper.TryParse(trimmed, out Version v))
+                return ModVersionHelper.Normalize(v);
+            return new Version(0, 0, 0);
         }
 
         private static Version ParseVersion(string text)
         {
-            if (Version.TryParse(text, out var v)) return v;
-            int dash = text.IndexOf('-');
-            if (dash > 0 && Version.TryParse(text[..dash], out v)) return v;
+            if (ModVersionHelper.TryParse(text, out Version v))
+                return ModVersionHelper.Normalize(v);
             return new Version(0, 0, 0);
         }
     }
