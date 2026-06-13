@@ -436,8 +436,7 @@ namespace WinterMP.Launcher
                 string result = await UpdateChecker.DownloadAndApplyPayloadAsync(
                     _pendingUpdate.PayloadDownloadUrl, _game.GameDir);
                 AppendLog(result);
-                AppendLog("Mod updated — restarting launcher.");
-                UpdateChecker.RestartApplication();
+                AppendLog("Closing launcher — update will finish and reinstall the mod automatically.");
                 Application.Current.Shutdown();
             }
             catch (Exception ex)

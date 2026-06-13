@@ -157,17 +157,83 @@ namespace WinterMP.Launcher.Services
                 .ConfigureAwait(false);
 
             string downloadDir = Path.GetDirectoryName(zipPath)!;
-            string extractDir = Path.Combine(downloadDir, "payload-extract");
-            if (Directory.Exists(extractDir))
-                Directory.Delete(extractDir, recursive: true);
+            string extractDir = Path.Combine(downloadDir, "payload-extract-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(extractDir);
-            ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
+            try
+            {
+                ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
+                ScheduleModPayloadUpdate(extractDir, gameDir);
+                return "Mod update scheduled — launcher will restart and install into the game.";
+            }
+            catch
+            {
+                try { Directory.Delete(extractDir, recursive: true); } catch { /* best effort */ }
+                throw;
+            }
+        }
 
+        /// <summary>
+        /// Copies payload after this process exits so locked DLLs (if any) are released first.
+        /// </summary>
+        public static void ScheduleModPayloadUpdate(string extractDir, string gameDir)
+        {
+            var copies = ResolvePayloadCopies(extractDir);
+            string launcherExe = ResolveLauncherExePath();
+            string helper = WriteModPayloadUpdateScript(copies, gameDir, launcherExe);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = helper,
+                UseShellExecute = true,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            });
+        }
+
+        private static List<(string Source, string Dest)> ResolvePayloadCopies(string extractDir)
+        {
             string payloadDir = ModPayload.PayloadDir;
             Directory.CreateDirectory(payloadDir);
-            CopyPayloadFiles(extractDir, payloadDir);
 
-            return BepInExInstaller.InstallOrRepair(gameDir);
+            var copies = new List<(string Source, string Dest)>();
+            foreach (string file in ModPayload.RequiredFiles)
+            {
+                string? found = FindFileRecursive(extractDir, file);
+                if (found == null)
+                    throw new InvalidOperationException($"Update package is missing {file}.");
+
+                copies.Add((found, Path.Combine(payloadDir, file)));
+            }
+
+            return copies;
+        }
+
+        private static string WriteModPayloadUpdateScript(
+            List<(string Source, string Dest)> copies,
+            string gameDir,
+            string launcherExe)
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WinterMP", "updates");
+            Directory.CreateDirectory(dir);
+
+            string scriptPath = Path.Combine(dir, $"mod-payload-{Guid.NewGuid():N}.cmd");
+            var lines = new List<string>
+            {
+                "@echo off",
+                "timeout /t 2 /nobreak >nul",
+            };
+
+            for (int i = 0; i < copies.Count; i++)
+            {
+                lines.Add($"copy /y \"{copies[i].Source}\" \"{copies[i].Dest}\" >nul");
+            }
+
+            lines.Add($"start \"\" \"{launcherExe}\" --install-mod --silent --game-dir \"{gameDir}\"");
+            lines.Add("del \"%~f0\"");
+
+            File.WriteAllText(scriptPath, string.Join("\r\n", lines));
+            return scriptPath;
         }
 
         public static async Task<string> DownloadLauncherSetupAsync(string downloadUrl)

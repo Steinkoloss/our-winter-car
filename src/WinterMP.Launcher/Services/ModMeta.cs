@@ -1,26 +1,20 @@
 using System.IO;
-using System.Reflection;
+using System.Text.Json;
 
 namespace WinterMP.Launcher.Services
 {
-    /// <summary>Reads mod/protocol versions from the bundled plugin DLLs.</summary>
+    /// <summary>Reads mod/protocol versions from the bundled payload manifest (no assembly loads — keeps DLLs unlocked for in-place updates).</summary>
     public static class ModMeta
     {
         public static string ModVersion
         {
             get
             {
-                string dll = Path.Combine(ModPayload.PayloadDir, "WinterMP.Core.dll");
-                if (!File.Exists(dll)) return ModPayload.LauncherVersion;
-                try
-                {
-                    return System.Diagnostics.FileVersionInfo.GetVersionInfo(dll).FileVersion
-                        ?? ModPayload.LauncherVersion;
-                }
-                catch
-                {
-                    return ModPayload.LauncherVersion;
-                }
+                CompatManifest? manifest = TryLoadManifest();
+                if (manifest != null && !string.IsNullOrWhiteSpace(manifest.ModVersion))
+                    return manifest.ModVersion;
+
+                return ReadCoreDllFileVersion() ?? ModPayload.LauncherVersion;
             }
         }
 
@@ -28,22 +22,48 @@ namespace WinterMP.Launcher.Services
         {
             get
             {
-                try
-                {
-                    string netDll = Path.Combine(ModPayload.PayloadDir, "WinterMP.Net.dll");
-                    if (!File.Exists(netDll)) return 0;
-                    var asm = Assembly.LoadFrom(netDll);
-                    var type = asm.GetType("WinterMP.Net.ProtocolInfo");
-                    if (type == null) return 0;
-                    var versionField = type.GetField("Version", BindingFlags.Public | BindingFlags.Static);
-                    if (versionField == null) return 0;
-                    return Convert.ToUInt16(versionField.GetValue(null));
-                }
-                catch
-                {
-                    return 0;
-                }
+                CompatManifest? manifest = TryLoadManifest();
+                if (manifest != null && manifest.ProtocolVersion > 0)
+                    return manifest.ProtocolVersion;
+
+                return 0;
             }
         }
+
+        private static CompatManifest? TryLoadManifest()
+        {
+            string path = Path.Combine(ModPayload.PayloadDir, "wintermp-compat.json");
+            if (!File.Exists(path)) return null;
+
+            try
+            {
+                string json = File.ReadAllText(path);
+                return JsonSerializer.Deserialize<CompatManifest>(json, JsonOptions);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string? ReadCoreDllFileVersion()
+        {
+            string dll = Path.Combine(ModPayload.PayloadDir, "WinterMP.Core.dll");
+            if (!File.Exists(dll)) return null;
+
+            try
+            {
+                return System.Diagnostics.FileVersionInfo.GetVersionInfo(dll).FileVersion;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true,
+        };
     }
 }

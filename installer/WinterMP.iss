@@ -9,7 +9,7 @@
 [Setup]
 AppId={{A7B3C4D5-E6F7-4890-ABCD-EF1234567890}
 AppName=Our Winter Car
-AppVersion=0.1.22
+AppVersion=0.1.23
 AppVerName=Our Winter Car 0.1.21
 AppPublisher=Our Winter Car
 DefaultDirName={autopf}\Our Winter Car

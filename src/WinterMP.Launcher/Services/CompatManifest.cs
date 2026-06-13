@@ -42,13 +42,30 @@ namespace WinterMP.Launcher.Services
 
         public string? ValidatePayload()
         {
-            if (ModMeta.ProtocolVersion > 0 && ModMeta.ProtocolVersion != ProtocolVersion)
+            string? dllVersion = ReadCoreDllFileVersion();
+            if (dllVersion != null
+                && !string.IsNullOrWhiteSpace(ModVersion)
+                && !string.Equals(dllVersion, ModVersion, StringComparison.OrdinalIgnoreCase))
             {
-                return $"Launcher payload protocol v{ModMeta.ProtocolVersion} does not match " +
-                       $"manifest v{ProtocolVersion}. Reinstall {Branding.ProductName}.";
+                return $"Payload Core.dll is v{dllVersion} but manifest says v{ModVersion}. Reinstall {Branding.ProductName}.";
             }
 
             return null;
+        }
+
+        private static string? ReadCoreDllFileVersion()
+        {
+            string dll = Path.Combine(ModPayload.PayloadDir, "WinterMP.Core.dll");
+            if (!File.Exists(dll)) return null;
+
+            try
+            {
+                return System.Diagnostics.FileVersionInfo.GetVersionInfo(dll).FileVersion;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static readonly JsonSerializerOptions JsonOptions = new()
