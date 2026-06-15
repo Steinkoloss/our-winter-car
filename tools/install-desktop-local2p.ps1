@@ -1,6 +1,8 @@
-# One-click dev setup: install/repair BepInEx + mod into My Winter Car, then put
+# One-click dev setup (Windows): install/repair BepInEx + mod into My Winter Car, then put
 # Local2PTest on the desktop. Run from repo root on Windows:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\install-desktop-local2p.ps1
+#
+# On Linux (Steam/Proton): use tools/install-desktop-local2p.sh instead.
 param(
     [string]$GameDir = $env:WINTERMP_GAME_DIR
 )

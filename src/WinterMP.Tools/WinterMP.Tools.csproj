@@ -9,7 +9,7 @@
     <Description>WinterMP dev tools plugin: FSM/object catalog dumper for sync catalog generation.</Description>
     <BepInExPluginGuid>com.ourwintercar.wintermp.tools</BepInExPluginGuid>
     <BepInExPluginName>WinterMP Tools</BepInExPluginName>
-    <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
+    <MwcManaged>$(MwcGamePath)/mywintercar_Data/Managed</MwcManaged>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,13 +20,13 @@
 
   <ItemGroup>
     <Reference Include="UnityEngine">
-      <HintPath>$(MwcManaged)\UnityEngine.dll</HintPath>
+      <HintPath>$(MwcManaged)/UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
   <Target Name="EnsureGameAssemblies" BeforeTargets="CoreCompile">
-    <Error Condition="!Exists('$(MwcManaged)\UnityEngine.dll')"
+    <Error Condition="!Exists('$(MwcManaged)/UnityEngine.dll')"
            Text="MwcGamePath is not set or invalid ('$(MwcGamePath)'). Copy Directory.Build.props.user.example to Directory.Build.props.user and point it at your My Winter Car install." />
   </Target>
 
@@ -35,10 +35,10 @@
   </ItemGroup>
 
   <Target Name="DeployToGame" AfterTargets="Build"
-          Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
+          Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)/BepInEx')">
     <Copy SourceFiles="$(TargetDir)WinterMP.Tools.dll"
-          DestinationFolder="$(MwcGamePath)\BepInEx\plugins\WinterMP" SkipUnchangedFiles="true" />
-    <Message Importance="high" Text="WinterMP.Tools deployed to $(MwcGamePath)\BepInEx\plugins\WinterMP" />
+          DestinationFolder="$(MwcGamePath)/BepInEx/plugins/WinterMP" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="WinterMP.Tools deployed to $(MwcGamePath)/BepInEx/plugins/WinterMP" />
   </Target>
 
 </Project>

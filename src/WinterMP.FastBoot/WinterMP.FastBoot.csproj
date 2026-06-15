@@ -9,7 +9,7 @@
     <BepInExPluginGuid>com.ourwintercar.wintermp.fastboot</BepInExPluginGuid>
     <BepInExPluginName>WinterMP FastBoot</BepInExPluginName>
     <Version>0.1.25</Version>
-    <MwcManaged>$(MwcGamePath)\mywintercar_Data\Managed</MwcManaged>
+    <MwcManaged>$(MwcGamePath)/mywintercar_Data/Managed</MwcManaged>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,27 +21,27 @@
 
   <ItemGroup>
     <Reference Include="UnityEngine">
-      <HintPath>$(MwcManaged)\UnityEngine.dll</HintPath>
+      <HintPath>$(MwcManaged)/UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="PlayMaker">
-      <HintPath>$(MwcManaged)\PlayMaker.dll</HintPath>
+      <HintPath>$(MwcManaged)/PlayMaker.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
   <Target Name="EnsureGameAssemblies" BeforeTargets="CoreCompile">
-    <Error Condition="!Exists('$(MwcManaged)\UnityEngine.dll')"
+    <Error Condition="!Exists('$(MwcManaged)/UnityEngine.dll')"
            Text="MwcGamePath is not set or invalid ('$(MwcGamePath)'). Copy Directory.Build.props.user.example to Directory.Build.props.user and point it at your My Winter Car install." />
-    <Error Condition="!Exists('$(MwcManaged)\PlayMaker.dll')"
+    <Error Condition="!Exists('$(MwcManaged)/PlayMaker.dll')"
            Text="PlayMaker.dll not found under MwcGamePath Managed folder." />
   </Target>
 
   <Target Name="DeployToGame" AfterTargets="Build"
-          Condition="'$(DeployToGame)' != 'false' AND '$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)\BepInEx')">
+          Condition="'$(DeployToGame)' != 'false' AND '$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)/BepInEx')">
     <Copy SourceFiles="$(TargetDir)WinterMP.FastBoot.dll"
-          DestinationFolder="$(MwcGamePath)\BepInEx\plugins\WinterMP" SkipUnchangedFiles="true" />
-    <Message Importance="high" Text="WinterMP.FastBoot deployed to $(MwcGamePath)\BepInEx\plugins\WinterMP" />
+          DestinationFolder="$(MwcGamePath)/BepInEx/plugins/WinterMP" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="WinterMP.FastBoot deployed to $(MwcGamePath)/BepInEx/plugins/WinterMP" />
   </Target>
 
 </Project>
