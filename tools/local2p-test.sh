@@ -57,6 +57,9 @@ while [[ ! -f "$READY_FLAG" ]]; do
         echo
         echo "ERROR: Host never released the single-instance lock within ${MAX_WAIT} seconds."
         echo "       Check BepInEx/LogOutput-host.log for \"HostLocal ready (mutex released)\"."
+        echo "       Make sure the latest WinterMP.Core.dll is deployed."
+        echo
+        read -rp "Press Enter to close..." _ || true
         exit 1
     fi
     sleep 1
@@ -82,3 +85,4 @@ echo
 echo "  - Hold TAB in either window: both players + the \"World:\" sync line."
 echo "  - IMPORTANT: never save the game in the GUEST window."
 echo
+read -rp "Press Enter to close this window..." _ || true

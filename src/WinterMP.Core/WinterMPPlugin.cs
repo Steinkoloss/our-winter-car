@@ -73,14 +73,13 @@ namespace WinterMP.Core
         private static void TryReleaseHostLocalMutex()
         {
             if (Util.SingleInstanceUnlocker.Release())
-            {
                 Log.LogInfo("HostLocal: single-instance mutex released (second instance can start).");
-                Util.HostLocalReadySignal.MarkReady();
-            }
             else
-            {
                 Log.LogWarning("HostLocal: single-instance mutex not found to release.");
-            }
+
+            // Always signal ready — on Linux/Proton the mutex doesn't exist but the
+            // ready flag is still needed for the shell script to launch the guest.
+            Util.HostLocalReadySignal.MarkReady();
         }
     }
 }

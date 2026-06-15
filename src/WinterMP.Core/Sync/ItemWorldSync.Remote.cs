@@ -14,6 +14,24 @@ namespace WinterMP.Core.Sync
         {
             if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null) return;
 
+            // Validate the wire pose BEFORE mutating any ownership/sequence state. Wire
+            // floats reach the transform verbatim (NetReader reinterprets raw bytes,
+            // ToUnity copies components). A single NaN/Infinity would propagate forever
+            // through the smoothing lerp (NaN compares false against the snap threshold)
+            // and Unity silently drops a NaN transform — the body vanishes for the rest
+            // of the session. Re-normalize the quaternion too (round-trip precision
+            // leaves it slightly non-unit, which makes Slerp wobble). Rejecting here
+            // (rather than after the ownership logic) means a garbage packet cannot make
+            // us yield local ownership or advance the sequence baseline.
+            var position = message.Position.ToUnity();
+            var rotation = message.Rotation.ToUnity();
+            if (!IsFinite(position) || !TryNormalize(rotation, out rotation))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropping non-finite transform for item {message.ItemId} from player {message.OwnerPlayerId}.");
+                return;
+            }
+
             float now = Time.unscaledTime;
             if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
                 && cargoVehicle != null)
@@ -69,9 +87,6 @@ namespace WinterMP.Core.Sync
                 item.KinematicSaved = true;
             }
 
-            var position = message.Position.ToUnity();
-            var rotation = message.Rotation.ToUnity();
-
             if (message.IsFinal)
             {
                 body.isKinematic = item.OriginalKinematic;
@@ -112,6 +127,15 @@ namespace WinterMP.Core.Sync
                 item.TargetRotation = rotation;
                 item.LastRemoteAt = Time.unscaledTime;
 
+                // A remotely-driven vehicle must count as "in motion" on the observing
+                // machine so cargo-follow and per-item-stream suppression engage
+                // (IsVehicleInMotion reads LastMovedAt; nothing else sets it for a car
+                // driven by the remote player, so it would otherwise stay at -999f and
+                // loose cargo would never ride the car / would jitter and fling out).
+                // The final packet resets LastMovedAt to -999f so the rest still looks parked.
+                if (item.IsVehicle)
+                    item.LastMovedAt = Time.unscaledTime;
+
                 // An occupied driver's seat must not be enterable locally. Push
                 // streams (FlagVehicle without FlagDriver) leave the seat free —
                 // policy lets a seated local player out-claim those.
@@ -136,6 +160,30 @@ namespace WinterMP.Core.Sync
             }
 
             item.LastPosition = transform.position;
+        }
+
+        private static bool IsFinite(float f) => !float.IsNaN(f) && !float.IsInfinity(f);
+
+        private static bool IsFinite(Vector3 v) => IsFinite(v.x) && IsFinite(v.y) && IsFinite(v.z);
+
+        /// <summary>
+        /// Validates the quaternion is finite and non-degenerate, returning a unit-length
+        /// copy. Returns false (reject the packet) for NaN/Infinity components or a
+        /// near-zero quaternion that cannot be normalized.
+        /// </summary>
+        private static bool TryNormalize(Quaternion q, out Quaternion result)
+        {
+            result = q;
+            if (!IsFinite(q.x) || !IsFinite(q.y) || !IsFinite(q.z) || !IsFinite(q.w))
+                return false;
+
+            float sumSq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+            if (sumSq < 1e-8f)
+                return false;
+
+            float inv = 1f / Mathf.Sqrt(sumSq);
+            result = new Quaternion(q.x * inv, q.y * inv, q.z * inv, q.w * inv);
+            return true;
         }
     }
 }

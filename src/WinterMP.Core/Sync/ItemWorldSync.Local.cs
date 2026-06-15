@@ -84,14 +84,19 @@ namespace WinterMP.Core.Sync
                 {
                     if (item.IsVehicle)
                     {
-                        // Latch driver status while the car is in motion (seat
-                        // detection can flicker mid-drive), but release it once
-                        // the car is parked and the seat is empty — a permanent
-                        // latch kept streaming "driver" keepalives forever and
-                        // the other player could never use the car again.
+                        // Driver status tracks seat occupancy (IsLocalPlayerDriving is
+                        // anchored on the game's own PlayerInVar + seat hierarchy, so it
+                        // is stable during a real drive). Release it the moment the player
+                        // leaves the seat — NOT only once the car is parked. The old
+                        // "clear only when !moving" tied seat-release to motion, so a car
+                        // coasting after the driver got out kept streaming FlagDriver and
+                        // the remote seat stayed blocked (and under packet loss, far
+                        // longer). Once !operating the car still streams as a FlagVehicle
+                        // push while it rolls (the `|| moving` branch below), which leaves
+                        // the remote seat free so the other player can get in.
                         if (operating)
                             item.LocalDriveActive = true;
-                        else if (!moving)
+                        else
                             item.LocalDriveActive = false;
 
                         if (item.LocalDriveActive || moving)

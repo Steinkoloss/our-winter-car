@@ -146,6 +146,10 @@ namespace WinterMP.Core.Sync
             {
                 VehicleId = item.Id,
                 OwnerPlayerId = _bridge.Session?.LocalPlayerId ?? 0,
+                // Default to the snapshot sentinel; the live SendVehicleClimate path
+                // overwrites Sequence with ++OutClimateSequence. Snapshot/resync sends
+                // keep the sentinel so the receiver applies them without dedup.
+                Sequence = VehicleClimate.SnapshotSequence,
                 Frost = QuantizeFrost(ReadFrost(item)),
                 Flags = flags,
                 HeaterTemp = QuantizeHeater(ReadHeaterTemp(item), HeaterTempMax),
@@ -185,15 +189,21 @@ namespace WinterMP.Core.Sync
                 return;
             if (item.LocallyOwned) return;
 
-            ushort diff = (ushort)(message.Sequence - item.LastClimateSequence);
-            if (diff == 0 || diff > short.MaxValue)
+            // Join/resync snapshots carry SnapshotSequence and bypass the live-stream
+            // dedup so a fresh guest near a parked frosted car receives its state.
+            if (message.Sequence != VehicleClimate.SnapshotSequence)
             {
-                ConnectionQuality.Instance.NoteUnreliableDropped();
-                return;
+                ushort diff = (ushort)(message.Sequence - item.LastClimateSequence);
+                if (diff == 0 || diff > short.MaxValue)
+                {
+                    ConnectionQuality.Instance.NoteUnreliableDropped();
+                    return;
+                }
+
+                ConnectionQuality.Instance.NoteUnreliableReceived();
+                item.LastClimateSequence = message.Sequence;
             }
 
-            ConnectionQuality.Instance.NoteUnreliableReceived();
-            item.LastClimateSequence = message.Sequence;
             item.RemoteClimateUntil = Time.unscaledTime + ClimateHoldSeconds;
 
             ApplyRemoteClimate(item, message);

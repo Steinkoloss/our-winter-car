@@ -52,6 +52,15 @@ namespace WinterMP.Net.Sync
 
         /// <summary>
         /// May a nearby non-driver proximity-claim this vehicle?
+        ///
+        /// REACHABILITY NOTE: the only caller (ItemWorldSync.CanClaim) runs after
+        /// UpdateItems has already cleared a stale vehicle's RemoteOwner/RemoteIsDriver/
+        /// RemoteVehicleStream to empty (the stale-clear that precedes the claim check),
+        /// while a live remote stream short-circuits earlier via the remote-driven branch.
+        /// So today this is reached only with remoteOwnerId == NoRemoteOwner and both
+        /// flags false — i.e. it effectively always returns true. The hold/tie-break here
+        /// only becomes load-bearing once the caller preserves the remote owner across that
+        /// stale-clear; the logic is kept correct in the meantime.
         /// </summary>
         public static bool AllowsVehicleProximityClaim(
             bool remoteIsDriver,
@@ -63,8 +72,11 @@ namespace WinterMP.Net.Sync
             if ((remoteIsDriver || remoteVehicleStreamLive)
                 && now - lastRemoteAt < DriverRemoteHoldSeconds)
                 return false;
+            // Vehicle-only function, so the hold is always the vehicle/driver hold (3.5s).
+            // Previously the liveness bool was misused as the isVehicle arg, collapsing the
+            // window to the 0.75s item hold once the stream went non-live.
             if (remoteOwnerId != NoRemoteOwner
-                && now - lastRemoteAt < GetRemoteHoldSeconds(remoteIsDriver, remoteVehicleStreamLive))
+                && now - lastRemoteAt < GetRemoteHoldSeconds(remoteIsDriver, isVehicle: true))
                 return false;
             return true;
         }

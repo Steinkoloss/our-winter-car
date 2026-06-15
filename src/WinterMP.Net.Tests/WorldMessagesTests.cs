@@ -125,6 +125,29 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
+        public void VehicleState_SnapshotSequence_RoundTrips()
+        {
+            // The join/resync snapshot builders tag VehicleState with SnapshotSequence so
+            // the receiver applies it without the live-stream dedup. Lock the wire value
+            // (shared Net<->Core contract) and that it survives a round-trip.
+            Assert.Equal(ushort.MaxValue, VehicleState.SnapshotSequence);
+
+            var original = new VehicleState { VehicleId = 7, Sequence = VehicleState.SnapshotSequence };
+            var decoded = Assert.IsType<VehicleState>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(VehicleState.SnapshotSequence, decoded.Sequence);
+        }
+
+        [Fact]
+        public void VehicleClimate_SnapshotSequence_RoundTrips()
+        {
+            Assert.Equal(ushort.MaxValue, VehicleClimate.SnapshotSequence);
+
+            var original = new VehicleClimate { VehicleId = 7, Sequence = VehicleClimate.SnapshotSequence };
+            var decoded = Assert.IsType<VehicleClimate>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(VehicleClimate.SnapshotSequence, decoded.Sequence);
+        }
+
+        [Fact]
         public void TimeSync_RoundTrips()
         {
             var original = new TimeSync

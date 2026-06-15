@@ -27,7 +27,8 @@ namespace WinterMP.Net
         // v23: SleepConsentResult (28) — host notifies guests when sleep round completes.
         // v24: HandshakeResponse sessionFlags; PlayerDeathReport/Event/Respawn (29-31).
         // v25: NpcTransform (100) — host streams NPC/traffic rigidbody poses to guests.
-        public const ushort Version = 25;
+        // v26: VehicleState/Climate snapshot sentinel (SnapshotSequence = ushort.MaxValue) to bypass dedup on join.
+        public const ushort Version = 26;
     }
 
     /// <summary>

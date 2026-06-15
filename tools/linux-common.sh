@@ -129,6 +129,12 @@ run_mwc() {
     export SteamAppId="$WINTERMP_APP_ID"
     export SteamGameId="$WINTERMP_APP_ID"
 
+    # BepInEx doorstop (winhttp.dll) must load before Proton's system winhttp.
+    # Proton sets WINEDLLPATH to its own wine/lib which makes Wine treat winhttp
+    # as a builtin (loaded before the app-dir native DLL). Force native-first so
+    # the game directory's doorstop proxy is picked up.
+    export WINEDLLOVERRIDES="winhttp=n,b${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+
     (
         cd "$game_dir" || exit 1
         WINTERMP_LOG_ROLE="$role" exec "$proton" run ./mywintercar.exe "$@"
