@@ -1,6 +1,5 @@
 using System.IO;
 using System.Text.RegularExpressions;
-using Microsoft.Win32;
 
 namespace WinterMP.Launcher.Services
 {
@@ -24,10 +23,7 @@ namespace WinterMP.Launcher.Services
 
         public static GameInstall? FindSteamInstall()
         {
-            string? steamPath = GetSteamPath();
-            if (steamPath == null) return null;
-
-            foreach (string library in GetLibraryFolders(steamPath))
+            foreach (string library in SteamLibraryRoots())
             {
                 string manifest = Path.Combine(library, "steamapps", $"appmanifest_{AppId}.acf");
                 if (!File.Exists(manifest)) continue;
@@ -55,71 +51,20 @@ namespace WinterMP.Launcher.Services
             return new GameInstall(gameDir, exe, buildId);
         }
 
-        /// <summary>Full path to steam.exe, or null when Steam is not installed.</summary>
-        public static string? FindSteamExe()
+        /// <summary>
+        /// Every Steam library root (the directory holding <c>steamapps</c>): the Steam root
+        /// itself plus the paths listed in libraryfolders.vdf. Same VDF format on Windows and
+        /// Linux, so only the root discovery is platform-specific.
+        /// </summary>
+        public static IEnumerable<string> SteamLibraryRoots()
         {
-            string? steamPath = GetSteamPath();
-            if (steamPath == null) return null;
+            string? steamPath = Platform.Current.FindSteamRoot();
+            if (steamPath == null) yield break;
 
-            string exe = Path.Combine(steamPath, "steam.exe");
-            return File.Exists(exe) ? exe : null;
-        }
-
-        /// <summary>True when the Steam client process is running (direct game launch is OK).</summary>
-        public static bool IsSteamClientRunning()
-        {
-            try
-            {
-                return System.Diagnostics.Process.GetProcessesByName("steam").Length > 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static string? GetSteamPath()
-        {
-            string?[] candidates =
-            {
-                ReadRegistrySteamPath(Registry.CurrentUser, @"Software\Valve\Steam"),
-                ReadRegistrySteamPath(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam"),
-                ReadRegistrySteamPath(Registry.LocalMachine, @"SOFTWARE\Valve\Steam"),
-            };
-
-            foreach (string? path in candidates)
-            {
-                if (path != null && Directory.Exists(path))
-                    return path;
-            }
-
-            return null;
-        }
-
-        private static string? ReadRegistrySteamPath(RegistryKey root, string subKey)
-        {
-            try
-            {
-                using var key = root.OpenSubKey(subKey);
-                return key?.GetValue("SteamPath") as string is { Length: > 0 } path
-                    ? UnescapeVdfPath(path)
-                    : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static IEnumerable<string> GetLibraryFolders(string steamPath)
-        {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (string folder in EnumerateExistingFolder(steamPath))
-            {
-                if (seen.Add(folder))
-                    yield return folder;
-            }
+            if (Directory.Exists(steamPath) && seen.Add(steamPath))
+                yield return steamPath;
 
             string steamApps = Path.Combine(steamPath, "steamapps");
             foreach (string vdfName in new[] { "libraryfolders.vdf", "libraryfolder.vdf" })
@@ -139,27 +84,17 @@ namespace WinterMP.Launcher.Services
 
                 foreach (Match match in Regex.Matches(content, "\"path\"\\s+\"([^\"]+)\""))
                 {
-                    foreach (string folder in EnumerateExistingFolder(match.Groups[1].Value))
-                    {
-                        if (seen.Add(folder))
-                            yield return folder;
-                    }
+                    string folder = UnescapeVdfPath(match.Groups[1].Value);
+                    if (Directory.Exists(folder) && seen.Add(folder))
+                        yield return folder;
                 }
             }
         }
 
-        private static IEnumerable<string> EnumerateExistingFolder(string? path)
-        {
-            if (string.IsNullOrWhiteSpace(path)) yield break;
-
-            path = UnescapeVdfPath(path);
-            if (Directory.Exists(path))
-                yield return path;
-        }
-
         private static string UnescapeVdfPath(string path)
         {
-            path = path.Replace('/', '\\').Trim();
+            // VDF escapes backslashes on Windows ("C:\\Games"); Linux paths are plain "/home/...".
+            path = path.Trim();
             while (path.Contains(@"\\", StringComparison.Ordinal))
                 path = path.Replace(@"\\", @"\");
             return path;

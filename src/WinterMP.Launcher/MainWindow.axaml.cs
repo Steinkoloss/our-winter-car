@@ -1,7 +1,12 @@
-using System.Diagnostics;
 using System.IO;
-using System.Windows;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+using MsBox.Avalonia;
+using MsBox.Avalonia.Enums;
+using MsBoxIcon = MsBox.Avalonia.Enums.Icon;
 using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher
@@ -25,10 +30,13 @@ namespace WinterMP.Launcher
         public MainWindow()
         {
             InitializeComponent();
+
             Title = $"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}";
-            SubtitleText.Text =
-                $"Host or join via Steam · protocol v{ModMeta.ProtocolVersion}";
+            SubtitleText.Text = $"Host or join via Steam · protocol v{ModMeta.ProtocolVersion}";
             AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
+
+            // Launcher self-update (Inno installer) only makes sense on Windows.
+            UpdateLauncherButton.IsVisible = Platform.Current.SupportsLauncherSelfUpdate;
 
             _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _statusTimer.Tick += (_, _) =>
@@ -43,7 +51,7 @@ namespace WinterMP.Launcher
             RefreshStatus();
             ShowLastInstallFailureIfAny();
 
-            Loaded += async (_, _) =>
+            Opened += async (_, _) =>
             {
                 _statusTimer.Start();
                 _updateTimer.Start();
@@ -67,7 +75,6 @@ namespace WinterMP.Launcher
         private void ShowLastInstallFailureIfAny()
         {
             if (!File.Exists(LastInstallLogPath)) return;
-
             try
             {
                 if (File.ReadAllText(LastInstallLogPath).Contains("ERROR", StringComparison.Ordinal))
@@ -77,10 +84,7 @@ namespace WinterMP.Launcher
                         "Open Settings and set the game folder if needed.");
                 }
             }
-            catch
-            {
-                // ignore unreadable log
-            }
+            catch { /* ignore unreadable log */ }
         }
 
         private async Task RunPeriodicUpdateCheckAsync()
@@ -115,8 +119,7 @@ namespace WinterMP.Launcher
                 if (!result.IsSuccess)
                 {
                     _updateStatusText = result.ErrorMessage ?? "Update check failed";
-                    if (!quiet)
-                        AppendLog($"Update check failed: {result.ErrorMessage}");
+                    if (!quiet) AppendLog($"Update check failed: {result.ErrorMessage}");
                     RefreshOpenInfoWindow();
                     return;
                 }
@@ -131,14 +134,12 @@ namespace WinterMP.Launcher
                 }
 
                 _updateStatusText = $"Up to date ({result.Tag})";
-                if (!quiet)
-                    AppendLog($"Up to date ({result.Tag}).");
+                if (!quiet) AppendLog($"Up to date ({result.Tag}).");
             }
             catch (Exception ex)
             {
                 _updateStatusText = "Update check failed";
-                if (!quiet)
-                    AppendLog($"Update check failed: {ex.Message}");
+                if (!quiet) AppendLog($"Update check failed: {ex.Message}");
                 RefreshOpenInfoWindow();
             }
             finally
@@ -151,17 +152,16 @@ namespace WinterMP.Launcher
         {
             if (_pendingUpdate == null || !_pendingUpdate.IsSuccess)
             {
-                UpdateBannerPanel.Visibility = Visibility.Collapsed;
+                UpdateBannerPanel.IsVisible = false;
                 return;
             }
 
             bool showBanner = _pendingUpdate.AnyUpdateAvailable;
-
             _updateStatusText = _pendingUpdate.AnyUpdateAvailable
                 ? _pendingUpdate.StatusSummary
                 : $"Up to date ({_pendingUpdate.Tag})";
 
-            UpdateBannerPanel.Visibility = showBanner ? Visibility.Visible : Visibility.Collapsed;
+            UpdateBannerPanel.IsVisible = showBanner;
             if (!showBanner) return;
 
             UpdateBannerTitle.Text = $"Update available: {_pendingUpdate.Tag}";
@@ -175,9 +175,12 @@ namespace WinterMP.Launcher
             }
             UpdateBannerText.Text = string.Join("\n", lines);
 
-            UpdateLauncherButton.IsEnabled = _pendingUpdate.LauncherUpdateAvailable
+            bool canUpdateLauncher = _pendingUpdate.LauncherUpdateAvailable
                 && _pendingUpdate.SetupDownloadUrl != null
-                && !_updateBusy;
+                && !_updateBusy
+                && Platform.Current.SupportsLauncherSelfUpdate;
+
+            UpdateLauncherButton.IsEnabled = canUpdateLauncher;
             UpdateModButton.IsEnabled = _pendingUpdate.ModUpdateAvailable
                 && _game != null
                 && _pendingUpdate.PayloadDownloadUrl != null
@@ -239,10 +242,7 @@ namespace WinterMP.Launcher
             };
         }
 
-        private void RefreshOpenInfoWindow()
-        {
-            _openInfoWindow?.ApplySnapshot(BuildInfoSnapshot());
-        }
+        private void RefreshOpenInfoWindow() => _openInfoWindow?.ApplySnapshot(BuildInfoSnapshot());
 
         private string BuildUpdatePromptMessage(bool required)
         {
@@ -256,29 +256,22 @@ namespace WinterMP.Launcher
                 Version from = _pendingUpdate.InstalledModVersion ?? _pendingUpdate.BundledModVersion;
                 lines.Add($"Mod: {from} → {_pendingUpdate.RemoteVersion}");
             }
-
             lines.Add("\nUpdate now? Everyone in a session needs the same version.");
-            if (required)
-                lines.Add("\nYou can't host or join until you're up to date.");
+            if (required) lines.Add("\nYou can't host or join until you're up to date.");
             return string.Join("\n", lines);
         }
 
-        /// <summary>
-        /// Shows the update prompt. Returns true when play/setup may continue.
-        /// </summary>
         private async Task<bool> PromptForUpdateAsync(bool required)
         {
             if (_updateBusy || _pendingUpdate == null || !_pendingUpdate.IsSuccess) return true;
             if (!_pendingUpdate.AnyUpdateAvailable) return true;
 
-            var answer = MessageBox.Show(this,
-                BuildUpdatePromptMessage(required),
-                "Update?",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
+            var answer = await MessageBoxManager
+                .GetMessageBoxStandard("Update?", BuildUpdatePromptMessage(required),
+                    ButtonEnum.YesNo, MsBoxIcon.Info)
+                .ShowWindowDialogAsync(this);
 
-            if (answer != MessageBoxResult.Yes)
-                return !required;
+            if (answer != ButtonResult.Yes) return !required;
 
             await ApplyPendingUpdatesAsync(skipConfirm: true);
             return !_pendingUpdate.AnyUpdateAvailable;
@@ -288,7 +281,9 @@ namespace WinterMP.Launcher
         {
             if (_pendingUpdate == null || !_pendingUpdate.AnyUpdateAvailable) return;
 
-            if (_pendingUpdate.LauncherUpdateAvailable && _pendingUpdate.SetupDownloadUrl != null)
+            if (_pendingUpdate.LauncherUpdateAvailable
+                && _pendingUpdate.SetupDownloadUrl != null
+                && Platform.Current.SupportsLauncherSelfUpdate)
             {
                 await RunLauncherUpdateAsync(skipConfirm);
                 return;
@@ -301,7 +296,7 @@ namespace WinterMP.Launcher
         private void RefreshStatus()
         {
             _game = GameLocator.FindInstall(_settings.CustomGameDir);
-            WarningStatusText.Visibility = Visibility.Collapsed;
+            WarningStatusText.IsVisible = false;
             WarningStatusText.Text = string.Empty;
 
             if (_game == null)
@@ -351,20 +346,19 @@ namespace WinterMP.Launcher
 
         private void ShowWarning(string text)
         {
-            WarningStatusText.Visibility = Visibility.Visible;
-            if (string.IsNullOrEmpty(WarningStatusText.Text))
-                WarningStatusText.Text = text;
-            else
-                WarningStatusText.Text += "\n" + text;
+            WarningStatusText.IsVisible = true;
+            WarningStatusText.Text = string.IsNullOrEmpty(WarningStatusText.Text)
+                ? text
+                : WarningStatusText.Text + "\n" + text;
         }
 
-        private void InfoButton_Click(object sender, RoutedEventArgs e)
+        private void InfoButton_Click(object? sender, RoutedEventArgs e)
         {
-            var dialog = new InfoWindow { Owner = this };
+            var dialog = new InfoWindow();
             dialog.ApplySnapshot(BuildInfoSnapshot());
             _openInfoWindow = dialog;
             dialog.Closed += (_, _) => _openInfoWindow = null;
-            dialog.ShowDialog();
+            dialog.ShowDialog<bool?>(this);
         }
 
         private void TryAutoInstallIfNeeded()
@@ -372,8 +366,6 @@ namespace WinterMP.Launcher
             if (_installInProgress || _updateBusy || _game == null) return;
             if (BepInExInstaller.IsFullyInstalled(_game.GameDir)) return;
             if (!ModPayload.PayloadPresent() || !BepInExInstaller.VendorPackagePresent()) return;
-
-            // Status refreshes every second; retry install at most every 30 s on failure.
             if ((DateTime.UtcNow - _lastAutoInstallAttempt).TotalSeconds < 30) return;
 
             _installInProgress = true;
@@ -403,12 +395,10 @@ namespace WinterMP.Launcher
             try
             {
                 string result = BepInExInstaller.InstallOrRepair(_game.GameDir);
-                AppendLog(result.Replace("\n", "\n"));
+                AppendLog(result);
+                if (BepInExInstaller.IsFullyInstalled(_game.GameDir)) return true;
 
-                if (BepInExInstaller.IsFullyInstalled(_game.GameDir))
-                    return true;
-
-                error = "Install finished but BepInEx or the mod is still missing. Check Windows Defender exclusions.";
+                error = "Install finished but BepInEx or the mod is still missing.";
                 return false;
             }
             catch (Exception ex)
@@ -419,14 +409,15 @@ namespace WinterMP.Launcher
             }
         }
 
-        private async void UpdateModButton_Click(object sender, RoutedEventArgs e) => await RunModUpdateAsync();
+        private async void UpdateModButton_Click(object? sender, RoutedEventArgs e) =>
+            await RunModUpdateAsync();
 
-        private async void UpdateLauncherButton_Click(object sender, RoutedEventArgs e) => await RunLauncherUpdateAsync();
+        private async void UpdateLauncherButton_Click(object? sender, RoutedEventArgs e) =>
+            await RunLauncherUpdateAsync();
 
         private async Task RunModUpdateAsync()
         {
-            if (_game == null || _pendingUpdate?.PayloadDownloadUrl == null) return;
-            if (_updateBusy) return;
+            if (_game == null || _pendingUpdate?.PayloadDownloadUrl == null || _updateBusy) return;
 
             _updateBusy = true;
             SetUpdateButtonsEnabled(false);
@@ -440,18 +431,20 @@ namespace WinterMP.Launcher
                 if (result.StartsWith("Mod update scheduled", StringComparison.Ordinal))
                 {
                     AppendLog("Closing launcher — update will finish in the background.");
-                    Application.Current.Shutdown();
+                    Shutdown();
                     return;
                 }
 
                 AppendLog("Mod updated — restarting launcher.");
                 UpdateChecker.RestartApplication();
-                Application.Current.Shutdown();
+                Shutdown();
             }
             catch (Exception ex)
             {
                 AppendLog($"Mod update failed: {ex.Message}");
-                MessageBox.Show(this, ex.Message, "Mod update failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                await MessageBoxManager
+                    .GetMessageBoxStandard("Mod update failed", ex.Message, ButtonEnum.Ok, MsBoxIcon.Error)
+                    .ShowWindowDialogAsync(this);
                 _updateBusy = false;
                 RefreshStatus();
             }
@@ -459,18 +452,18 @@ namespace WinterMP.Launcher
 
         private async Task RunLauncherUpdateAsync(bool skipConfirm = false)
         {
-            if (_pendingUpdate?.SetupDownloadUrl == null) return;
-            if (_updateBusy) return;
+            if (_pendingUpdate?.SetupDownloadUrl == null || _updateBusy) return;
 
             if (!skipConfirm)
             {
-                var confirm = MessageBox.Show(this,
-                    $"Download and install {_pendingUpdate.Tag}?\n\n" +
-                    "The launcher will close and restart when the update finishes.",
-                    "Update launcher",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-                if (confirm != MessageBoxResult.Yes) return;
+                var confirm = await MessageBoxManager
+                    .GetMessageBoxStandard(
+                        "Update launcher",
+                        $"Download and install {_pendingUpdate.Tag}?\n\n" +
+                        "The launcher will close and restart when the update finishes.",
+                        ButtonEnum.YesNo, MsBoxIcon.Question)
+                    .ShowWindowDialogAsync(this);
+                if (confirm != ButtonResult.Yes) return;
             }
 
             _updateBusy = true;
@@ -482,12 +475,14 @@ namespace WinterMP.Launcher
                     _pendingUpdate.SetupDownloadUrl);
                 AppendLog("Installing update — launcher will restart.");
                 UpdateChecker.RunLauncherSetup(setupPath);
-                Application.Current.Shutdown();
+                Shutdown();
             }
             catch (Exception ex)
             {
                 AppendLog($"Launcher update failed: {ex.Message}");
-                MessageBox.Show(this, ex.Message, "Launcher update failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                await MessageBoxManager
+                    .GetMessageBoxStandard("Launcher update failed", ex.Message, ButtonEnum.Ok, MsBoxIcon.Error)
+                    .ShowWindowDialogAsync(this);
                 _updateBusy = false;
                 RefreshStatus();
             }
@@ -499,17 +494,13 @@ namespace WinterMP.Launcher
             UpdateLauncherButton.IsEnabled = enabled;
         }
 
-        private void UpdateReleaseNotesButton_Click(object sender, RoutedEventArgs e)
+        private void UpdateReleaseNotesButton_Click(object? sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_pendingUpdate?.ReleaseUrl)) return;
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = _pendingUpdate.ReleaseUrl,
-                UseShellExecute = true,
-            });
+            if (!string.IsNullOrEmpty(_pendingUpdate?.ReleaseUrl))
+                Platform.Current.OpenInShell(_pendingUpdate.ReleaseUrl);
         }
 
-        private void BackupButton_Click(object sender, RoutedEventArgs e)
+        private void BackupButton_Click(object? sender, RoutedEventArgs e)
         {
             try
             {
@@ -524,24 +515,26 @@ namespace WinterMP.Launcher
             RefreshStatus();
         }
 
-        private void RestoreButton_Click(object sender, RoutedEventArgs e)
+        private async void RestoreButton_Click(object? sender, RoutedEventArgs e)
         {
-            var dialog = new RestoreBackupWindow { Owner = this };
-            if (dialog.ShowDialog() == true && dialog.ResultMessage != null)
+            var dialog = new RestoreBackupWindow();
+            var result = await dialog.ShowDialog<bool?>(this);
+            if (result == true && dialog.ResultMessage != null)
                 AppendLog(dialog.ResultMessage);
             RefreshStatus();
         }
 
-        private void OpenGameButton_Click(object sender, RoutedEventArgs e)
+        private void OpenGameButton_Click(object? sender, RoutedEventArgs e)
         {
-            if (_game == null) return;
-            Process.Start(new ProcessStartInfo { FileName = _game.GameDir, UseShellExecute = true });
+            if (_game != null)
+                Platform.Current.OpenInShell(_game.GameDir);
         }
 
-        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        private async void SettingsButton_Click(object? sender, RoutedEventArgs e)
         {
-            var dialog = new SettingsWindow(_settings, _game) { Owner = this };
-            if (dialog.ShowDialog() == true)
+            var dialog = new SettingsWindow(_settings, _game);
+            var result = await dialog.ShowDialog<bool?>(this);
+            if (result == true)
             {
                 _settings = dialog.Settings;
                 RefreshStatus();
@@ -549,7 +542,7 @@ namespace WinterMP.Launcher
             }
         }
 
-        private async void HostButton_Click(object sender, RoutedEventArgs e)
+        private async void HostButton_Click(object? sender, RoutedEventArgs e)
         {
             if (_game == null) return;
             if (!await PromptForUpdateAsync(required: false)) return;
@@ -557,13 +550,13 @@ namespace WinterMP.Launcher
 
             try
             {
-                LaunchGame("-wintermp host -wintermp-fast");
-                AppendLog("Launching as HOST (save backup in background)…");
+                string launchLog = DoLaunch("-wintermp host -wintermp-fast");
+                AppendLog($"{launchLog} (save backup in background…)");
 
                 _ = Task.Run(() => SaveBackupService.CreateBackup())
                     .ContinueWith(t =>
                     {
-                        Dispatcher.BeginInvoke(() =>
+                        Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             if (t.IsFaulted)
                             {
@@ -584,7 +577,7 @@ namespace WinterMP.Launcher
             }
         }
 
-        private async void JoinButton_Click(object sender, RoutedEventArgs e)
+        private async void JoinButton_Click(object? sender, RoutedEventArgs e)
         {
             if (_game == null) return;
             if (!await PromptForUpdateAsync(required: false)) return;
@@ -592,8 +585,7 @@ namespace WinterMP.Launcher
 
             try
             {
-                LaunchGame("-wintermp join -wintermp-fast");
-                AppendLog("Launching to join via Steam (not hosting).");
+                AppendLog(DoLaunch("-wintermp join -wintermp-fast"));
             }
             catch (Exception ex)
             {
@@ -604,18 +596,19 @@ namespace WinterMP.Launcher
         private bool EnsureReadyForLaunch()
         {
             RefreshStatus();
-            if (_game != null && BepInExInstaller.IsFullyInstalled(_game.GameDir))
-                return true;
+            if (_game != null && BepInExInstaller.IsFullyInstalled(_game.GameDir)) return true;
 
             AppendLog("Installing BepInEx and mod before launch…");
             if (!TryInstallMod(out string? error))
             {
-                MessageBox.Show(this,
-                    error ?? $"{Branding.ProductName} could not install into the game folder.\n\n" +
-                    "If Windows Defender removed files, add your My Winter Car folder to exclusions and try again.",
-                    "Not ready",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                MessageBoxManager
+                    .GetMessageBoxStandard(
+                        "Not ready",
+                        error ?? $"{Branding.ProductName} could not install into the game folder.\n\n" +
+                        "If Windows Defender removed files, add your My Winter Car folder to exclusions and try again.",
+                        ButtonEnum.Ok,
+                        MsBoxIcon.Warning)
+                    .ShowWindowDialogAsync(this);
                 return false;
             }
 
@@ -623,7 +616,7 @@ namespace WinterMP.Launcher
             return true;
         }
 
-        private void LaunchGame(string args)
+        private string DoLaunch(string wintermpArgs)
         {
             if (_game != null
                 && MainDataBootPatch.TryDisableResolutionDialog(_game.GameDir, _game.BuildId, out string? bootPatch)
@@ -633,7 +626,7 @@ namespace WinterMP.Launcher
                 AppendLog(bootPatch);
             }
 
-            string launchArgs = UnityDisplayPrefs.WithScreenArgs(_settings, args);
+            string launchArgs = UnityDisplayPrefs.WithScreenArgs(_settings, wintermpArgs);
             UnityDisplayPrefs.Apply(_settings, launchArgs);
 
             if (_game != null)
@@ -643,50 +636,21 @@ namespace WinterMP.Launcher
                     AppendLog(fastBootNote);
             }
 
-            string? steamExe = GameLocator.FindSteamExe();
-            if (GameLocator.IsSteamClientRunning())
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = _game!.ExePath,
-                    Arguments = launchArgs,
-                    WorkingDirectory = _game.GameDir,
-                    UseShellExecute = false,
-                    Environment = { ["SteamAppId"] = GameLocator.AppId },
-                });
-                AppendLog("Launching game directly (Steam is running — faster than -applaunch).");
-                return;
-            }
-
-            if (steamExe != null)
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = steamExe,
-                    Arguments = $"-applaunch {GameLocator.AppId} {launchArgs}".TrimEnd(),
-                    UseShellExecute = false,
-                });
-                AppendLog("Launching via Steam (-applaunch). Start Steam first next time for a faster boot.");
-                return;
-            }
-
-            AppendLog("steam.exe not found — launching game directly (Steam MP may not work).");
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = _game!.ExePath,
-                Arguments = launchArgs,
-                WorkingDirectory = _game.GameDir,
-                UseShellExecute = false,
-                Environment = { ["SteamAppId"] = GameLocator.AppId },
-            });
+            return GameLauncher.Launch(_game!, launchArgs);
         }
 
         private void AppendLog(string line)
         {
             _log.AppendLine($"[{DateTime.Now:HH:mm:ss}] {line}");
             LogText.Text = _log.ToString();
-            LogScroll.ScrollToEnd();
+            Dispatcher.UIThread.Post(
+                () => LogScroll.Offset = new Vector(0, double.MaxValue),
+                DispatcherPriority.Render);
         }
+
+        private static void Shutdown() =>
+            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
+            ?.Shutdown();
     }
 
     internal static class StringExtensions

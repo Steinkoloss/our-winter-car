@@ -20,6 +20,14 @@ namespace WinterMP.Net.Transport
 
         void Send(PeerId peer, byte[] payload, Channel channel);
 
+        /// <summary>
+        /// Zero-copy send overload: sends <paramref name="length"/> bytes from the start of
+        /// <paramref name="payload"/>. The buffer is valid only for the duration of this call —
+        /// implementations must consume/copy it synchronously and must NOT retain the reference,
+        /// since the caller reuses the buffer for the next send.
+        /// </summary>
+        void Send(PeerId peer, byte[] payload, int length, Channel channel);
+
         /// <summary>Pump the transport: dispatch received packets and connection events.</summary>
         void Update();
     }

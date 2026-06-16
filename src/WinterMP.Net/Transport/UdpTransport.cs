@@ -88,13 +88,18 @@ namespace WinterMP.Net.Transport
 
         public void Send(PeerId peer, byte[] payload, Channel channel)
         {
+            Send(peer, payload, payload.Length, channel);
+        }
+
+        public void Send(PeerId peer, byte[] payload, int length, Channel channel)
+        {
             if (_disposed) return;
             if (!_peerEndpoints.TryGetValue(peer, out var endpoint)) return;
 
-            var datagram = new byte[payload.Length + 2];
+            var datagram = new byte[length + 2];
             datagram[0] = TypeData;
             datagram[1] = (byte)channel;
-            Buffer.BlockCopy(payload, 0, datagram, 2, payload.Length);
+            Buffer.BlockCopy(payload, 0, datagram, 2, length);
 
             try
             {

@@ -41,8 +41,13 @@ namespace WinterMP.Core.Sync
 
                 if (_items.TryGetValue(entry.ItemId, out var item) && item.Body != null)
                 {
-                    // Live streams beat the snapshot (it was built moments ago).
-                    if (item.LocallyOwned || Time.unscaledTime - item.LastRemoteAt < GetRemoteHoldSeconds(item))
+                    // Live streams beat the snapshot (it was built moments ago). Also skip
+                    // an item that is rolling under local physics but not yet claimed: a
+                    // stale snapshot pose would teleport-and-sleep it mid-roll (#28). It
+                    // self-heals once it rests (the at-rest item checksum catches drift).
+                    if (item.LocallyOwned
+                        || Time.unscaledTime - item.LastRemoteAt < GetRemoteHoldSeconds(item)
+                        || Time.unscaledTime - item.LastMovedAt < item.StillSeconds)
                         continue;
                     ApplySnapshotPose(item, position, rotation);
                     applied++;
@@ -81,6 +86,7 @@ namespace WinterMP.Core.Sync
                     }
 
                     RemoveTrackedItem(itemId, item.Body);
+                    ReleaseCargoFollowingVehicle(itemId);
                     removed++;
                 }
                 else
@@ -96,7 +102,22 @@ namespace WinterMP.Core.Sync
 
         private static void ApplySnapshotPose(SyncedItem item, Vector3 position, Quaternion rotation)
         {
+            // Validate the snapshot pose like OnRemoteItemTransform does: snapshot floats
+            // reach the transform verbatim (ToUnity copies raw wire components), and Unity
+            // silently drops a NaN/Infinity transform — the item would vanish for the rest
+            // of the session. Re-normalize the quaternion so the landing rotation is unit.
+            if (!IsFinite(position) || !TryNormalize(rotation, out rotation))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropping non-finite snapshot pose for item {item.Id}.");
+                return;
+            }
+
             var body = item.Body;
+            // A snapshot teleport overrides any in-progress cargo-follow: clear the follow
+            // state (and restore the saved kinematic flag) so the next ApplyVehicleCargoFollow
+            // recaptures the local offset from this pose instead of snapping back to a stale one.
+            ClearCargoFollow(item, body);
             body.transform.position = position;
             body.transform.rotation = rotation;
             if (!body.isKinematic)

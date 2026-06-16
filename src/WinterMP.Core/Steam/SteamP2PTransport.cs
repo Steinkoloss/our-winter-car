@@ -114,6 +114,11 @@ namespace WinterMP.Core.Steam
 
         public void Send(PeerId peer, byte[] payload, Channel channel)
         {
+            Send(peer, payload, payload.Length, channel);
+        }
+
+        public void Send(PeerId peer, byte[] payload, int length, Channel channel)
+        {
             if (_disposed) return;
 
             CSteamID target;
@@ -127,7 +132,7 @@ namespace WinterMP.Core.Steam
                 ? EP2PSend.k_EP2PSendUnreliable
                 : EP2PSend.k_EP2PSendReliable;
 
-            if (!SteamNetworking.SendP2PPacket(target, payload, (uint)payload.Length, sendType, (int)channel))
+            if (!SteamNetworking.SendP2PPacket(target, payload, (uint)length, sendType, (int)channel))
             {
                 ConnectionQuality.Instance.NoteSendFailure();
                 WinterMPPlugin.Log.LogWarning($"SendP2PPacket to {peer} failed (channel {channel}).");

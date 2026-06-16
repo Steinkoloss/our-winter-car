@@ -54,11 +54,16 @@ namespace WinterMP.Net.Transport
 
         public void Send(PeerId peer, byte[] payload, Channel channel)
         {
+            Send(peer, payload, payload.Length, channel);
+        }
+
+        public void Send(PeerId peer, byte[] payload, int length, Channel channel)
+        {
             if (_disposed || _remote == null || _remote._disposed) return;
             if (peer != _remote.LocalPeerId) return;
 
-            var copy = new byte[payload.Length];
-            Array.Copy(payload, copy, payload.Length);
+            var copy = new byte[length];
+            Array.Copy(payload, copy, length);
             lock (_remote._inbox)
             {
                 _remote._inbox.Enqueue(new InboxItem { From = LocalPeerId, Payload = copy, Channel = channel });

@@ -181,6 +181,10 @@ namespace WinterMP.Core.Sync
             {
                 VehicleId = item.Id,
                 OwnerPlayerId = ownerPlayerId,
+                // Snapshot/resync path (the live stream sets its own Sequence). Without
+                // this the message defaults to Sequence 0 and the receiver's dedup drops
+                // it against a fresh guest's LastVehicleStateSequence (also 0).
+                Sequence = VehicleState.SnapshotSequence,
                 Flags = flags,
                 Rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue),
                 SpeedTenthsKmh = (ushort)Mathf.Clamp(speedKmh * 10f, 0f, ushort.MaxValue),

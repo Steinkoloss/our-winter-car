@@ -116,15 +116,22 @@ namespace WinterMP.Core.Sync
             if (!_items.Items.TryGetValue(message.VehicleId, out var item) || item.Body == null || !item.IsVehicle)
                 return;
 
-            ushort diff = (ushort)(message.Sequence - item.LastVehicleStateSequence);
-            if (diff == 0 || diff > short.MaxValue)
+            // Join/resync snapshots carry SnapshotSequence and bypass the live-stream
+            // dedup (otherwise a fresh guest drops the Sequence-0 snapshot and never
+            // sees a parked car's engine/electrics). The sentinel does not advance the
+            // baseline, so the live stream's dedup is unaffected.
+            if (message.Sequence != VehicleState.SnapshotSequence)
             {
-                ConnectionQuality.Instance.NoteUnreliableDropped();
-                return;
-            }
+                ushort diff = (ushort)(message.Sequence - item.LastVehicleStateSequence);
+                if (diff == 0 || diff > short.MaxValue)
+                {
+                    ConnectionQuality.Instance.NoteUnreliableDropped();
+                    return;
+                }
 
-            ConnectionQuality.Instance.NoteUnreliableReceived();
-            item.LastVehicleStateSequence = message.Sequence;
+                ConnectionQuality.Instance.NoteUnreliableReceived();
+                item.LastVehicleStateSequence = message.Sequence;
+            }
 
             bool electricsOn = message.AccOn || message.EngineOn;
             bool electricsChanged = electricsOn != item.RemoteElectricsApplied;

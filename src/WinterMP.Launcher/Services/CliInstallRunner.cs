@@ -1,9 +1,13 @@
 using System.IO;
-using System.Windows;
 
 namespace WinterMP.Launcher.Services
 {
-    /// <summary>Headless install path used by WinterMP-Setup.exe and automation.</summary>
+    /// <summary>
+    /// Headless install path: the Inno Setup installer (Windows) and automation scripts
+    /// pass <c>--install-mod</c> to run a mod install before any UI is shown.
+    /// On non-Windows the dialog boxes are replaced by console output — the Avalonia
+    /// app isn't started yet when this runs, so GUI dialogs aren't available.
+    /// </summary>
     public static class CliInstallRunner
     {
         public const int ExitOk = 0;
@@ -33,13 +37,7 @@ namespace WinterMP.Launcher.Services
                     log.Add("ERROR: mod payload missing from launcher folder.");
                     WriteLog(log);
                     if (!silent)
-                    {
-                        MessageBox.Show(
-                            $"{Branding.ProductName} mod files are missing. Reinstall from GitHub.",
-                            "Install failed",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Error);
-                    }
+                        Console.Error.WriteLine($"{Branding.ProductName} mod files are missing. Reinstall from GitHub.");
 
                     exitCode = ExitPayloadMissing;
                     return true;
@@ -58,14 +56,9 @@ namespace WinterMP.Launcher.Services
                     WriteLog(log);
 
                     if (!silent)
-                    {
-                        MessageBox.Show(
-                            "My Winter Car was not found.\n\n" +
-                            $"Install the game via Steam, or open {Branding.LauncherWindowTitle} → Settings and browse to your game folder.",
-                            "Game not found",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
-                    }
+                        Console.Error.WriteLine(
+                            "My Winter Car was not found. " +
+                            $"Install the game via Steam, or open {Branding.LauncherWindowTitle} → Settings and browse to your game folder.");
 
                     exitCode = ExitGameNotFound;
                     return true;
@@ -77,13 +70,7 @@ namespace WinterMP.Launcher.Services
                 WriteLog(log);
 
                 if (!silent)
-                {
-                    MessageBox.Show(
-                        result,
-                        $"{Branding.ProductName} installed",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
+                    Console.WriteLine(result);
 
                 exitCode = ExitOk;
                 return true;
@@ -94,13 +81,7 @@ namespace WinterMP.Launcher.Services
                 WriteLog(log);
 
                 if (!silent)
-                {
-                    MessageBox.Show(
-                        ex.Message,
-                        "Install failed",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                }
+                    Console.Error.WriteLine(ex.Message);
 
                 exitCode = ExitInstallFailed;
                 return true;

@@ -50,9 +50,8 @@ namespace WinterMP.Core.Sync
             _bridge.FindLocalPlayer();
             if (_bridge.LocalPlayer == null || vehicleBody == null) return false;
 
-            if (item?.PlayerInVar != null && item.PlayerInVar.Value)
-                return true;
-
+            // IsChildOf is the reliable, local-only signal: the local avatar is parented
+            // under the car only on the machine that is actually driving it.
             Transform vehicleRoot = GetVehicleSceneRoot(vehicleBody.transform);
             if (_bridge.LocalPlayer.IsChildOf(vehicleRoot))
                 return true;
@@ -60,10 +59,31 @@ namespace WinterMP.Core.Sync
             if (_bridge.LocalPlayer.IsChildOf(vehicleBody.transform))
                 return true;
 
-            // Enter-seat race: hierarchy may lag one frame; MassDriver is the
-            // in-cabin physics anchor the game uses while driving.
-            if (item != null)
+            // PlayerInVar and the 1.5 m MassDriver fallback can also promote the local
+            // player to "driver", but neither is a clean local-only signal:
+            //  - PlayerInVar is the game's PlayerIn FsmBool, which the REMOTE climate
+            //    stream overwrites on the observing machine (see
+            //    VehicleWorldSync.Climate.ApplyRemoteFogLevel), so on an observer it
+            //    reflects whether the *remote* occupant is in the car, not the local one;
+            //  - the 1.5 m fallback fires for ANY nearby player, not only a seated one.
+            // Trust them only when no remote owner is asserting this car. Otherwise an
+            // observer (or a bystander standing by the door) of a remotely owned/driven
+            // car would be mis-detected as its driver and could wrongly claim it with
+            // FlagDriver, fighting the real owner. Entering your own free car still works
+            // because an unowned car has RemoteOwner == NoOwner.
+            if (item != null && item.RemoteOwner == WorldSyncIds.NoOwner)
             {
+                // Additional guard for PlayerInVar specifically: the transform stream can
+                // go stale (RemoteOwner scrubbed to NoOwner) while the CLIMATE stream is
+                // still live — e.g. a remote player sitting in a parked car — and during
+                // that window PlayerInVar is still the remote occupant's contaminated
+                // value. Only trust it when no remote climate is live either.
+                if (item.PlayerInVar != null && item.PlayerInVar.Value
+                    && Time.unscaledTime >= item.RemoteClimateUntil)
+                    return true;
+
+                // Enter-seat race: hierarchy may lag one frame; MassDriver is the
+                // in-cabin physics anchor the game uses while driving.
                 EnsureSeat(item);
                 if (item.DriverAnchorTransform != null)
                 {

@@ -22,8 +22,19 @@ namespace WinterMP.Core.Sync
     public bool RemoteVehicleStream;
     public float LastRemoteAt = -999f;
     public ushort LastRemoteSequence;
+    // The sender id that established the current LastRemoteSequence baseline. Unlike
+    // RemoteOwner (scrubbed to NoOwner by a final packet), this is NOT cleared on
+    // final, so a post-final straggler from the same owner is still recognised as
+    // stale and dropped instead of re-acquiring the item (#7).
+    public byte LastRemoteSequenceOwner = WorldSyncIds.NoOwner;
     public Vector3 TargetPosition;
     public Quaternion TargetRotation = Quaternion.identity;
+    // Receiver-side dead reckoning: implied velocity from the last two accepted poses
+    // lets ApplyRemoteSmoothing ease toward a predicted point instead of trailing the
+    // last received pose, removing the steady-state lag behind a fast remote car (#14).
+    public float PrevRemoteAt = -999f;
+    public Vector3 RemoteVelocity;
+    public bool HasRemoteVelocity;
 
     public bool LocallyOwned;
     public bool DespawnSent;

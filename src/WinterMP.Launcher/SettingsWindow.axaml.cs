@@ -1,6 +1,9 @@
-using System.Windows;
-using System.Windows.Controls;
-using Microsoft.Win32;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using MsBox.Avalonia;
+using MsBox.Avalonia.Enums;
+using MsBoxIcon = MsBox.Avalonia.Enums.Icon;
 using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher
@@ -21,11 +24,16 @@ namespace WinterMP.Launcher
             InitializeDisplaySettings();
         }
 
-        private void Browse_Click(object sender, RoutedEventArgs e)
+        private async void Browse_Click(object? sender, RoutedEventArgs e)
         {
-            var dialog = new OpenFolderDialog { Title = "Select My Winter Car folder" };
-            if (dialog.ShowDialog() == true)
-                GamePathBox.Text = dialog.FolderName;
+            var result = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Select My Winter Car folder",
+                AllowMultiple = false,
+            });
+
+            if (result.Count > 0)
+                GamePathBox.Text = result[0].Path.LocalPath;
         }
 
         private void InitializeDisplaySettings()
@@ -39,11 +47,12 @@ namespace WinterMP.Launcher
                     0,
                     MwcDisplayOptions.QualityNames.Length - 1);
 
-                MonitorCombo.ItemsSource = MwcDisplayOptions.GetMonitorLabels();
+                var monitorLabels = MwcDisplayOptions.GetMonitorLabels();
+                MonitorCombo.ItemsSource = monitorLabels;
                 MonitorCombo.SelectedIndex = Math.Clamp(
                     Settings.MonitorIndex,
                     0,
-                    Math.Max(0, MonitorCombo.Items.Count - 1));
+                    Math.Max(0, monitorLabels.Count - 1));
 
                 RefreshResolutionCombo(Settings.DisplayWidth, Settings.DisplayHeight);
                 WindowedCheck.IsChecked = Settings.Windowed;
@@ -56,10 +65,16 @@ namespace WinterMP.Launcher
 
         private void RefreshResolutionCombo(int preferredWidth, int preferredHeight)
         {
-            int monitorIndex = MonitorCombo.SelectedIndex >= 0 ? MonitorCombo.SelectedIndex : Settings.MonitorIndex;
-            IReadOnlyList<ResolutionOption> options = MwcDisplayOptions.GetResolutionsForMonitor(monitorIndex);
+            int monitorIndex = MonitorCombo.SelectedIndex >= 0
+                ? MonitorCombo.SelectedIndex
+                : Settings.MonitorIndex;
 
-            ResolutionOption? selected = MwcDisplayOptions.FindResolution(options, preferredWidth, preferredHeight);
+            IReadOnlyList<ResolutionOption> options =
+                MwcDisplayOptions.GetResolutionsForMonitor(monitorIndex);
+
+            ResolutionOption? selected =
+                MwcDisplayOptions.FindResolution(options, preferredWidth, preferredHeight);
+
             if (selected == null)
             {
                 selected = new ResolutionOption(preferredWidth, preferredHeight);
@@ -70,7 +85,7 @@ namespace WinterMP.Launcher
             ResolutionCombo.SelectedItem = selected;
         }
 
-        private void MonitorCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void MonitorCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
             if (_loadingDisplaySettings) return;
 
@@ -92,10 +107,16 @@ namespace WinterMP.Launcher
                 _loadingDisplaySettings = false;
             }
 
-            DisplaySetting_Changed(sender, e);
+            SaveDisplaySettings();
         }
 
-        private void DisplaySetting_Changed(object sender, RoutedEventArgs e)
+        private void DisplaySetting_Changed(object? sender, RoutedEventArgs e)
+        {
+            if (_loadingDisplaySettings) return;
+            SaveDisplaySettings();
+        }
+
+        private void Resolution_Changed(object? sender, SelectionChangedEventArgs e)
         {
             if (_loadingDisplaySettings) return;
             SaveDisplaySettings();
@@ -119,46 +140,48 @@ namespace WinterMP.Launcher
             Settings.DisplaySettingsSaved = true;
         }
 
-        private void SaveGamePath()
-        {
-            string text = GamePathBox.Text.Trim();
-            Settings.CustomGameDir = string.IsNullOrEmpty(text) ? null : text;
-        }
-
-        private void RemoveMod_Click(object sender, RoutedEventArgs e)
+        private async void RemoveMod_Click(object? sender, RoutedEventArgs e)
         {
             if (_game == null)
             {
-                MessageBox.Show(this, "Game folder not found.", "Remove mod", MessageBoxButton.OK, MessageBoxImage.Warning);
+                await MessageBoxManager
+                    .GetMessageBoxStandard("Remove mod", "Game folder not found.", ButtonEnum.Ok, MsBoxIcon.Warning)
+                    .ShowWindowDialogAsync(this);
                 return;
             }
 
-            var confirm = MessageBox.Show(this,
-                $"Remove {Branding.ProductName} from your game folder?\n\nBepInEx will remain installed.",
-                "Remove mod",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
+            var confirm = await MessageBoxManager
+                .GetMessageBoxStandard(
+                    "Remove mod",
+                    $"Remove {Branding.ProductName} from your game folder?\n\nBepInEx will remain installed.",
+                    ButtonEnum.YesNo,
+                    MsBoxIcon.Warning)
+                .ShowWindowDialogAsync(this);
 
-            if (confirm != MessageBoxResult.Yes) return;
+            if (confirm != ButtonResult.Yes) return;
 
             try
             {
                 string result = ModRemoval.RemoveFromGame(_game.GameDir);
-                MessageBox.Show(this, result, "Remove mod", MessageBoxButton.OK, MessageBoxImage.Information);
+                await MessageBoxManager
+                    .GetMessageBoxStandard("Remove mod", result, ButtonEnum.Ok, MsBoxIcon.Info)
+                    .ShowWindowDialogAsync(this);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.Message, "Remove mod failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                await MessageBoxManager
+                    .GetMessageBoxStandard("Remove mod failed", ex.Message, ButtonEnum.Ok, MsBoxIcon.Error)
+                    .ShowWindowDialogAsync(this);
             }
         }
 
-        private void Done_Click(object sender, RoutedEventArgs e)
+        private void Done_Click(object? sender, RoutedEventArgs e)
         {
-            SaveGamePath();
+            string text = GamePathBox.Text?.Trim() ?? string.Empty;
+            Settings.CustomGameDir = string.IsNullOrEmpty(text) ? null : text;
             SaveDisplaySettings();
             Settings.Save();
-            DialogResult = true;
-            Close();
+            Close(true);
         }
     }
 }

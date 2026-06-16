@@ -121,6 +121,15 @@ namespace WinterMP.Net.Messages
         public const byte FlagBlinkerRight = 8;
         public const byte FlagHazard = 16;
 
+        /// <summary>
+        /// Sequence value marking a join/resync snapshot. Receivers apply it without
+        /// the live-stream dedup, so a fresh guest (whose LastVehicleStateSequence is
+        /// still 0) does not discard the Sequence-0 snapshot and miss a parked car's
+        /// engine/electrics state. The live stream never emits this value as a real
+        /// pose (at worst one un-deduped packet after a full ushort wrap, ~4.5 h).
+        /// </summary>
+        public const ushort SnapshotSequence = ushort.MaxValue;
+
         public uint VehicleId;
         public byte OwnerPlayerId;
         public ushort Sequence;
@@ -178,6 +187,9 @@ namespace WinterMP.Net.Messages
         public const byte FlagGlassDefrosting = 2;
         /// <summary>Someone is in the cabin (drives interior sweat/fog sim).</summary>
         public const byte FlagPlayerIn = 4;
+
+        /// <summary>Sequence marking a join/resync snapshot; receivers apply it without dedup. See VehicleState.SnapshotSequence.</summary>
+        public const ushort SnapshotSequence = ushort.MaxValue;
 
         public uint VehicleId;
         public byte OwnerPlayerId;

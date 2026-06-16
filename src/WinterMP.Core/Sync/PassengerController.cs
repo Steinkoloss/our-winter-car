@@ -134,6 +134,11 @@ namespace WinterMP.Core.Sync
 
             var seat = vehicle.SeatLocal[_seatedIndex];
             _player.position = vehicle.Body.transform.TransformPoint(SeatedLocalOffset(seat));
+            // Pin rotation too, or the seated body keeps its world-fixed facing while the
+            // car turns (the player FSM rewrites rotation each frame) and visibly slides
+            // relative to the seat. Match the car's orientation, as the Enter parenting
+            // intends (#32).
+            _player.rotation = vehicle.Body.transform.rotation;
         }
 
         private void OnGUI()
@@ -321,6 +326,39 @@ namespace WinterMP.Core.Sync
 
             if (message.IsSeated)
             {
+                // Same player moved to a different seat: tear down their old anchor.
+                if (_remoteSeats.TryGetValue(message.PlayerId, out var prev)
+                    && (prev.VehicleId != message.VehicleId || prev.Seat != message.SeatIndex))
+                {
+                    DestroyAnchor(prev);
+                }
+
+                // Another remote player already mapped to this (vehicle,seat): evict it
+                // so only one avatar resolves to the shared per-seat anchor. Capture the
+                // key first — net35/Mono forbids mutating a Dictionary while enumerating.
+                byte conflicting = 0;
+                bool hasConflict = false;
+                foreach (KeyValuePair<byte, SeatRef> kv in _remoteSeats)
+                {
+                    if (kv.Key != message.PlayerId
+                        && kv.Value.VehicleId == message.VehicleId
+                        && kv.Value.Seat == message.SeatIndex)
+                    {
+                        conflicting = kv.Key;
+                        hasConflict = true;
+                        break;
+                    }
+                }
+                if (hasConflict)
+                {
+                    // Destroy the evicted occupant's anchor before dropping it, or its
+                    // GameObject leaks and TryGetSeatAnchor can still resolve two avatars
+                    // to one seat (#26).
+                    if (_remoteSeats.TryGetValue(conflicting, out var conflictRef))
+                        DestroyAnchor(conflictRef);
+                    _remoteSeats.Remove(conflicting);
+                }
+
                 _remoteSeats[message.PlayerId] = new SeatRef { VehicleId = message.VehicleId, Seat = message.SeatIndex };
 
                 // Entry race on the same seat: lowest player id keeps it.

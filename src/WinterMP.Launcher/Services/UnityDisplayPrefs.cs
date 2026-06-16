@@ -79,6 +79,10 @@ namespace WinterMP.Launcher.Services
             quality = DefaultQuality;
             monitor = DefaultMonitor;
 
+            // Unity PlayerPrefs live in the Windows registry. Under Proton they live in the
+            // prefix's user.reg instead; the launcher relies on -screen-* args there.
+            if (!OperatingSystem.IsWindows()) return false;
+
             using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RegistrySubKey, false);
             if (key == null) return false;
 
@@ -93,6 +97,8 @@ namespace WinterMP.Launcher.Services
 
         public static void Write(int width, int height, int fullscreen, int quality, int monitor)
         {
+            if (!OperatingSystem.IsWindows()) return;
+
             using RegistryKey? key = Registry.CurrentUser.CreateSubKey(RegistrySubKey, true);
             if (key == null) return;
 
@@ -137,6 +143,7 @@ namespace WinterMP.Launcher.Services
             }
         }
 
+        [System.Runtime.Versioning.SupportedOSPlatform("windows")]
         private static bool TryReadDword(RegistryKey key, string name, out int value)
         {
             value = 0;

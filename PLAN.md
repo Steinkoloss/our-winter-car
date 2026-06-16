@@ -2,10 +2,10 @@
 
 A full co-op conversion of My Winter Car (MWC) with a standalone launcher.
 One player **hosts** and owns the savefile; everyone else joins as guests.
-Money, cars, parts, items, doors, NPCs, time, weather and all game-relevant
-events are synchronized.
+Money, cars, parts, items, doors, NPCs, time, weather, body warmth and heating,
+and all game-relevant events are synchronized.
 
-**Design priorities (in order):** correctness/completeness → ease of use → stability → everything else.
+**Design priorities (in order):** correctness/completeness → **stability** → ease of use → everything else.
 
 ---
 
@@ -245,24 +245,36 @@ Nearly all MWC gameplay is FSM state changes. Strategy:
 
 ### 4.4 Subsystem checklist
 
-| Subsystem | Model |
-|---|---|
-| Player avatars | Custom rig (head/hands/body) streamed at 20 Hz, name tags, skin/clothing variants. Remote players are *visual only* (no physics pushing) v1 |
-| Player animation | Derived state machine (walk/run/crouch/carry/drive) — low bandwidth |
-| Voice/text chat | Text chat day one; positional voice via Steam Voice later (M7) |
-| Money/economy | **Single shared wallet** owned by host. All transactions are intents → host validates → broadcast. No race conditions by construction |
-| Shops, services, jobs | `anyone-triggers` FSM intents; host executes purchases, spawns parts, applies money |
-| Car assembly (bolts/parts) | Attachment/detachment/bolt-tightness as reliable events keyed to part IDs; wear/tuning values as synced FSM variables |
-| Vehicle state | Engine FSMs `owner-only`; fuel/temp/damage variables synced; key/ignition/lights/doors as events |
-| World items (pickables) | Event-synced + ownership streaming when in motion |
-| Doors/switches/appliances | `anyone-triggers` events |
-| NPCs & traffic | `host-only` simulation; transform + FSM state streaming with distance-based rates; guests near NPCs get higher rates |
-| Time/weather/calendar | Host clock is law; guests slave their FSM time variables; periodic hard correction |
-| Player needs (hunger/fatigue/etc.) | Per-player, simulated locally, reported to host (needed for host-side saving of guest profiles) |
-| Sauna/fireplaces/cooking | `anyone-triggers` + host-owned progression variables |
-| Phone/orders/deliveries | Host-owned; results broadcast |
-| Sleeping/time skip | Requires consent: all players confirm → host advances time |
-| Death/respawn | Per-player death; world keeps running; respawn flow replicated |
+Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
+
+| Subsystem | Sync model | Status |
+|---|---|---|
+| Player avatars | Custom rig (head/hands/body) streamed ~20 Hz, name tags. Remote players *visual only* (no physics pushing) v1 | ✅ |
+| Player animation | Derived state machine (walk/run/crouch/carry/drive) — low bandwidth | ✅ |
+| Player needs (hunger/fatigue/thirst/urine) | Per-player, reported to host every ~12 s, saved in `wintermp-guests.json` sidecar | ✅ |
+| **Body temperature / cold** | Per-player **5th need** (`BodyTemp`); reported to host + sidecar like other needs. Ambient temp shared via `TimeSync`; `ColdArea`/`ColdMultiplier` are position-derived (computed locally from the same world). Only hypothermia *death* is synced today — see §4.8 | ⬜ (M7) |
+| **Clothing** | Per-player `ClothingStage`/`ClothingType` (`CLOTHESHOME`/`CLOTHESWORK`) — drives insulation (warmth math) **and** the remote-avatar visual | ⬜ (M7) |
+| Text / voice chat | Text chat done; positional voice via Steam Voice later | 🚧 (M11) |
+| Money/economy | **Single shared wallet** owned by host. All transactions are intents → host validates → broadcasts `WalletState`. No race conditions by construction | ✅ |
+| Shops & cash registers | `anyone-triggers` purchase intents; host executes, spawns goods, applies money | ✅ |
+| **Classifieds parts ordering** | Magazine listings (`JOBS/ADs` advert pile) + their **periodic refresh** are host-authoritative shared state (synced RNG/seed) — else peers see different parts for sale. Dialing a `CARPARTS/PARTSYSTEM/PhoneNumbers/*` seller = intent → host validates pay → spawns the **mailed delivery** (reuses post-office / `OrderAMIS` / `OrderYP` plumbing). *The in-game computer is an MSC-import toy — not this; parity backlog* | 🚧 (M8) |
+| **Jobs** | Firewood delivery (+ tractor wood-splitter PTO), sewage, factory punch-clock shift (`JOBS/FACTORY` TimeClock). Accept/progress/payout host-validated; reward → shared wallet | ⬜ (M8) |
+| Car assembly (bolts/parts) | Attach/detach + bolt-tightness as reliable events keyed to part IDs; wear/tuning as synced FSM vars | ✅ |
+| Vehicle state (Sorbet, Corris, +) | Engine `owner-only` (driver owns whole vehicle); rpm/fuel/coolant/lights/blinkers + cabin **climate** (frost/fog/defrost/heater) synced | ✅ |
+| **Fuel / jerrycan / pumps** | Refuel as `anyone-triggers` intent; fuel level already rides in `VehicleState` | 🚧 (M8) |
+| World items (pickables / cargo / consumables) | Event-synced + ownership streaming when in motion; eat/drink despawn synced | ✅ |
+| Doors / switches / controls | `anyone-triggers` events (incl. lights, wipers, hazards, handbrake) | ✅ |
+| **Home heating & cooking** | Cabin woodstove (`CABIN/Cabin/woodstove/Fireplace`: `SetFire`/`WoodTrigger`/`SausageTrigger`), sauna kiuas (`StoveHeat`/`SaunaStove`), cottage/living-room fireplaces. Host-owned progression (lit, fuel, heat output, sauna temp); feed/light/grill = `anyone-triggers`. See §4.8 | ⬜ (M7) |
+| **Home appliances** | TV (`TVSwitch`), radio (station+power), fridge, lights, fuse box — host-owned vars + `anyone-triggers` | ⬜ (M11) |
+| NPCs & traffic | `host-only` sim; transform + FSM streaming with distance-based rates | ✅ |
+| **Police / cops** | Speeding & DUI detection host-authoritative; fines → shared wallet; arrest / impound flow | ⬜ (M9) |
+| **Animals / moose** | Host-sim AI + authoritative collision; moose-hit death already in `DeathSync` | ⬜ (M9) |
+| **Inspection / registration (katsastus)** | Per-vehicle persistent state; inspection pay already synced; full pass/fail + plates | 🚧 (M9) |
+| **Racing (Suvi-Sprint, Ice Rally)** | Race lifecycle enroll/grid/start/lap-timing/finish/payout; opponent (jokkis/AI) streaming; frozen-lake ice track (`RACES`, 597 bodies) | ⬜ (M10) |
+| Time/weather/calendar | Host clock is law; guests slave FSM time vars; periodic hard correction | ✅ |
+| Sleeping / time skip | Consent: all players confirm → host advances time | ✅ |
+| Death / respawn / permadeath | Per-player death (hypothermia/drown/fire/electrocute/…); world keeps running; respawn replicated | ✅ |
+| Computer (toy) | MSC-save-import only, non-core — **optional parity, post-1.0** | ⬜ (backlog) |
 
 ### 4.5 Join-in-progress & reconnection
 
@@ -301,28 +313,64 @@ Nearly all MWC gameplay is FSM state changes. Strategy:
 - **Telemetry-in-logs:** structured log lines for every intent/transition,
   ring-buffered, dumped on error — feeds the launcher's bug-report zip.
 
+### 4.8 Winter survival & heating (the defining loop)
+
+Body temperature is MWC's most lethal mechanic, yet today it is **only synced at
+death** (hypothermia is a `DeathCause`) — the need itself and every heat source
+are unsynced. For co-op that is a *correctness* problem, not just missing
+content: guests freeze on independent local clocks and the host cannot persist
+guest warmth. Folded into the M7 gate:
+
+- **Body temp = the 5th need.** Extend `PlayerNeedsSync` + the
+  `wintermp-guests.json` sidecar with `BodyTemp`. Each player stays authoritative
+  over their own body temp (like hunger/thirst) and reports it to the host, which
+  saves and restores it on rejoin (mirrors the `GuestSpawn` needs restore).
+  Ambient temperature is already shared via `TimeSync` forecast temps;
+  `ColdArea`/`ColdMultiplier` are position-derived, so each client computes them
+  locally from the same world — no new stream beyond the need value.
+- **Clothing** (`ClothingStage`/`ClothingType`, `CLOTHESHOME`/`CLOTHESWORK`):
+  per-player synced state driving both insulation (warmth math) and the
+  remote-avatar visual (other players wear the right outfit).
+- **Heat sources are shared world state.** The cabin woodstove
+  (`SetFire`/`WoodTrigger`/`SausageTrigger`), the sauna kiuas
+  (`StoveHeat`/`SaunaStove`) and the cottage/living-room fireplaces become
+  host-owned progressions (lit?, fuel level, heat output, sauna temp). Feeding
+  wood / lighting / grilling are `anyone-triggers` intents; the host advances the
+  burn and broadcasts heat output so everyone warms — and cooks — off the same
+  fire. Warm cars are already covered (cabin temp in `VehicleClimate`).
+
+Net effect: "freeze in the same lake, thaw at the same sauna" becomes actually
+consistent across peers.
+
 ---
 
 ## 5. Milestones
 
-Estimates assume 1–2 experienced developers, part-time. PlayMaker curation
-(M5–M6) is the long pole and parallelizes well across contributors.
+**Status (2026-06).** The original M0–M6 are substantially landed at **protocol
+v25** (shipped through v0.1.24): transport/Steam/launcher, players + avatars +
+needs, generic FSM world sync, items/cargo/parts/bolts, vehicles (Sorbet + Corris
+incl. climate), shared wallet + shops + orders, time/weather, NPC traffic,
+sleep/death/permadeath, join snapshot + checksums/soft-resync. Launcher
+install/update/backup/diagnostics (the original M8) is largely done. What remains
+is the gameplay **long tail** + a dedicated **stability pass**, re-scoped below.
 
-| # | Milestone | Contents | Exit criteria | Est. |
-|---|---|---|---|---|
-| **M0** | Recon & tooling | FSM dumper, object catalog, save analyzer, ID scheme; decompile pass (dnSpy/ILSpy) over `Assembly-CSharp` + PlayMaker | Catalog generated for current game build; savefile fully mapped | 3–4 wk |
-| **M1** | Transport skeleton | BepInEx plugin boots, Steam session piggyback, lobby create/join, overlay invites, `+connect_lobby`, text chat, TAB player list | Two machines chat in-game via Steam invite, zero config | 2–3 wk |
-| **M2** | Players | Avatar rig, transform/animation streaming, name tags, interpolation layer | Two players see each other move smoothly around the home | 3 wk |
-| **M3** | World basics | Generic FSM sync engine + first curated set: time/weather slave, doors, switches, item pickup/drop, join snapshot v1 | Guest joins mid-session into a consistent world; doors/items stay consistent | 4–6 wk |
-| **M4** | Vehicles | Rigidbody ownership system, vehicle driving sync, passengers, engine FSM ownership, fuel/damage variables | Two players drive separate cars; passenger seat works; cars persist correctly | 5–6 wk |
-| **M5** | Building & economy | Part attach/bolt sync across all ~200 parts, shared wallet, shops, phone orders, deliveries | Full car build performed by two players cooperatively; money always consistent | 6–8 wk |
-| **M6** | NPCs, jobs & long tail | NPC/traffic streaming, jobs/events, sauna/needs/sleep-skip, death/respawn, guest save sidecar | "Everything synced" checklist (§4.4) green on current game build | 8–12 wk |
-| **M7** | Stability pass | Desync checksums + soft resync, reconnection, perf (bandwidth budget < 64 kB/s per client steady-state), voice chat, soak tests | 4-player 3-hour session with zero hard desyncs across 10 soak runs | 4–6 wk |
-| **M8** | Launcher polish & beta | Auto-update, save backup/restore UX, diagnostics zip, install repair, docs, Nexus/GitHub release, closed beta → public beta | Non-technical user goes from download to playing with a friend in < 5 min | 3–4 wk |
+**Target: v1.0 = pragmatic-complete co-op.** Full parity (computer toy, exhaustive
+FSM coverage, full race-grid fidelity) is an explicit *post-1.0* backlog, not a
+v1.0 blocker. Stability is the top priority — M7 gates everything after it.
 
-Ship order matters: after **M4** the mod is already a great co-op experience
-(drive around together, basic world sync) and can go to closed alpha for
-real-world feedback while M5/M6 land.
+| # | Milestone | Contents | Exit criteria |
+|---|---|---|---|
+| **M0–M6** | ✅ Foundation | Tooling, transport, players, world FSM sync, vehicles, building & economy, NPCs, sleep/death — see §4.4 | Shipped: protocol v25 / v0.1.24 |
+| **M7** | **Stability & winter-survival parity** *(gate)* | Land the security/correctness backlog (`.car-sync-*` findings); **`BodyTemp` as the 5th synced need** + clothing (warmth + visual); **home heating & cooking** as host-owned progression (§4.8); bandwidth budget (< 64 kB/s/client steady); reconnection hardening; multi-hour soak | 4-player multi-hour winter session: zero hard desyncs **and** zero hypothermia/heat divergence across 10 soak runs |
+| **M8** | Jobs & economy depth | **Classifieds ordering** (listings + periodic refresh host-authoritative; phone-dial intents; mailed delivery); **jobs** (firewood delivery + tractor wood-splitter PTO, sewage, factory punch-clock); fuel/jerrycan; flea market | Two players run a full work loop — order parts by phone, earn from a job — money **and** listings always consistent |
+| **M9** | World hazards | Police (speeding/DUI → fines to shared wallet, arrest/impound); moose/animal collisions + host AI; vehicle inspection/registration | A guest can be ticketed, hit a moose, and pass inspection — all consistent across peers |
+| **M10** | Co-op racing | Suvi-Sprint rally + Ice Track Rally: enroll/grid/start/lap-timing/finish/payout; opponent streaming; frozen-lake ice track | Two players race the ice rally together with consistent standings + payout |
+| **M11** | Beta & polish | Positional voice chat; home appliances (TV/radio/fuses); hygiene/dirt/wash; docs; public beta; Nexus release | Non-technical user: download → playing with a friend in < 5 min |
+| — | Parity backlog *(post-1.0)* | Computer toy (MSC-import), full race-grid fidelity, exhaustive long-tail FSM curation | As demanded, per game build |
+
+Ship order: **M7 is the gate** — stability and survival-parity before new content.
+After **M8** the cooperative work loop is complete (build the Corris, earn money,
+survive winter); **M9–M10** add the headline winter content; **M11** ships it.
 
 ---
 

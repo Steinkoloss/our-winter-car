@@ -123,6 +123,26 @@ namespace WinterMP.Core.Sync
             return now - vehicle.LastMovedAt < vehicle.StillSeconds;
         }
 
+        private Vector3 GetVehicleProximityAnchor(SyncedItem candidate)
+        {
+            // When the vehicle is remote-driven its visible transform is mid-lerp toward
+            // TargetPosition (ApplyRemoteSmoothing). Anchor on the authoritative TARGET so
+            // host and guest agree on which vehicle a loose item belongs to; otherwise the
+            // smoothing lag can flip the nearest-of-two pick between machines.
+            Transform root = GetVehicleSceneRoot(candidate.Body.transform);
+            if (candidate.RemoteOwner != WorldSyncIds.NoOwner
+                && ItemTransformPolicy.IsRemoteStreamLive(candidate.LastRemoteAt, Time.unscaledTime,
+                       candidate.RemoteIsDriver, candidate.RemoteVehicleStream))
+            {
+                // Offset the scene-root position by how far the body still has to travel,
+                // so the root anchor reflects the settled pose rather than the in-flight one.
+                Vector3 delta = candidate.TargetPosition - candidate.Body.transform.position;
+                return root.position + delta;
+            }
+
+            return root.position;
+        }
+
         private bool TryGetContainingVehicle(SyncedItem item, out SyncedItem? vehicle)
         {
             vehicle = null;
@@ -136,7 +156,7 @@ namespace WinterMP.Core.Sync
             {
                 if (!candidate.IsVehicle || candidate.Body == null) continue;
 
-                Vector3 anchor = GetVehicleSceneRoot(candidate.Body.transform).position;
+                Vector3 anchor = GetVehicleProximityAnchor(candidate);
                 float sqr = (position - anchor).sqrMagnitude;
                 if (sqr > radiusSqr || sqr >= bestSqr) continue;
 

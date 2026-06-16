@@ -22,3 +22,7 @@ dist/
 dumps/
 backups/
 *.log
+
+# AI agent scratch (review findings/verdicts, etc.) — never commit
+.car-sync-*.json
+.claude/

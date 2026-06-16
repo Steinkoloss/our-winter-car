@@ -1,12 +1,12 @@
-<Window x:Class="WinterMP.Launcher.InfoWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="WinterMP.Launcher.InfoWindow"
         Title="Info"
         Width="560" Height="420"
         Background="{StaticResource BgBrush}"
         FontSize="14"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="NoResize">
+        CanResize="False">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -16,7 +16,7 @@
 
         <TextBlock Grid.Row="0" Text="Info" FontSize="24" FontWeight="Bold" Margin="0,0,0,16" />
 
-        <Border Grid.Row="1" Style="{StaticResource SectionBorderStyle}">
+        <Border Grid.Row="1" Classes="section">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="110" />
@@ -31,31 +31,29 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Game" Style="{StaticResource LabelStyle}" />
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Game" Classes="label" />
                 <TextBlock Grid.Row="0" Grid.Column="1" x:Name="GameStatusText"
-                           Style="{StaticResource ValueStyle}" Text="Searching…" TextWrapping="Wrap" />
+                           Classes="value" Text="Searching…" TextWrapping="Wrap" />
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="BepInEx" Style="{StaticResource LabelStyle}" Margin="0,10,0,0" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="BepInEx" Classes="label" Margin="0,10,0,0" />
                 <TextBlock Grid.Row="1" Grid.Column="1" x:Name="BepInExStatusText"
-                           Style="{StaticResource ValueStyle}" Text="—" Margin="0,10,0,0" />
+                           Classes="value" Text="—" Margin="0,10,0,0" />
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Mod" Style="{StaticResource LabelStyle}" Margin="0,10,0,0" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Mod" Classes="label" Margin="0,10,0,0" />
                 <TextBlock Grid.Row="2" Grid.Column="1" x:Name="ModStatusText"
-                           Style="{StaticResource ValueStyle}" Text="—" Margin="0,10,0,0" />
+                           Classes="value" Text="—" Margin="0,10,0,0" />
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Backups" Style="{StaticResource LabelStyle}" Margin="0,10,0,0" />
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Backups" Classes="label" Margin="0,10,0,0" />
                 <TextBlock Grid.Row="3" Grid.Column="1" x:Name="BackupStatusText"
-                           Style="{StaticResource ValueStyle}" Text="—" Margin="0,10,0,0" />
+                           Classes="value" Text="—" Margin="0,10,0,0" />
 
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="Versions" Style="{StaticResource LabelStyle}" Margin="0,10,0,0" />
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Versions" Classes="label" Margin="0,10,0,0" />
                 <TextBlock Grid.Row="4" Grid.Column="1" x:Name="BuildStatusText"
-                           Style="{StaticResource ValueStyle}" Text="—" TextTrimming="CharacterEllipsis"
-                           ToolTipService.ShowOnDisabled="True" Margin="0,10,0,0" />
+                           Classes="value" Text="—" TextTrimming="CharacterEllipsis" Margin="0,10,0,0" />
 
-                <TextBlock Grid.Row="5" Grid.Column="0" Text="Updates" Style="{StaticResource LabelStyle}" Margin="0,10,0,0" />
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="Updates" Classes="label" Margin="0,10,0,0" />
                 <TextBlock Grid.Row="5" Grid.Column="1" x:Name="UpdateStatusText"
-                           Style="{StaticResource ValueStyle}" Text="Checking…"
-                           TextWrapping="Wrap" Margin="0,10,0,0" />
+                           Classes="value" Text="Checking…" TextWrapping="Wrap" Margin="0,10,0,0" />
             </Grid>
         </Border>
 
