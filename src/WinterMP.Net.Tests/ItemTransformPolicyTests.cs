@@ -92,31 +92,6 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
-        public void AllowsVehicleProximityClaim_UsesVehicleHoldNotItemHold_WhenStreamStale()
-        {
-            // Stream went non-live (remoteVehicleStreamLive=false) but a remote owner is
-            // still set. Because this is a vehicle-only decision, the 3.5s vehicle hold
-            // must still block a proximity claim — a 1.5s gap is past the 0.75s item hold
-            // but within the vehicle hold. (Regression lock for the param-swap bug that
-            // collapsed this to the item hold.)
-            float now = 100f;
-            Assert.False(ItemTransformPolicy.AllowsVehicleProximityClaim(
-                remoteIsDriver: false,
-                remoteVehicleStreamLive: false,
-                remoteOwnerId: 1,
-                lastRemoteAt: now - 1.5f,
-                now: now));
-
-            // Past the full vehicle hold → proximity claim allowed.
-            Assert.True(ItemTransformPolicy.AllowsVehicleProximityClaim(
-                remoteIsDriver: false,
-                remoteVehicleStreamLive: false,
-                remoteOwnerId: 1,
-                lastRemoteAt: now - 4f,
-                now: now));
-        }
-
-        [Fact]
         public void IsStaleSequence_WrapAware()
         {
             Assert.True(ItemTransformPolicy.IsStaleSequence(10, 10));

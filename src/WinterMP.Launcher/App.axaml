@@ -1,0 +1,108 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WinterMP.Launcher.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <SolidColorBrush x:Key="BgBrush" Color="#FF12151A" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#FF1C222C" />
+        <SolidColorBrush x:Key="FgBrush" Color="#FFF3F4F6" />
+        <SolidColorBrush x:Key="SubtleBrush" Color="#FFC8D0DA" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#FF9AA8B8" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#FF5EB0FF" />
+        <SolidColorBrush x:Key="OkBrush" Color="#FF6BD98A" />
+        <SolidColorBrush x:Key="WarnBrush" Color="#FFF0B85A" />
+        <SolidColorBrush x:Key="InputBgBrush" Color="#FF0E1116" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#FF3D4654" />
+        <SolidColorBrush x:Key="HoverBrush" Color="#FF2A3240" />
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- Default text is light on the dark background. -->
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <!-- Class styles replace WPF keyed Styles (Avalonia has no Style="{StaticResource}";
+             controls opt in with Classes="section", Classes="label", etc.). -->
+        <Style Selector="Border.section">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="{StaticResource SubtleBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.value">
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="{StaticResource SubtleBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Cascadia Code,Cascadia Mono,Consolas,DejaVu Sans Mono,monospace" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{StaticResource SubtleBrush}" />
+        </Style>
+
+        <!-- Buttons: dark panel fill, rounded, light hover — matches the old WPF look. -->
+        <Style Selector="Button">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="14,9" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource HoverBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        </Style>
+        <Style Selector="Button:disabled">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+
+        <!-- Inputs inherit FluentTheme dark styling; nudge colors toward the old palette. -->
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="{StaticResource InputBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="{StaticResource InputBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="ListBox">
+            <Setter Property="Background" Value="{StaticResource InputBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+    </Application.Styles>
+</Application>

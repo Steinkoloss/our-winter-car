@@ -46,8 +46,14 @@ namespace WinterMP.Core.Sync
                     return;
             }
 
-            // Stale unreliable packets from the same owner are dropped (wrap-aware).
-            if (message.OwnerPlayerId == item.RemoteOwner)
+            // Stale, out-of-order packets from the owner whose sequence baseline we hold
+            // are dropped (wrap-aware). LastRemoteSequenceOwner survives a final packet's
+            // RemoteOwner reset, so a late straggler that arrives AFTER the reliable final
+            // (a non-vehicle moving packet on the unreliable channel can overtake it) is
+            // still recognised as stale and dropped instead of reviving the just-rested
+            // item at a mid-flight pose (#7).
+            if (message.OwnerPlayerId == item.RemoteOwner
+                || message.OwnerPlayerId == item.LastRemoteSequenceOwner)
             {
                 if (ItemTransformPolicy.IsStaleSequence(item.LastRemoteSequence, message.Sequence))
                 {
@@ -79,6 +85,9 @@ namespace WinterMP.Core.Sync
             item.RemoteIsDriver = message.IsDriver;
             item.RemoteVehicleStream = message.IsVehicle && !message.IsFinal;
             item.LastRemoteSequence = message.Sequence;
+            // Remember whose sequence space the baseline belongs to; unlike RemoteOwner
+            // this is not cleared by a final, so post-final stragglers stay recognisable.
+            item.LastRemoteSequenceOwner = message.OwnerPlayerId;
 
             var body = item.Body;
             if (!item.KinematicSaved)
@@ -116,10 +125,17 @@ namespace WinterMP.Core.Sync
                 {
                     WinterMPPlugin.Log.LogInfo(
                         $"WorldSync: '{item.Path}' now {(message.IsDriver ? "driven" : "moved")} by player {message.OwnerPlayerId}.");
-                    // Snap on first packet so a car that drove away doesn't stay parked
-                    // locally until someone walks up and triggers a huge correction.
-                    body.transform.position = position;
-                    body.transform.rotation = rotation;
+                    // Snap only when the new pose is far from the car's current local pose:
+                    // a car that genuinely drove away while parked here needs the jump, but
+                    // an ownership handoff between two remote contributors (e.g. driver to
+                    // proximity-pusher) lands near the current pose and should keep
+                    // smoothing instead of teleport-flickering (#15).
+                    if ((body.transform.position - position).sqrMagnitude
+                        > RemoteSnapDistance * RemoteSnapDistance)
+                    {
+                        body.transform.position = position;
+                        body.transform.rotation = rotation;
+                    }
                     InvalidateCargoFollowOffsets(item.Id);
                 }
 

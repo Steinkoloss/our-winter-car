@@ -1,4 +1,5 @@
-using System.Windows;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
 using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher
@@ -17,14 +18,10 @@ namespace WinterMP.Launcher
             ModStatusText.Text = snapshot.ModStatus;
             BackupStatusText.Text = snapshot.BackupStatus;
             BuildStatusText.Text = snapshot.BuildStatus;
-            BuildStatusText.ToolTip = snapshot.GameDirTooltip;
+            ToolTip.SetTip(BuildStatusText, snapshot.GameDirTooltip);
             UpdateStatusText.Text = snapshot.UpdateStatus;
         }
 
-        private void Done_Click(object sender, RoutedEventArgs e)
-        {
-            DialogResult = true;
-            Close();
-        }
+        private void Done_Click(object? sender, RoutedEventArgs e) => Close(true);
     }
 }

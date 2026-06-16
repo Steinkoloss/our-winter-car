@@ -9,6 +9,23 @@ namespace WinterMP.Core.Sync
     {
         private const float DriverKeepaliveSeconds = 0.4f;
 
+        /// <summary>
+        /// After a remote car's stream goes quiet (past its hold), keep it frozen at its
+        /// last pose for this much longer before releasing it to local physics. Absorbs
+        /// brief lag spikes / GC stalls on the owner's machine so the car doesn't drop to
+        /// gravity at a stale pose and then hard-snap when packets resume (#6).
+        /// </summary>
+        private const float RemoteReleaseGraceSeconds = 2f;
+
+        /// <summary>
+        /// A locally-owned vehicle counts as "at rest" (safe to hand off with a final
+        /// packet) below this squared speed, in addition to Rigidbody.IsSleeping(). The
+        /// position-threshold "moving" check alone treats a slow roll as still, so without
+        /// this a car creeping downhill would stop being streamed and freeze on the guest
+        /// while it keeps drifting on the owner (#10).
+        /// </summary>
+        private const float RestVelocitySqr = 0.0025f;
+
         internal void UpdateItems(SessionManager session)
         {
             if (session.PlayerCount == 0) return;
@@ -64,6 +81,17 @@ namespace WinterMP.Core.Sync
 
                 if (item.RemoteOwner != WorldSyncIds.NoOwner && !remoteDriven)
                 {
+                    // Stream went quiet past its hold. Hold the car frozen at its last pose
+                    // for a short grace window before releasing it to local physics: a brief
+                    // lag spike or GC stall on the owner's machine must not drop the car to
+                    // gravity at a stale pose and then hard-snap when packets resume. The
+                    // body is already kinematic from the last remote packet, so simply
+                    // holding (skipping the release) keeps it frozen, and keeping RemoteOwner
+                    // set means a resuming packet is not treated as a first packet (no snap).
+                    if (!item.LocallyOwned
+                        && now - item.LastRemoteAt < GetRemoteHoldSeconds(item) + RemoteReleaseGraceSeconds)
+                        continue;
+
                     body.isKinematic = item.OriginalKinematic;
                     item.RemoteOwner = WorldSyncIds.NoOwner;
                     item.RemoteIsDriver = false;
@@ -99,12 +127,22 @@ namespace WinterMP.Core.Sync
                         else
                             item.LocalDriveActive = false;
 
-                        if (item.LocalDriveActive || moving)
+                        // Don't hand the car off until its physics have actually settled.
+                        // The position-threshold "moving" check treats a slow roll (a car
+                        // creeping below ~3 m/s) as still, so releasing on !moving alone
+                        // could stop streaming a car that keeps drifting on the owner's
+                        // machine — the guest would freeze at the last pose (the final
+                        // packet sleeps its body) while the owner's car rolls away, with no
+                        // resync until someone walks back within range.
+                        bool atRest = body.IsSleeping()
+                            || body.velocity.sqrMagnitude < RestVelocitySqr;
+
+                        if (item.LocalDriveActive || moving || !atRest)
                         {
                             if (now >= item.NextSendAt)
                             {
                                 SendItem(session, item, body, false);
-                                item.NextSendAt = now + (moving
+                                item.NextSendAt = now + ((moving || !atRest)
                                     ? 1f / item.SendRateHz
                                     : DriverKeepaliveSeconds);
                             }
@@ -160,18 +198,14 @@ namespace WinterMP.Core.Sync
             _bridge.FindLocalPlayer();
             if (_bridge.LocalPlayer == null) return false;
 
+            // Genuine local driver/operator fast-path: not proximity-gated, because at
+            // speed the game leaves PLAYER lagging the rigidbody (often >ClaimRadius).
             if (item.IsVehicle && IsLocalVehicleOperator(item)) return true;
 
-            if (item.IsVehicle && !IsLocalVehicleOperator(item)
-                && !ItemTransformPolicy.AllowsVehicleProximityClaim(
-                    item.RemoteIsDriver,
-                    item.RemoteVehicleStream && ItemTransformPolicy.IsRemoteStreamLive(
-                        item.LastRemoteAt, now, item.RemoteIsDriver, isVehicle: true),
-                    item.RemoteOwner,
-                    item.LastRemoteAt,
-                    now))
-                return false;
-
+            // A live remote owner never reaches here (UpdateItems handles it via the
+            // remote-driven branch / stale-clear), so there is no send-side proximity
+            // policy to consult — competing claims converge on the receive side via
+            // RemoteClaimWinsOverLocal. Proximity claims just need to be in range.
             if ((position - _bridge.LocalPlayer.position).sqrMagnitude >= item.ClaimRadius * item.ClaimRadius)
                 return false;
 

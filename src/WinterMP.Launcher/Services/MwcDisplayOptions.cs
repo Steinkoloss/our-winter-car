@@ -104,6 +104,10 @@ namespace WinterMP.Launcher.Services
 
         private static List<string> EnumerateMonitorDevices()
         {
+            // user32.dll only exists on Windows; on Linux fall through to the fallback
+            // resolution list (callers treat an empty device list as "unknown display").
+            if (!OperatingSystem.IsWindows()) return new List<string>();
+
             var devices = new List<string>();
             var enumerator = new MonitorEnumerator(devices);
             var handle = GCHandle.Alloc(enumerator);

@@ -57,6 +57,7 @@ namespace WinterMP.Core.Sync
             }
 
             RemoveTrackedItem(message.ItemId, item.Body);
+            ReleaseCargoFollowingVehicle(message.ItemId);
         }
 
         private void RemoveTrackedItem(uint itemId, Rigidbody? body)
@@ -64,6 +65,22 @@ namespace WinterMP.Core.Sync
             _items.Remove(itemId);
             if (body != null)
                 _trackedBodies.Remove(body);
+        }
+
+        /// <summary>
+        /// When a vehicle is despawned, any loose item that was riding it (cargo-follow)
+        /// would otherwise be left kinematic and frozen in mid-air, its follow offset
+        /// pointing at a now-dead vehicle id. Fully clear the follow on each such item so
+        /// its original kinematic flag is restored and it falls/simulates normally again.
+        /// (InvalidateCargoFollowOffsets only drops the flag; it does NOT restore physics.)
+        /// </summary>
+        private void ReleaseCargoFollowingVehicle(uint vehicleId)
+        {
+            foreach (var other in _items.Values)
+            {
+                if (other.CargoFollowActive && other.CargoFollowVehicleId == vehicleId)
+                    ClearCargoFollow(other, other.Body);
+            }
         }
     }
 }

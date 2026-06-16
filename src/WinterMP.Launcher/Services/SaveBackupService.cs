@@ -13,15 +13,14 @@ namespace WinterMP.Launcher.Services
     {
         private const int MaxBackups = 20;
 
-        private static string SaveDir => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "AppData", "LocalLow", "Amistech", "My Winter Car");
+        /// <summary>The game save folder. On Linux this resolves inside the Proton prefix.</summary>
+        private static string? SaveDir => Platform.Current.GetGameSaveDir();
 
         private static string BackupDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WinterMP", "backups");
 
-        public static bool SaveDirExists() => Directory.Exists(SaveDir);
+        public static bool SaveDirExists() => SaveDir is { } dir && Directory.Exists(dir);
 
         public static int CountBackups() => ListBackups().Count;
 
@@ -39,11 +38,11 @@ namespace WinterMP.Launcher.Services
         /// <summary>Returns the backup path, or null when there is no save folder yet.</summary>
         public static string? CreateBackup()
         {
-            if (!SaveDirExists()) return null;
+            if (SaveDir is not { } saveDir || !Directory.Exists(saveDir)) return null;
 
             Directory.CreateDirectory(BackupDir);
             string target = Path.Combine(BackupDir, $"save-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
-            ZipFile.CreateFromDirectory(SaveDir, target, CompressionLevel.Fastest, includeBaseDirectory: false);
+            ZipFile.CreateFromDirectory(saveDir, target, CompressionLevel.Fastest, includeBaseDirectory: false);
 
             PruneOldBackups();
             return target;
@@ -54,31 +53,31 @@ namespace WinterMP.Launcher.Services
             if (!File.Exists(zipPath))
                 throw new FileNotFoundException("Backup file not found.", zipPath);
 
-            if (!SaveDirExists())
-                Directory.CreateDirectory(SaveDir);
+            if (SaveDir is not { } saveDir)
+                throw new InvalidOperationException(
+                    "Could not locate the My Winter Car save folder. Launch the game once so its (Proton) save folder exists.");
+
+            if (!Directory.Exists(saveDir))
+                Directory.CreateDirectory(saveDir);
 
             string? safety = CreateBackup();
             string safetyNote = safety != null
                 ? $"Current save backed up to {Path.GetFileName(safety)} before restore."
                 : "No existing save to back up before restore.";
 
-            foreach (string file in Directory.GetFiles(SaveDir, "*", SearchOption.AllDirectories))
+            foreach (string file in Directory.GetFiles(saveDir, "*", SearchOption.AllDirectories))
                 File.Delete(file);
-            foreach (string dir in Directory.GetDirectories(SaveDir))
+            foreach (string dir in Directory.GetDirectories(saveDir))
                 Directory.Delete(dir, recursive: true);
 
-            ZipFile.ExtractToDirectory(zipPath, SaveDir, overwriteFiles: true);
+            ZipFile.ExtractToDirectory(zipPath, saveDir, overwriteFiles: true);
             return $"Restored save from {Path.GetFileName(zipPath)}. {safetyNote}";
         }
 
         public static void OpenBackupFolder()
         {
             Directory.CreateDirectory(BackupDir);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = BackupDir,
-                UseShellExecute = true,
-            });
+            Platform.Current.OpenInShell(BackupDir);
         }
 
         private static void PruneOldBackups()

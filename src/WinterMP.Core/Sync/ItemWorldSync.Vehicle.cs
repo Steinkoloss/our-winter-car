@@ -73,7 +73,13 @@ namespace WinterMP.Core.Sync
             // because an unowned car has RemoteOwner == NoOwner.
             if (item != null && item.RemoteOwner == WorldSyncIds.NoOwner)
             {
-                if (item.PlayerInVar != null && item.PlayerInVar.Value)
+                // Additional guard for PlayerInVar specifically: the transform stream can
+                // go stale (RemoteOwner scrubbed to NoOwner) while the CLIMATE stream is
+                // still live — e.g. a remote player sitting in a parked car — and during
+                // that window PlayerInVar is still the remote occupant's contaminated
+                // value. Only trust it when no remote climate is live either.
+                if (item.PlayerInVar != null && item.PlayerInVar.Value
+                    && Time.unscaledTime >= item.RemoteClimateUntil)
                     return true;
 
                 // Enter-seat race: hierarchy may lag one frame; MassDriver is the

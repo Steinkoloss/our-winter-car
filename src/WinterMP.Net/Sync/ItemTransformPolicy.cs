@@ -50,36 +50,14 @@ namespace WinterMP.Net.Sync
             return true;
         }
 
-        /// <summary>
-        /// May a nearby non-driver proximity-claim this vehicle?
-        ///
-        /// REACHABILITY NOTE: the only caller (ItemWorldSync.CanClaim) runs after
-        /// UpdateItems has already cleared a stale vehicle's RemoteOwner/RemoteIsDriver/
-        /// RemoteVehicleStream to empty (the stale-clear that precedes the claim check),
-        /// while a live remote stream short-circuits earlier via the remote-driven branch.
-        /// So today this is reached only with remoteOwnerId == NoRemoteOwner and both
-        /// flags false — i.e. it effectively always returns true. The hold/tie-break here
-        /// only becomes load-bearing once the caller preserves the remote owner across that
-        /// stale-clear; the logic is kept correct in the meantime.
-        /// </summary>
-        public static bool AllowsVehicleProximityClaim(
-            bool remoteIsDriver,
-            bool remoteVehicleStreamLive,
-            byte remoteOwnerId,
-            float lastRemoteAt,
-            float now)
-        {
-            if ((remoteIsDriver || remoteVehicleStreamLive)
-                && now - lastRemoteAt < DriverRemoteHoldSeconds)
-                return false;
-            // Vehicle-only function, so the hold is always the vehicle/driver hold (3.5s).
-            // Previously the liveness bool was misused as the isVehicle arg, collapsing the
-            // window to the 0.75s item hold once the stream went non-live.
-            if (remoteOwnerId != NoRemoteOwner
-                && now - lastRemoteAt < GetRemoteHoldSeconds(remoteIsDriver, isVehicle: true))
-                return false;
-            return true;
-        }
+        // NOTE: a vehicle proximity-claim policy used to live here, but it was provably
+        // unreachable as written: ItemWorldSync.UpdateItems stale-clears the remote owner
+        // (and a live stream short-circuits earlier via the remote-driven branch) before
+        // CanClaim runs, so the policy only ever saw NoOwner and always allowed the claim.
+        // Convergence for competing proximity claims is enforced on the RECEIVE side by
+        // RemoteClaimWinsOverLocal (lower playerId wins; host is id 0). Removed rather than
+        // left as dead code. Re-add a send-side policy only if the claim path is ever reached
+        // with a live remote owner.
 
         /// <summary>
         /// Resolves conflicting local vs remote ownership on one machine.
