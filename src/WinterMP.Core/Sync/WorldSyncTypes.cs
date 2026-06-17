@@ -52,6 +52,14 @@ namespace WinterMP.Core.Sync
     public Vector3 CargoFollowLocalPos;
     public Quaternion CargoFollowLocalRot = Quaternion.identity;
 
+    // While welded as cargo the item is kinematic (infinite mass) and we drive its
+    // pose directly, so its solid colliders have nothing to do but fight the car they
+    // ride in — pinning the dynamic chassis (the car "can't move") and slamming the
+    // hinged door rigidbodies (doors glitch / become unclickable). Disable them for
+    // the duration of the weld and restore exactly the ones we turned off.
+    public bool CargoCollidersDisabled;
+    public Collider[]? CargoDisabledColliders;
+
     // Vehicles only: the game's drive trigger (seat). Blocked while a
     // remote driver holds the vehicle; also anchors the driver's avatar.
     public bool SeatSearched;

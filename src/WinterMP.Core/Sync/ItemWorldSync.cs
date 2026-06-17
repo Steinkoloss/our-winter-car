@@ -53,6 +53,7 @@ namespace WinterMP.Core.Sync
                 item.CargoFollowActive = false;
                 item.CargoFollowVehicleId = 0;
                 item.CargoFollowDriverId = WorldSyncIds.NoOwner;
+                RestoreCargoColliders(item);
                 item.RemoteEngineUntil = -999f;
                 item.RemoteClimateUntil = -999f;
                 item.RemoteEngineOn = false;

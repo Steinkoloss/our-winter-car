@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Session;
 using WinterMP.Net.Sync;
@@ -14,6 +15,11 @@ namespace WinterMP.Core.Sync
 
         private static void ClearCargoFollow(SyncedItem item, Rigidbody? body = null)
         {
+            // Always attempt the collider restore, even on the no-op early-return path:
+            // the weld and the collider-disable are paired, and leaving colliders off
+            // would silently strip an item out of the physics world for the session.
+            RestoreCargoColliders(item);
+
             if (!item.CargoFollowActive && item.CargoFollowVehicleId == 0) return;
 
             item.CargoFollowActive = false;
@@ -22,6 +28,47 @@ namespace WinterMP.Core.Sync
 
             if (body != null && item.KinematicSaved)
                 body.isKinematic = item.OriginalKinematic;
+        }
+
+        /// <summary>
+        /// Turn off the riding item's solid colliders so the kinematic weld can't fight
+        /// the car body or shove the hinged doors. Triggers are left alone — they never
+        /// generate contact forces, so they can't block anything, and the game's own
+        /// pickup/use triggers must keep working. Idempotent for the duration of a weld.
+        /// </summary>
+        private static void DisableCargoColliders(SyncedItem item, Rigidbody body)
+        {
+            if (item.CargoCollidersDisabled) return;
+            item.CargoCollidersDisabled = true;
+
+            var colliders = body.GetComponentsInChildren<Collider>(true);
+            var disabled = new List<Collider>(colliders.Length);
+            foreach (var collider in colliders)
+            {
+                if (collider == null || collider.isTrigger || !collider.enabled) continue;
+                collider.enabled = false;
+                disabled.Add(collider);
+            }
+
+            item.CargoDisabledColliders = disabled.ToArray();
+        }
+
+        /// <summary>Re-enable exactly the colliders <see cref="DisableCargoColliders"/>
+        /// turned off (originally-disabled colliders are never recorded, so never revived).</summary>
+        private static void RestoreCargoColliders(SyncedItem item)
+        {
+            if (!item.CargoCollidersDisabled) return;
+            item.CargoCollidersDisabled = false;
+
+            var colliders = item.CargoDisabledColliders;
+            item.CargoDisabledColliders = null;
+            if (colliders == null) return;
+
+            foreach (var collider in colliders)
+            {
+                if (collider != null)
+                    collider.enabled = true;
+            }
         }
 
         /// <summary>Drop item ownership / remote hold without waking physics.</summary>
@@ -73,6 +120,7 @@ namespace WinterMP.Core.Sync
             }
 
             body.isKinematic = true;
+            DisableCargoColliders(item, body);
             body.transform.position = vehicleTransform.TransformPoint(item.CargoFollowLocalPos);
             body.transform.rotation = vehicleTransform.rotation * item.CargoFollowLocalRot;
             body.velocity = Vector3.zero;

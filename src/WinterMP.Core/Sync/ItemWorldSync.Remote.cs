@@ -80,6 +80,13 @@ namespace WinterMP.Core.Sync
                 item.LocalDriveActive = false;
             }
 
+            // We only get here once the item is no longer an active cargo weld (the
+            // cargo branch above returns while the vehicle is in motion / locally
+            // driven). If it transitioned straight from welded to a remote stream
+            // without passing ClearCargoFollow — a stop-boundary race on an observer —
+            // give it its colliders back: a remote-smoothed item collides normally.
+            RestoreCargoColliders(item);
+
             bool firstPacket = item.RemoteOwner != message.OwnerPlayerId;
             item.RemoteOwner = message.OwnerPlayerId;
             item.RemoteIsDriver = message.IsDriver;
