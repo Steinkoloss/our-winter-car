@@ -161,33 +161,46 @@ function Build-ReleaseNotes {
     param(
         [string]$Version,
         [int]$Protocol,
-        [string]$Bullets
+        [string]$Bullets,
+        [bool]$HasAppImage = $false
     )
 
     $repo = 'Steinkoloss/our-winter-car'
     $tag = "v$Version"
     $setupUrl = "https://github.com/$repo/releases/download/$tag/OurWinterCar-Setup.exe"
     $zipUrl = "https://github.com/$repo/releases/download/$tag/OurWinterCar-Launcher-win-x64.zip"
+    $appImageUrl = "https://github.com/$repo/releases/download/$tag/OurWinterCar-Launcher-linux-x64.AppImage"
+
+    $linuxSection = if ($HasAppImage) { @"
+
+**Linux:** **[OurWinterCar-Launcher-linux-x64.AppImage]($appImageUrl)** — `chmod +x` then run.
+"@ } else { '' }
 
     return @"
 ## Download
 
-**[OurWinterCar-Setup.exe]($setupUrl)**
+**Windows:** **[OurWinterCar-Setup.exe]($setupUrl)**
 
-If Windows Defender removes the installer, use **[OurWinterCar-Launcher-win-x64.zip]($zipUrl)** from this release instead.
-
+If Windows Defender removes the installer, use **[OurWinterCar-Launcher-win-x64.zip]($zipUrl)** instead.
+$linuxSection
 All players must use **v$Version** (protocol **v$Protocol**). Older builds will be refused at handshake.
 
 ## What's new
 
 $Bullets
 
-## Quick start
+## Quick start (Windows)
 
-1. Run **OurWinterCar-Setup.exe** (or unzip the launcher zip if Defender blocks the exe)
-2. Open **Our Winter Car** - install runs automatically if needed
+1. Run **OurWinterCar-Setup.exe**
+2. Open **Our Winter Car** — install runs automatically
 3. Click **HOST GAME**
 4. Friends: same build, then Steam **Join Game**
+
+## Quick start (Linux)
+
+1. Download the AppImage, `chmod +x OurWinterCar-Launcher-linux-x64.AppImage`, run it
+2. The launcher finds your Steam/Proton game and installs the mod
+3. Click **HOST GAME**
 
 Guests must never save — only the host saves.
 "@
@@ -249,10 +262,14 @@ Write-Host "    total build: $($buildSw.Elapsed.TotalSeconds.ToString('0.0'))s" 
 $setup = Join-Path $root 'dist\OurWinterCar-Setup.exe'
 $payload = Join-Path $root 'dist\OurWinterCar-payload.zip'
 $launcher = Join-Path $root 'dist\OurWinterCar-Launcher-win-x64.zip'
+$appImage = Join-Path $root 'dist\OurWinterCar-Launcher-linux-x64.AppImage'
 
 $assets = @($payload, $launcher)
 if (-not $Fast) {
     $assets = @($setup) + $assets
+}
+if (Test-Path $appImage) {
+    $assets += $appImage
 }
 
 foreach ($asset in $assets) {
@@ -275,8 +292,10 @@ Invoke-Checked { git push origin HEAD } 'Push failed.'
 $tag = "v$version"
 $title = "v$version - Our Winter Car"
 $bullets = Get-ReleaseBullets -Version $version
-$body = Build-ReleaseNotes -Version $version -Protocol $protocol -Bullets $bullets
-$notesFile = Join-Path $env:TEMP "our-winter-car-release-$version.md"
+$hasAppImage = Test-Path $appImage
+$body = Build-ReleaseNotes -Version $version -Protocol $protocol -Bullets $bullets -HasAppImage $hasAppImage
+$tmpDir = if ($env:TEMP) { $env:TEMP } elseif ($env:TMPDIR) { $env:TMPDIR } else { '/tmp' }
+$notesFile = Join-Path $tmpDir "our-winter-car-release-$version.md"
 Set-Content $notesFile $body -Encoding utf8
 
 Write-Step "Publishing GitHub release $tag"

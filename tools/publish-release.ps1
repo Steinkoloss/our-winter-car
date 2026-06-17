@@ -174,8 +174,31 @@ $payloadZip = Join-Path $dist "OurWinterCar-payload.zip"
 Invoke-TimedStep "launcher zip" { New-ReleaseZip $publishDir $launcherZip }
 Invoke-TimedStep "payload zip" { New-ReleaseZip $payloadDir $payloadZip }
 
+# AppImage — requires Linux or WSL2 (appimagetool is a Linux binary).
+$appImage = Join-Path $dist "OurWinterCar-Launcher-linux-x64.AppImage"
+$hasWSL2 = $false
+if ($IsWindows) {
+    try {
+        $null = wsl --list --verbose 2>$null
+        $hasWSL2 = $LASTEXITCODE -eq 0
+    } catch { }
+}
+if ($IsLinux -or $hasWSL2) {
+    Invoke-TimedStep "AppImage (linux-x64)" {
+        if ($IsLinux) {
+            bash (Join-Path $PSScriptRoot "build-appimage.sh")
+        } else {
+            wsl bash (Join-Path $PSScriptRoot "build-appimage.sh")
+        }
+        if ($LASTEXITCODE -ne 0) { throw "AppImage build failed" }
+    }
+}
+
 Write-Host ""
 Write-Host "Published:"
-Write-Host "  Launcher: $launcherZip"
-Write-Host "  Payload:  $payloadZip  (attach to GitHub release for in-launcher updates)"
-Write-Host "  Folder:   $publishDir"
+Write-Host "  Launcher (win): $launcherZip"
+Write-Host "  Payload:        $payloadZip  (attach to GitHub release for in-launcher updates)"
+Write-Host "  Folder:         $publishDir"
+if ($IsLinux -and (Test-Path $appImage)) {
+    Write-Host "  AppImage:       $appImage"
+}

@@ -6,18 +6,31 @@ game's title. One player hosts with their savefile; friends join through Steam
 
 ## Requirements
 
-- **My Winter Car** on Steam (AppID 4164420)
-- Windows 10/11
-- **OurWinterCar-Setup.exe** from [GitHub Releases](https://github.com/Steinkoloss/our-winter-car/releases)
+- **My Winter Car** on Steam
+- Windows 10/11 **or** Linux (with Steam + Proton)
 - All players must run the **same mod version**
 
-## First-time setup
+## First-time setup — Windows
 
-1. Run **OurWinterCar-Setup.exe** (installs the launcher and mod automatically).
+1. Download **OurWinterCar-Setup.exe** from [GitHub Releases](https://github.com/Steinkoloss/our-winter-car/releases) and run it.
 2. If setup could not find the game, open **Settings** and browse to your
    My Winter Car folder. The mod installs automatically once the game is detected.
 
 If the game moved, update the folder path — install/repair runs automatically.
+
+## First-time setup — Linux
+
+My Winter Car runs through Steam Proton on Linux.
+
+1. Download **OurWinterCar-Launcher-linux-x64.AppImage** from [GitHub Releases](https://github.com/Steinkoloss/our-winter-car/releases).
+2. Make it executable and launch it:
+   ```
+   chmod +x OurWinterCar-Launcher-linux-x64.AppImage
+   ./OurWinterCar-Launcher-linux-x64.AppImage
+   ```
+   The launcher detects your Steam/Proton game folder and installs the mod automatically.
+3. If the game is not found, open **Settings** and browse to the game folder inside your
+   Steam library (e.g. `~/.steam/steam/steamapps/common/My Winter Car`).
 
 ## Hosting a session
 

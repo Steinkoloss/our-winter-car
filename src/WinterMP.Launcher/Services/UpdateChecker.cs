@@ -63,7 +63,9 @@ namespace WinterMP.Launcher.Services
             "https://api.github.com/repos/Steinkoloss/our-winter-car/releases/latest";
 
         private static readonly string[] PayloadAssetNames = { "OurWinterCar-payload.zip", "WinterMP-payload.zip" };
-        private static readonly string[] SetupAssetNames = { "OurWinterCar-Setup.exe", "WinterMP-Setup.exe" };
+        private static readonly string[] SetupAssetNames = OperatingSystem.IsLinux()
+            ? new[] { "OurWinterCar-Launcher-linux-x64.AppImage" }
+            : new[] { "OurWinterCar-Setup.exe", "WinterMP-Setup.exe" };
 
         public static async Task<UpdateCheckResult> CheckAsync(string? gameDir = null)
         {
@@ -191,6 +193,20 @@ namespace WinterMP.Launcher.Services
             var copies = ResolvePayloadCopies(extractDir);
             string launcherExe = ResolveLauncherExePath();
             int launcherPid = Process.GetCurrentProcess().Id;
+
+            if (OperatingSystem.IsLinux())
+            {
+                string sh = WriteModPayloadUpdateScriptLinux(copies, gameDir, launcherExe, launcherPid);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "/bin/bash",
+                    ArgumentList = { sh },
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+                return;
+            }
+
             string helper = WriteModPayloadUpdateScript(copies, gameDir, launcherExe, launcherPid);
             Process.Start(new ProcessStartInfo
             {
@@ -199,6 +215,45 @@ namespace WinterMP.Launcher.Services
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
             });
+        }
+
+        private static string WriteModPayloadUpdateScriptLinux(
+            List<(string Source, string Dest)> copies,
+            string gameDir,
+            string launcherExe,
+            int launcherPid)
+        {
+            string dir = Path.Combine(PlatformEnv.AppDataDir(), "updates");
+            Directory.CreateDirectory(dir);
+            string logPath = Path.Combine(PlatformEnv.AppDataDir(), "last-update.log");
+            string scriptPath = Path.Combine(dir, $"mod-payload-{Guid.NewGuid():N}.sh");
+
+            var lines = new List<string>
+            {
+                "#!/usr/bin/env bash",
+                $"LOG='{logPath}'",
+                $"echo \"[$(date)] Mod payload update started\" >> \"$LOG\"",
+                $"while kill -0 {launcherPid} 2>/dev/null; do sleep 1; done",
+            };
+
+            foreach (var (source, dest) in copies)
+            {
+                lines.Add($"cp -f '{source}' '{dest}' >> \"$LOG\" 2>&1 " +
+                          $"|| {{ echo \"[$(date)] copy failed: {source}\" >> \"$LOG\"; exit 1; }}");
+            }
+
+            lines.Add($"echo \"[$(date)] Payload copied, installing into game\" >> \"$LOG\"");
+            lines.Add($"'{launcherExe}' --install-mod --silent --game-dir '{gameDir}' >> \"$LOG\" 2>&1");
+            lines.Add($"echo \"[$(date)] Mod install OK, restarting launcher\" >> \"$LOG\"");
+            lines.Add($"nohup '{launcherExe}' >/dev/null 2>&1 &");
+            lines.Add("rm -- \"$0\"");
+
+            File.WriteAllText(scriptPath, string.Join("\n", lines) + "\n");
+            File.SetUnixFileMode(scriptPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            return scriptPath;
         }
 
         private static List<(string Source, string Dest)> ResolvePayloadCopies(string extractDir)
@@ -279,15 +334,53 @@ namespace WinterMP.Launcher.Services
             if (!File.Exists(setupPath))
                 throw new FileNotFoundException("Installer not found.", setupPath);
 
-            string launcherExe = ResolveLauncherExePath();
-            string helper = WritePostUpdateRestartScript(setupPath, launcherExe);
+            if (OperatingSystem.IsLinux())
+            {
+                // setupPath is the downloaded .AppImage — replace ourselves then relaunch.
+                string launcherExe = ResolveLauncherExePath();
+                int pid = Process.GetCurrentProcess().Id;
+                string helper = WriteLinuxLauncherUpdateScript(setupPath, launcherExe, pid);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "/bin/bash",
+                    ArgumentList = { helper },
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+                return;
+            }
+
+            string helperScript = WritePostUpdateRestartScript(setupPath, ResolveLauncherExePath());
             Process.Start(new ProcessStartInfo
             {
-                FileName = helper,
+                FileName = helperScript,
                 UseShellExecute = true,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
             });
+        }
+
+        private static string WriteLinuxLauncherUpdateScript(string newAppImage, string launcherExe, int launcherPid)
+        {
+            string dir = Path.Combine(PlatformEnv.AppDataDir(), "updates");
+            Directory.CreateDirectory(dir);
+            string scriptPath = Path.Combine(dir, $"launcher-update-{Guid.NewGuid():N}.sh");
+
+            string script =
+                "#!/usr/bin/env bash\n" +
+                $"while kill -0 {launcherPid} 2>/dev/null; do sleep 1; done\n" +
+                $"chmod +x '{newAppImage}'\n" +
+                $"mv '{newAppImage}' '{launcherExe}'\n" +
+                $"nohup '{launcherExe}' >/dev/null 2>&1 &\n" +
+                "rm -- \"$0\"\n";
+
+            File.WriteAllText(scriptPath, script);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(scriptPath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            return scriptPath;
         }
 
         /// <summary>Starts a fresh launcher instance and returns — caller should shut down.</summary>
@@ -304,6 +397,14 @@ namespace WinterMP.Launcher.Services
 
         private static string ResolveLauncherExePath()
         {
+            // When running as an AppImage the process path points inside the squashfs mount;
+            // $APPIMAGE is the real file on disk and is the thing we actually want to replace/relaunch.
+            if (OperatingSystem.IsLinux())
+            {
+                string? appImage = Environment.GetEnvironmentVariable("APPIMAGE");
+                if (!string.IsNullOrEmpty(appImage) && File.Exists(appImage))
+                    return appImage;
+            }
             return Environment.ProcessPath
                 ?? Process.GetCurrentProcess().MainModule?.FileName
                 ?? throw new InvalidOperationException("Could not resolve launcher executable path.");
