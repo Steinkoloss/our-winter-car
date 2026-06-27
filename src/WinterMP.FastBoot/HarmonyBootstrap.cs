@@ -10,14 +10,17 @@ namespace WinterMP.FastBoot
     {
         private const string HarmonyId = "com.ourwintercar.wintermp.fastboot.pipeline";
 
-        public static bool Apply(ManualLogSource log)
+        public static bool Apply(ManualLogSource log, bool patchEs2)
         {
             FastBootLog.Host = log;
             try
             {
                 var harmony = new Harmony(HarmonyId);
                 PatchApplicationLoadLevel(harmony, log);
-                TryPatchEs2(harmony, log);
+                // ES2 patches only intercept save reads to skip tags — install them solely when a
+                // dev enabled that (unsafe) tier. The safe default leaves ES2 untouched.
+                if (patchEs2)
+                    TryPatchEs2(harmony, log);
                 log.LogInfo("FastBoot: load pipeline Harmony patches applied.");
                 return true;
             }

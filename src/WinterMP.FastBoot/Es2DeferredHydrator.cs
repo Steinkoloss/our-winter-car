@@ -8,8 +8,11 @@ using UnityEngine;
 namespace WinterMP.FastBoot
 {
     /// <summary>
-    /// After GAME loads, re-hydrates ES2 tags skipped during the boot whitelist pass.
-    /// Boot-critical tags stay loaded; everything else catches up in the background.
+    /// After GAME loads, calls ES2.LoadAll for the save in the background. INTENDED to re-hydrate
+    /// tags skipped by the boot whitelist — but note ES2.LoadAll only returns an ES2Data dictionary
+    /// and pushes nothing back into the live world (the game's per-object PlayMaker loaders already
+    /// ran and took their default branch). So this is NOT a safety net for the ES2 skip and cannot
+    /// undo a skipped tag. Dormant by default; only runs when the unsafe ES2 whitelist is opted in.
     /// </summary>
     internal static class Es2DeferredHydrator
     {
