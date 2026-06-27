@@ -22,6 +22,8 @@ namespace WinterMP.Core.Sync
         private readonly WorldSyncBridge _bridge;
         private readonly Dictionary<uint, SyncedNpc> _npcs = new Dictionary<uint, SyncedNpc>();
         private readonly Dictionary<Rigidbody, bool> _trackedBodies = new Dictionary<Rigidbody, bool>();
+        // Reused across UpdateHost/UpdateGuest (host XOR guest per tick) to avoid a per-frame List alloc.
+        private readonly List<uint> _deadIds = new List<uint>();
 
         public NpcTrafficSync(WorldSyncBridge bridge) => _bridge = bridge;
 
@@ -177,14 +179,14 @@ namespace WinterMP.Core.Sync
 
         private void UpdateHost(SessionManager session, float now)
         {
-            var deadIds = new List<uint>();
+            _deadIds.Clear();
             foreach (var pair in _npcs)
             {
                 var npc = pair.Value;
                 var body = npc.Body;
                 if (body == null)
                 {
-                    deadIds.Add(pair.Key);
+                    _deadIds.Add(pair.Key);
                     continue;
                 }
 
@@ -215,17 +217,21 @@ namespace WinterMP.Core.Sync
                 npc.NextSendAt = now + 1f / rateHz;
             }
 
-            for (int i = 0; i < deadIds.Count; i++)
-                _npcs.Remove(deadIds[i]);
+            PruneDead();
         }
 
         private void UpdateGuest(float now)
         {
+            _deadIds.Clear();
             foreach (var pair in _npcs)
             {
                 var npc = pair.Value;
                 var body = npc.Body;
-                if (body == null) continue;
+                if (body == null)
+                {
+                    _deadIds.Add(pair.Key);
+                    continue;
+                }
 
                 if (!npc.GuestRemoteActive)
                     continue;
@@ -239,6 +245,20 @@ namespace WinterMP.Core.Sync
                 }
 
                 ApplyRemoteSmoothing(npc, body);
+            }
+
+            PruneDead();
+        }
+
+        private void PruneDead()
+        {
+            for (int i = 0; i < _deadIds.Count; i++)
+            {
+                // Drop the destroyed body's tracking key too, or _trackedBodies grows unbounded
+                // with fake-null keys over a long session of traffic spawning/despawning.
+                if (_npcs.TryGetValue(_deadIds[i], out var dead))
+                    _trackedBodies.Remove(dead.Body);
+                _npcs.Remove(_deadIds[i]);
             }
         }
 

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
-using WinterMP.Net;
 using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.Sync

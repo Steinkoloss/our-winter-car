@@ -29,12 +29,6 @@ namespace WinterMP.Core.Sync
     public byte LastRemoteSequenceOwner = WorldSyncIds.NoOwner;
     public Vector3 TargetPosition;
     public Quaternion TargetRotation = Quaternion.identity;
-    // Receiver-side dead reckoning: implied velocity from the last two accepted poses
-    // lets ApplyRemoteSmoothing ease toward a predicted point instead of trailing the
-    // last received pose, removing the steady-state lag behind a fast remote car (#14).
-    public float PrevRemoteAt = -999f;
-    public Vector3 RemoteVelocity;
-    public bool HasRemoteVelocity;
 
     public bool LocallyOwned;
     public bool DespawnSent;
@@ -97,6 +91,9 @@ namespace WinterMP.Core.Sync
     public bool RemoteEngineOn;
     public bool RemoteAccOn;
     public bool RemoteElectricsApplied;
+    // Set when a new VehicleState packet or an electrics toggle changes the dash; the per-frame
+    // remote-presentation path re-applies gauges/lights only when this is set, then clears it.
+    public bool RemoteDashDirty;
     public float RemoteRpm;
     public float RemoteSpeedKmh;
     public byte RemoteFuelLevel;
@@ -151,6 +148,9 @@ namespace WinterMP.Core.Sync
     public ushort OutClimateSequence;
     public float NextClimateAt;
     public ushort LastClimateSequence;
+    // Sender of the climate sequence baseline above. Lets a second nearby observer reset the
+    // baseline instead of being permanently locked out by the first sender's higher sequence.
+    public byte LastClimateSequenceOwner = WorldSyncIds.NoOwner;
     public byte RemoteFrost;
     public byte RemoteFog;
     public byte RemoteCabinTemp;

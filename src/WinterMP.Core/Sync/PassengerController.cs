@@ -85,6 +85,7 @@ namespace WinterMP.Core.Sync
 
         private string? _hint;
         private GUIStyle? _hintStyle;
+        private bool _disabled;
 
         private void Awake()
         {
@@ -96,54 +97,89 @@ namespace WinterMP.Core.Sync
             if (Instance == this) Instance = null;
         }
 
+        /// <summary>
+        /// Crash containment: a fault in passenger sync must disable this subsystem and free the
+        /// local player, never escape into Unity's loop or strand the player parented to a seat.
+        /// </summary>
+        private void DisablePassengerSync(System.Exception e)
+        {
+            _disabled = true;
+            WinterMPPlugin.Log.LogError("Passenger sync disabled after unhandled error: " + e);
+            Diagnostics.SyncEventLog.Record("fatal", "Passenger: " + e);
+            Diagnostics.SyncEventLog.DumpToFile();
+            try
+            {
+                if (_seated) ForceExit("passenger sync error");
+            }
+            catch (System.Exception ex)
+            {
+                WinterMPPlugin.Log.LogError("Passenger ForceExit during disable failed: " + ex);
+            }
+        }
+
         private void Update()
         {
-            WatchLevelChanges();
-
-            var session = SessionManager.Instance;
-            bool sessionActive = session != null
-                && (session.State == SessionState.Hosting || session.State == SessionState.Connected);
-
-            _hint = null;
-
-            if (!sessionActive)
+            if (_disabled) return;
+            try
             {
-                if (_seated) ForceExit("session ended");
-                ClearRemoteSeats();
-                return;
+                WatchLevelChanges();
+
+                var session = SessionManager.Instance;
+                bool sessionActive = session != null
+                    && (session.State == SessionState.Hosting || session.State == SessionState.Connected);
+
+                _hint = null;
+
+                if (!sessionActive)
+                {
+                    if (_seated) ForceExit("session ended");
+                    ClearRemoteSeats();
+                    return;
+                }
+
+                FindPlayer();
+                ScanVehicles();
+                PurgeGonePlayers(session!);
+
+                if (_player == null) return;
+
+                if (_seated)
+                    UpdateSeated(session!);
+                else
+                    UpdateOnFoot(session!);
             }
-
-            FindPlayer();
-            ScanVehicles();
-            PurgeGonePlayers(session!);
-
-            if (_player == null) return;
-
-            if (_seated)
-                UpdateSeated(session!);
-            else
-                UpdateOnFoot(session!);
+            catch (System.Exception e)
+            {
+                DisablePassengerSync(e);
+            }
         }
 
         private void LateUpdate()
         {
-            // Re-pin every frame: player FSMs (and the game's own gravity code)
-            // keep writing to the transform.
-            if (!_seated || _player == null) return;
-            if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null) return;
+            if (_disabled || !_seated || _player == null) return;
+            try
+            {
+                // Re-pin every frame: player FSMs (and the game's own gravity code)
+                // keep writing to the transform.
+                if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null) return;
 
-            var seat = vehicle.SeatLocal[_seatedIndex];
-            _player.position = vehicle.Body.transform.TransformPoint(SeatedLocalOffset(seat));
-            // Pin rotation too, or the seated body keeps its world-fixed facing while the
-            // car turns (the player FSM rewrites rotation each frame) and visibly slides
-            // relative to the seat. Match the car's orientation, as the Enter parenting
-            // intends (#32).
-            _player.rotation = vehicle.Body.transform.rotation;
+                var seat = vehicle.SeatLocal[_seatedIndex];
+                _player.position = vehicle.Body.transform.TransformPoint(SeatedLocalOffset(seat));
+                // Pin rotation too, or the seated body keeps its world-fixed facing while the
+                // car turns (the player FSM rewrites rotation each frame) and visibly slides
+                // relative to the seat. Match the car's orientation, as the Enter parenting
+                // intends (#32).
+                _player.rotation = vehicle.Body.transform.rotation;
+            }
+            catch (System.Exception e)
+            {
+                DisablePassengerSync(e);
+            }
         }
 
         private void OnGUI()
         {
-            if (_hint == null) return;
+            if (_disabled || _hint == null) return;
 
             if (_hintStyle == null)
             {

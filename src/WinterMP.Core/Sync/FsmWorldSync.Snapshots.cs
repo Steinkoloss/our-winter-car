@@ -1,12 +1,9 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
-using WinterMP.Core.Catalog;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
-using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
@@ -161,6 +158,15 @@ namespace WinterMP.Core.Sync
                     continue;
                 if (_buys.TryGetValue(entry.NetId, out var buy) && buy.LastSyncedState == entry.StateName)
                     continue;
+                // Ignition/control/starter entries ride the same snapshot stream. Without these
+                // checks a redundant snapshot/resync re-applies them, re-running PrepareRemoteControl/
+                // FireRemoteEntry side effects (electrics toggles, heater/hazard replays, FSM re-entry).
+                if (_ignitions.TryGetValue(entry.NetId, out var ignition) && ignition.LastSyncedState == entry.StateName)
+                    continue;
+                if (_controls.TryGetValue(entry.NetId, out var control) && control.LastSyncedState == entry.StateName)
+                    continue;
+                if (_starters.TryGetValue(entry.NetId, out var starter) && starter.LastSyncedState == entry.StateName)
+                    continue;
 
                 applied++;
                 if (!TryApplyStateEnter(entry.NetId, entry.StateName))
@@ -277,6 +283,12 @@ namespace WinterMP.Core.Sync
         {
             if (!_bolts.TryGetValue(netId, out var bolt) || bolt.Fsm == null) return false;
             if (!bolt.Fsm.gameObject.activeInHierarchy || !bolt.Fsm.enabled) return false;
+
+            // Already at this tightness — skip the var writes and the "Set pos" re-entry, which would
+            // replay the wrench animation/sound and churn the FSM on every redundant snapshot/resync.
+            ReadBoltVars(bolt, out ushort curTightness, out ushort curScrew);
+            if (curTightness == tightness && curScrew == screwInt)
+                return true;
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: bolt {netId:X8} -> tightness={tightness} screw={screwInt} (remote).");
             _bridge.ApplyingRemote = true;

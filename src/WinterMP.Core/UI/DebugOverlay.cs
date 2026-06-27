@@ -15,6 +15,11 @@ namespace WinterMP.Core.UI
         private bool _chatOpen;
         private string _chatInput = string.Empty;
 
+        // Built once: the version/protocol line never changes, but it was re-interpolated every frame.
+        private static readonly string BadgeVersionLine =
+            $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION} · protocol v{WinterMP.Net.ProtocolInfo.Version}";
+        private static GUIStyle? _richLabel;
+
         private void OnGUI()
         {
             var session = SessionManager.Instance;
@@ -46,9 +51,7 @@ namespace WinterMP.Core.UI
             GUILayout.Label(
                 $"<color={color}><b>{session.State}</b></color> — {session.StatusText}",
                 RichLabel());
-            GUILayout.Label(
-                $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION} · protocol v{WinterMP.Net.ProtocolInfo.Version}",
-                RichLabel());
+            GUILayout.Label(BadgeVersionLine, RichLabel());
             GUILayout.EndArea();
         }
 
@@ -156,8 +159,12 @@ namespace WinterMP.Core.UI
 
         private static GUIStyle RichLabel()
         {
-            var style = new GUIStyle(GUI.skin.label) { richText = true };
-            return style;
+            // Cache the rich-text style: it was allocating a fresh GUIStyle (a full copy of
+            // GUI.skin.label) at every call site on every OnGUI pass (~2x/frame) all session.
+            // Built lazily here because GUI.skin is only valid inside a GUI callback.
+            if (_richLabel == null)
+                _richLabel = new GUIStyle(GUI.skin.label) { richText = true };
+            return _richLabel;
         }
     }
 }

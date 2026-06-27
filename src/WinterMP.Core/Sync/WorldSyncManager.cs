@@ -6,7 +6,6 @@ using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
-using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {

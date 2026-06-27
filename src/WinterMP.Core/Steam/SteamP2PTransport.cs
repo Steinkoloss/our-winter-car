@@ -219,6 +219,12 @@ namespace WinterMP.Core.Steam
             if (_disposed) return;
             _disposed = true;
 
+            // Unregister our P2P callbacks from Steamworks' global dispatcher so this per-session
+            // transport's callbacks die with it — otherwise stale handlers leak and keep firing
+            // into disposed transports across host/join cycles.
+            _sessionRequest?.Dispose();
+            _sessionFail?.Dispose();
+
             foreach (var peer in _peers.Values)
             {
                 try

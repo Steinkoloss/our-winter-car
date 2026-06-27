@@ -614,56 +614,75 @@ namespace WinterMP.Core.Session
 
         private void OnPeerConnected(PeerId peer)
         {
-            WinterMPPlugin.Log.LogInfo($"Peer connected: {peer}");
-
-            if (!IsHost)
+            try
             {
-                _hostPeer = peer;
-                SyncCatalog.EnsureLoaded();
+                WinterMPPlugin.Log.LogInfo($"Peer connected: {peer}");
 
-                // We just reached the host: introduce ourselves.
-                var request = new HandshakeRequest
+                if (!IsHost)
                 {
-                    ProtocolVersion = ProtocolInfo.Version,
-                    ModVersion = MyPluginInfo.PLUGIN_VERSION,
-                    GameVersion = Util.SafeApp.GameVersion,
-                    CatalogHash = SyncCatalog.Hash,
-                    PlayerName = LocalPlayerName,
-                };
-                SendTo(peer, request, Channel.ReliableOrdered);
+                    _hostPeer = peer;
+                    SyncCatalog.EnsureLoaded();
+
+                    // We just reached the host: introduce ourselves.
+                    var request = new HandshakeRequest
+                    {
+                        ProtocolVersion = ProtocolInfo.Version,
+                        ModVersion = MyPluginInfo.PLUGIN_VERSION,
+                        GameVersion = Util.SafeApp.GameVersion,
+                        CatalogHash = SyncCatalog.Hash,
+                        PlayerName = LocalPlayerName,
+                    };
+                    SendTo(peer, request, Channel.ReliableOrdered);
+                }
+                // Host: wait for the peer's HandshakeRequest before treating it as a player.
             }
-            // Host: wait for the peer's HandshakeRequest before treating it as a player.
+            catch (Exception e)
+            {
+                // Crash containment: a transport-event handler fault must not escape into the game loop.
+                WinterMPPlugin.Log.LogError($"OnPeerConnected({peer}) failed: {e}");
+            }
         }
 
         private void OnPeerDisconnected(PeerId peer, string reason)
         {
-            if (_playersByPeer.TryGetValue(peer, out var player))
+            try
             {
-                if (IsHost && player.SteamId != 0 && player.LastTransformTime > 0f)
+                if (_playersByPeer.TryGetValue(peer, out var player))
                 {
-                    GuestProfileStore.Remember(
-                        player.SteamId,
-                        player.Position.ToNet(),
-                        player.Rotation.ToNet());
+                    if (IsHost && player.SteamId != 0 && player.LastTransformTime > 0f)
+                    {
+                        GuestProfileStore.Remember(
+                            player.SteamId,
+                            player.Position.ToNet(),
+                            player.Rotation.ToNet());
 
-                    if (_guestSlotsBySteam.TryGetValue(player.SteamId, out GuestSlot slot))
-                        slot.Disconnected = true;
+                        if (_guestSlotsBySteam.TryGetValue(player.SteamId, out GuestSlot slot))
+                            slot.Disconnected = true;
+                    }
+
+                    _playersByPeer.Remove(peer);
+                    if (IsHost)
+                        _passengerOccupancy.Remove(player.PlayerId);
+                    AddChatLine($"* {player.Name} left ({reason})");
+                    PlayerLeft?.Invoke(player);
+
+                    if (IsHost)
+                        Broadcast(new PlayerDespawn { PlayerId = player.PlayerId, Reason = reason }, Channel.ReliableOrdered);
                 }
 
-                _playersByPeer.Remove(peer);
-                if (IsHost)
-                    _passengerOccupancy.Remove(player.PlayerId);
-                AddChatLine($"* {player.Name} left ({reason})");
-                PlayerLeft?.Invoke(player);
-
-                if (IsHost)
-                    Broadcast(new PlayerDespawn { PlayerId = player.PlayerId, Reason = reason }, Channel.ReliableOrdered);
+                // Only set the failure once: an in-band DisconnectMessage delivers the precise host
+                // reason first, then the transport-level disconnect fires again — don't clobber it
+                // with the generic "Lost connection to host."
+                if (!IsHost && State != SessionState.Failed)
+                {
+                    string guestMessage = FormatGuestDisconnectReason(reason);
+                    SetState(SessionState.Failed, guestMessage);
+                }
             }
-
-            if (!IsHost)
+            catch (Exception e)
             {
-                string guestMessage = FormatGuestDisconnectReason(reason);
-                SetState(SessionState.Failed, guestMessage);
+                // Crash containment: a transport-event handler fault must not escape into the game loop.
+                WinterMPPlugin.Log.LogError($"OnPeerDisconnected({peer}) failed: {e}");
             }
         }
 
@@ -682,6 +701,22 @@ namespace WinterMP.Core.Session
             }
 
             return "Lost connection to host: " + reason;
+        }
+
+        /// <summary>
+        /// Host-side: resolve the assigned player id for an authenticated peer. Used to bind
+        /// guest-authored messages to their sender so a guest cannot act for another player id.
+        /// </summary>
+        internal bool TryGetPlayerId(PeerId peer, out byte playerId)
+        {
+            if (_playersByPeer.TryGetValue(peer, out var player))
+            {
+                playerId = player.PlayerId;
+                return true;
+            }
+
+            playerId = 0;
+            return false;
         }
 
         private void OnPacketReceived(PeerId peer, byte[] payload, Channel channel)
@@ -791,7 +826,14 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PlayerDeathReport deathReport when IsHost:
-                    Sync.DeathSyncManager.Instance?.OnRemoteDeathReport(deathReport);
+                    // Host-authority: a guest may only report its OWN death. Bind the report to the
+                    // authenticated sender so a spoofed PlayerId (e.g. 0/host, or another player)
+                    // cannot drive a permadeath wipe of someone who never died. Drop if unknown.
+                    if (TryGetPlayerId(peer, out byte deathReporterId))
+                    {
+                        deathReport.PlayerId = deathReporterId;
+                        Sync.DeathSyncManager.Instance?.OnRemoteDeathReport(deathReport);
+                    }
                     break;
 
                 case PlayerDeathEvent deathEvent when !IsHost:
@@ -799,8 +841,13 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PlayerRespawn respawn when IsHost:
-                    Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn);
-                    Broadcast(respawn, Channel.ReliableOrdered, except: peer);
+                    // Bind respawn to its sender: a guest may only respawn itself.
+                    if (TryGetPlayerId(peer, out byte respawnerId))
+                    {
+                        respawn.PlayerId = respawnerId;
+                        Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn);
+                        Broadcast(respawn, Channel.ReliableOrdered, except: peer);
+                    }
                     break;
 
                 case PlayerRespawn respawn when !IsHost:

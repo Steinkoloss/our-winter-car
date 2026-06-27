@@ -15,6 +15,10 @@ namespace WinterMP.Launcher
 
         public LauncherSettings Settings { get; private set; }
 
+        // Parameterless ctor for the Avalonia XAML runtime loader / previewer (silences AVLN3001).
+        // Delegates to the real ctor with no game association, a state already supported below.
+        public SettingsWindow() : this(LauncherSettings.Load(), null) { }
+
         public SettingsWindow(LauncherSettings settings, GameInstall? game)
         {
             InitializeComponent();
@@ -26,14 +30,25 @@ namespace WinterMP.Launcher
 
         private async void Browse_Click(object? sender, RoutedEventArgs e)
         {
-            var result = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            // async void: an exception escaping here would reach the dispatcher with no global
+            // handler and tear down the launcher, so contain picker failures like every other handler.
+            try
             {
-                Title = "Select My Winter Car folder",
-                AllowMultiple = false,
-            });
+                var result = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = "Select My Winter Car folder",
+                    AllowMultiple = false,
+                });
 
-            if (result.Count > 0)
-                GamePathBox.Text = result[0].Path.LocalPath;
+                if (result.Count > 0)
+                    GamePathBox.Text = result[0].Path.LocalPath;
+            }
+            catch (Exception ex)
+            {
+                await MessageBoxManager
+                    .GetMessageBoxStandard("Browse", ex.Message, ButtonEnum.Ok, MsBoxIcon.Error)
+                    .ShowWindowDialogAsync(this);
+            }
         }
 
         private void InitializeDisplaySettings()

@@ -1,5 +1,4 @@
 using UnityEngine;
-using WinterMP.Core;
 using WinterMP.Net;
 
 namespace WinterMP.Core.Sync

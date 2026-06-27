@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using HutongGames.PlayMaker;
 using UnityEngine;
 using WinterMP.Core.Session;
 using WinterMP.Net.Messages;
@@ -25,6 +24,10 @@ namespace WinterMP.Core.Sync
         private string? _pendingSleepState;
         private float _consentDeadlineAt;
         private readonly Dictionary<byte, bool> _responses = new Dictionary<byte, bool>();
+        // Guest ids the consent request was actually sent to. Frozen at request time so a guest
+        // that joins mid-round is not required to respond (it never got the prompt) — otherwise the
+        // round stalls until the 90s timeout. Departed guests are skipped via the live-roster check.
+        private readonly List<byte> _awaitedPlayerIds = new List<byte>();
 
         private void Awake()
         {
@@ -52,6 +55,9 @@ namespace WinterMP.Core.Sync
             if (_activeRequestId == 0) _activeRequestId = ++_nextRequestId;
 
             _responses.Clear();
+            _awaitedPlayerIds.Clear();
+            foreach (var player in session.Players)
+                _awaitedPlayerIds.Add(player.PlayerId);
             _waitingForGuests = true;
             _consentDeadlineAt = Time.unscaledTime + ConsentTimeoutSeconds;
 
@@ -99,18 +105,27 @@ namespace WinterMP.Core.Sync
         {
             if (!_waitingForGuests) return;
 
-            var session = SessionManager.Instance;
-            if (session == null || !session.IsHost || session.PlayerCount == 0)
+            try
             {
-                CancelWaiting();
-                return;
+                var session = SessionManager.Instance;
+                if (session == null || !session.IsHost || session.PlayerCount == 0)
+                {
+                    CancelWaiting();
+                    return;
+                }
+
+                if (Time.unscaledTime < _consentDeadlineAt) return;
+
+                session.AddSystemChat("* Sleep cancelled — timed out waiting for guests.");
+                WinterMPPlugin.Log.LogWarning("SleepConsent: timed out waiting for guest responses.");
+                FinishRound(session, accepted: false, timedOut: true);
             }
-
-            if (Time.unscaledTime < _consentDeadlineAt) return;
-
-            session.AddSystemChat("* Sleep cancelled — timed out waiting for guests.");
-            WinterMPPlugin.Log.LogWarning("SleepConsent: timed out waiting for guest responses.");
-            FinishRound(session, accepted: false, timedOut: true);
+            catch (System.Exception e)
+            {
+                // Crash containment: a fault here must not escape into Unity's loop; drop the round.
+                WinterMPPlugin.Log.LogError("SleepConsent Update failed: " + e);
+                CancelWaiting();
+            }
         }
 
         public void OnRemoteResponse(SleepConsentResponse response)
@@ -154,13 +169,29 @@ namespace WinterMP.Core.Sync
 
         private bool AllGuestsResponded(SessionManager session)
         {
-            foreach (var player in session.Players)
+            // Only require responses from guests present when the request was sent (frozen set),
+            // and skip any that have since disconnected so a leaver cannot stall the round.
+            int awaited = 0;
+            for (int i = 0; i < _awaitedPlayerIds.Count; i++)
             {
-                if (!_responses.ContainsKey(player.PlayerId))
+                byte id = _awaitedPlayerIds[i];
+                if (!IsPlayerPresent(session, id)) continue;
+                awaited++;
+                if (!_responses.ContainsKey(id))
                     return false;
             }
 
-            return session.PlayerCount > 0;
+            return awaited > 0;
+        }
+
+        private static bool IsPlayerPresent(SessionManager session, byte playerId)
+        {
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId == playerId) return true;
+            }
+
+            return false;
         }
 
         private bool AnyDeclined()
@@ -177,6 +208,7 @@ namespace WinterMP.Core.Sync
         {
             _waitingForGuests = false;
             _responses.Clear();
+            _awaitedPlayerIds.Clear();
             _consentDeadlineAt = 0f;
 
             var sleepFsm = _pendingSleepFsm;
@@ -225,6 +257,7 @@ namespace WinterMP.Core.Sync
             _consentGranted = false;
             _awaitingPostSleepSync = false;
             _responses.Clear();
+            _awaitedPlayerIds.Clear();
             _consentDeadlineAt = 0f;
             _pendingSleepFsm = null;
             _pendingSleepState = null;

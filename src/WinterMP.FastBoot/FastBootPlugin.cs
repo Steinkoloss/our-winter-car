@@ -1,7 +1,6 @@
 using System;
 using BepInEx;
 using BepInEx.Configuration;
-using BepInEx.Logging;
 using UnityEngine;
 
 namespace WinterMP.FastBoot

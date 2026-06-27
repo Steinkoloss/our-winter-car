@@ -1,7 +1,5 @@
-using System.IO;
 using System.IO.Compression;
 using System.Text;
-using WinterMP.Launcher.Services;
 
 namespace WinterMP.Launcher.Services
 {

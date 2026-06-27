@@ -59,14 +59,13 @@ namespace WinterMP.Core.Sync
                     continue;
                 }
 
+                // Only fold genuinely-stable state for an unowned car. rpm/coolant/frost/fog/cabinTemp
+                // change continuously (idle revs, accumulating frost) and are sampled at different
+                // instants on host vs guest, so including them caused perpetual false-mismatch resyncs.
+                // The live VehicleState/VehicleClimate stream covers those dynamic values instead.
                 crc = StableHash.Combine(crc, id);
                 crc = StableHash.Combine(crc, flags);
-                crc = StableHash.Combine(crc, rpm);
                 crc = StableHash.Combine(crc, fuel);
-                crc = StableHash.Combine(crc, coolant);
-                crc = StableHash.Combine(crc, frost);
-                crc = StableHash.Combine(crc, fog);
-                crc = StableHash.Combine(crc, cabinTemp);
             }
 
             return crc;
