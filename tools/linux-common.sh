@@ -55,10 +55,24 @@ set_mwc_game_path() {
         cp "$example" "$props"
     fi
 
+    # Rewrite via awk with the path passed through the environment and inserted by string
+    # concatenation (not sed/gsub), so a game path containing &, #, or \ cannot corrupt the XML.
     if grep -q '<MwcGamePath>' "$props"; then
-        sed -i "s#<MwcGamePath>[^<]*</MwcGamePath>#<MwcGamePath>${game_dir}</MwcGamePath>#" "$props"
+        WINTERMP_GAME_PATH="$game_dir" awk '
+            BEGIN { v = ENVIRON["WINTERMP_GAME_PATH"] }
+            { if (match($0, /<MwcGamePath>[^<]*<\/MwcGamePath>/))
+                  $0 = substr($0, 1, RSTART - 1) "<MwcGamePath>" v "</MwcGamePath>" substr($0, RSTART + RLENGTH)
+              print }' "$props" > "$props.tmp" && mv "$props.tmp" "$props"
     else
-        sed -i "s#</Project>#  <PropertyGroup>\n    <MwcGamePath>${game_dir}</MwcGamePath>\n  </PropertyGroup>\n</Project>#" "$props"
+        WINTERMP_GAME_PATH="$game_dir" awk '
+            BEGIN { v = ENVIRON["WINTERMP_GAME_PATH"] }
+            /<\/Project>/ && !inserted {
+                print "  <PropertyGroup>"
+                print "    <MwcGamePath>" v "</MwcGamePath>"
+                print "  </PropertyGroup>"
+                inserted = 1
+            }
+            { print }' "$props" > "$props.tmp" && mv "$props.tmp" "$props"
     fi
 }
 
@@ -98,10 +112,23 @@ find_proton() {
     local steam_root="$1"
     local proton_dir proton_bin
 
-    for proton_dir in \
-        "$steam_root/steamapps/common/Proton - Experimental" \
-        $(ls -1d "$steam_root/steamapps/common/Proton - "[0-9]* 2>/dev/null | sort -V)
-    do
+    # Build the candidate list with a quoted glob + nullglob array (NOT `ls` parsing), so Proton
+    # folder names that contain spaces ("Proton - 9.0") survive instead of word-splitting into tokens.
+    local had_nullglob=0
+    shopt -q nullglob && had_nullglob=1
+    shopt -s nullglob
+    local numbered=("$steam_root/steamapps/common/Proton - "[0-9]*)
+    [[ $had_nullglob -eq 1 ]] || shopt -u nullglob
+
+    if ((${#numbered[@]} > 1)); then
+        local sorted
+        IFS=$'\n' sorted=($(printf '%s\n' "${numbered[@]}" | sort -V))
+        unset IFS
+        numbered=("${sorted[@]}")
+    fi
+
+    local candidates=("$steam_root/steamapps/common/Proton - Experimental" "${numbered[@]}")
+    for proton_dir in "${candidates[@]}"; do
         proton_bin="$proton_dir/proton"
         if [[ -x "$proton_bin" ]]; then
             echo "$proton_bin"
