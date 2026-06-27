@@ -25,6 +25,7 @@ jobs:
           dotnet restore src/WinterMP.Net/WinterMP.Net.csproj
           dotnet restore src/WinterMP.Net.Tests/WinterMP.Net.Tests.csproj
           dotnet restore src/WinterMP.Launcher/WinterMP.Launcher.csproj
+          dotnet restore src/WinterMP.Launcher.Tests/WinterMP.Launcher.Tests.csproj
 
       # Builds both target frameworks (net35 + netstandard2.0) so a net35-only
       # compile break is caught even though the tests run on net8.
@@ -36,3 +37,7 @@ jobs:
 
       - name: Run protocol unit tests
         run: dotnet test src/WinterMP.Net.Tests/WinterMP.Net.Tests.csproj -c Release --no-restore --verbosity normal
+
+      # Guards the FastBoot production profile: the save-corrupting ES2 tiers must stay off.
+      - name: Run launcher unit tests
+        run: dotnet test src/WinterMP.Launcher.Tests/WinterMP.Launcher.Tests.csproj -c Release --no-restore --verbosity normal

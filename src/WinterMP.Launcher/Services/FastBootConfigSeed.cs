@@ -110,7 +110,7 @@ namespace WinterMP.Launcher.Services
             }
 
             if (applied.Count == ProductionBootValues.Length)
-                return string.Join(Environment.NewLine, lines).Replace("\n", Environment.NewLine);
+                return string.Join(Environment.NewLine, lines);
 
             int bootIndex = FindBootSectionIndex(lines);
             if (bootIndex < 0)
@@ -127,7 +127,7 @@ namespace WinterMP.Launcher.Services
                 lines.Insert(insertAt++, ProductionBootValues[v].Key + " = " + FormatValue(ProductionBootValues[v].Value));
             }
 
-            return string.Join(Environment.NewLine, lines).Replace("\n", Environment.NewLine);
+            return string.Join(Environment.NewLine, lines);
         }
 
         private static int FindBootSectionIndex(List<string> lines)
