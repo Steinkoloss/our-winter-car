@@ -1,0 +1,21 @@
+# Normalize line endings so a file behaves identically on every machine.
+# Default: Git stores LF in the repo and checks out the platform-native EOL.
+* text=auto
+
+# Shell scripts MUST be LF everywhere — a CRLF .sh fails on Linux with
+# "bad interpreter: bash^M". Pin them so core.autocrlf=true (common on Windows)
+# can't rewrite the working tree to CRLF.
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Binary assets — never normalize line endings or attempt a text diff.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.gif  binary
+*.dll  binary
+*.exe  binary
+*.zip  binary
+*.pdf  binary
+*.snk  binary

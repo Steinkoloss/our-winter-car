@@ -15,7 +15,18 @@ indent_size = 2
 [*.md]
 trim_trailing_whitespace = false
 
+# Line endings by file type (mirrors .gitattributes so editors agree):
+# shell scripts must be LF (they fail on Linux with CRLF), Windows scripts CRLF.
+[*.sh]
+end_of_line = lf
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
 [*.cs]
 csharp_new_line_before_open_brace = all
 csharp_style_var_when_type_is_apparent = true:suggestion
 dotnet_sort_system_directives_first = true
+# Flag unused usings in the IDE and let `dotnet format --diagnostics IDE0005` remove them.
+# (Not enforced at build time — that needs GenerateDocumentationFile, which we keep off.)
+dotnet_diagnostic.IDE0005.severity = warning

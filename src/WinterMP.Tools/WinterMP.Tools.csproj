@@ -5,7 +5,6 @@
     <TargetFramework>net35</TargetFramework>
     <AssemblyName>WinterMP.Tools</AssemblyName>
     <RootNamespace>WinterMP.Tools</RootNamespace>
-    <Nullable>enable</Nullable>
     <Description>WinterMP dev tools plugin: FSM/object catalog dumper for sync catalog generation.</Description>
     <BepInExPluginGuid>com.ourwintercar.wintermp.tools</BepInExPluginGuid>
     <BepInExPluginName>WinterMP Tools</BepInExPluginName>
