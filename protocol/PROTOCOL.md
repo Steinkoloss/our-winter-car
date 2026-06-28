@@ -1,6 +1,6 @@
 # WinterMP wire protocol
 
-Protocol version: **25** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+Protocol version: **26** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
 Any breaking change to framing, message layout or semantics bumps the version;
 hosts refuse mismatched clients during handshake.
 
@@ -118,6 +118,14 @@ drift exceeds 10 game-minutes; forecast and `DaysPassed` variables are
 overwritten on every message (host wins). When `dayOfWeek` changes, guests
 broadcast the matching global weekday event (MONDAY…SUNDAY) so TV/HUD/job
 schedulers stay aligned.
+
+`VehicleState` / `VehicleClimate` sequence (v26): the live stream uses a
+per-stream `Sequence` that receivers dedup against (stale/duplicate dropped).
+`Sequence == 65535` (`SnapshotSequence`) is reserved as a join/resync sentinel —
+receivers apply it *without* dedup, so a freshly joined guest (whose last-seen
+sequence is still 0) does not discard the Sequence-0 snapshot of a parked car
+and miss its engine/electrics/climate state. The live stream never emits 65535
+as a real pose (at worst one un-deduped packet after a full ushort wrap, ~4.5 h).
 
 ### Reserved ranges
 

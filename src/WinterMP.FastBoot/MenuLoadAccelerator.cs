@@ -173,7 +173,7 @@ namespace WinterMP.FastBoot
             try
             {
                 FsmState active = fsm.Fsm.ActiveState;
-                FsmTransition[] transitions = active?.Transitions;
+                FsmTransition[]? transitions = active?.Transitions;
                 if (transitions == null) return false;
 
                 for (int i = 0; i < transitions.Length; i++)

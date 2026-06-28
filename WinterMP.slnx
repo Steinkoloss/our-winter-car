@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/WinterMP.Core/WinterMP.Core.csproj" />
+    <Project Path="src/WinterMP.FastBoot/WinterMP.FastBoot.csproj" />
+    <Project Path="src/WinterMP.Launcher.Tests/WinterMP.Launcher.Tests.csproj" />
     <Project Path="src/WinterMP.Launcher/WinterMP.Launcher.csproj" />
     <Project Path="src/WinterMP.Net.Tests/WinterMP.Net.Tests.csproj" />
     <Project Path="src/WinterMP.Net/WinterMP.Net.csproj" />

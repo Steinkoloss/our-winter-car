@@ -56,7 +56,7 @@ namespace WinterMP.FastBoot
             _skipTagsEnabled = skipTagsEnabled;
             _aggressiveSkip = aggressiveSkip;
             _whitelistMode = whitelistMode;
-            if (string.IsNullOrEmpty(extraPrefixesCsv))
+            if (extraPrefixesCsv == null || extraPrefixesCsv.Length == 0)
             {
                 _skipPrefixes = DefaultSkipPrefixes;
                 return;
@@ -108,7 +108,7 @@ namespace WinterMP.FastBoot
         public static bool TryShortCircuitTag(string? tag, out bool exists)
         {
             exists = false;
-            if (!_skipTagsEnabled || string.IsNullOrEmpty(tag))
+            if (!_skipTagsEnabled || tag == null || tag.Length == 0)
                 return false;
 
             if (_deferredHydrateActive)
