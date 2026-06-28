@@ -1,7 +1,5 @@
-﻿{
-    "modVersion":  "0.1.27",
-    "protocolVersion":  26,
-    "testedGameBuildIds":  [
-
-                           ]
+{
+  "modVersion": "0.1.28",
+  "protocolVersion": 26,
+  "testedGameBuildIds": []
 }
