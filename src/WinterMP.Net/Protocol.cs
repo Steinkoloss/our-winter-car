@@ -31,7 +31,10 @@ namespace WinterMP.Net
         // v27: VehicleCargo (62) — live vehicle-local cargo pose streaming replaces the
         //      kinematic cargo weld; ItemTransform gains optional velocity (FlagHasVelocity)
         //      for receiver-side dead reckoning of moving vehicles.
-        public const ushort Version = 27;
+        // v28: M7 winter survival — PlayerNeedsReport gains BodyTemp (5th need);
+        //      PlayerClothingState (32) syncs worn clothing; HeatSourceState (50) +
+        //      HeatSourceIntent (51) make home heat sources host-owned shared state.
+        public const ushort Version = 28;
     }
 
     /// <summary>

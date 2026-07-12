@@ -37,6 +37,8 @@ namespace WinterMP.Net.Messages
         PlayerDeathEvent = 30,
         /// <summary>Player -> all: non-permadeath respawn complete.</summary>
         PlayerRespawn = 31,
+        /// <summary>Any player -> host -> others: worn clothing (stage/type) changed.</summary>
+        PlayerClothingState = 32,
 
         // 40-59: world events (doors, switches, pickables) — M3
         FsmStateEnter = 40,
@@ -49,6 +51,10 @@ namespace WinterMP.Net.Messages
         WorldStateChecksum = 47,
         WorldResyncRequest = 48,
         WorldObjectStateRequest = 49,
+        /// <summary>Host -> all: shared heat source lit/fuel/heat/sauna-temp (§4.8).</summary>
+        HeatSourceState = 50,
+        /// <summary>Guest -> host: light / feed wood / grill / löyly on a heat source.</summary>
+        HeatSourceIntent = 51,
 
         // 60-79: vehicles — M4
         VehicleState = 60,

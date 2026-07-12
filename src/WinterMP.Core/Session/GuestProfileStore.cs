@@ -19,6 +19,7 @@ namespace WinterMP.Core.Session
             public float Fatigue;
             public float Thirst;
             public float Urine;
+            public float BodyTemp;
             public bool Valid;
         }
 
@@ -132,6 +133,7 @@ namespace WinterMP.Core.Session
                             Fatigue = ParseFloat(parts[9]),
                             Thirst = ParseFloat(parts[10]),
                             Urine = ParseFloat(parts[11]),
+                            BodyTemp = parts.Length >= 13 ? ParseFloat(parts[12]) : 0f,
                             Valid = true,
                         };
                     }
@@ -152,7 +154,7 @@ namespace WinterMP.Core.Session
                 var lines = new List<string>
                 {
                     "# wintermp-guests.json — guest spawn poses + needs (host only; do not edit while hosting)",
-                    "# steamId,x,y,z,qx,qy,qz,qw,hunger,fatigue,thirst,urine",
+                    "# steamId,x,y,z,qx,qy,qz,qw,hunger,fatigue,thirst,urine,bodytemp",
                 };
 
                 foreach (var pair in Profiles)
@@ -162,11 +164,11 @@ namespace WinterMP.Core.Session
                     {
                         lines.Add(string.Format(
                             CultureInfo.InvariantCulture,
-                            "{0},{1:0.####},{2:0.####},{3:0.####},{4:0.####},{5:0.####},{6:0.####},{7:0.####},{8:0.####},{9:0.####},{10:0.####},{11:0.####}",
+                            "{0},{1:0.####},{2:0.####},{3:0.####},{4:0.####},{5:0.####},{6:0.####},{7:0.####},{8:0.####},{9:0.####},{10:0.####},{11:0.####},{12:0.####}",
                             pair.Key,
                             p.Position.X, p.Position.Y, p.Position.Z,
                             p.Rotation.X, p.Rotation.Y, p.Rotation.Z, p.Rotation.W,
-                            p.Needs.Hunger, p.Needs.Fatigue, p.Needs.Thirst, p.Needs.Urine));
+                            p.Needs.Hunger, p.Needs.Fatigue, p.Needs.Thirst, p.Needs.Urine, p.Needs.BodyTemp));
                     }
                     else
                     {
