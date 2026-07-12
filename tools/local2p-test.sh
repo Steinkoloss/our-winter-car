@@ -46,7 +46,7 @@ rm -f "$READY_FLAG"
 
 launch_instance host \
     -no-dialogs -fastboot-dev \
-    -screen-fullscreen 0 -screen-width 960 -screen-height 540 \
+    -screen-fullscreen 0 -screen-width 1280 -screen-height 720 \
     -wintermp hostlocal \
     -logFile "$HOST_UNITY_LOG"
 
@@ -72,7 +72,7 @@ echo "[2/2] Starting GUEST instance..."
 
 launch_instance guest \
     -no-dialogs -fastboot-dev \
-    -screen-fullscreen 0 -screen-width 960 -screen-height 540 \
+    -screen-fullscreen 0 -screen-width 1280 -screen-height 720 \
     -wintermp joinlocal -wintermp-playername Guest \
     -logFile "$GUEST_UNITY_LOG"
 

@@ -1,6 +1,6 @@
 # WinterMP wire protocol
 
-Protocol version: **25** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+Protocol version: **27** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
 Any breaking change to framing, message layout or semantics bumps the version;
 hosts refuse mismatched clients during handshake.
 
@@ -82,7 +82,7 @@ transforms to other guests and is authoritative for all world state.
 | 31 | PlayerRespawn | 0 | respawning player -> all: playerId, pos, rot, seq — non-permadeath only; avatar visible again |
 | 40 | FsmStateEnter | 0 | netId + state name; receiver replays via injected MP_* global transition (doors, ignitions, vehicle controls, car parts Bolted/Unbolted/Stop/Install/Remove, shop Buy/CashRegister Purchase/Cashier/Add, Peräpörtti restaurant Cashier/State 1, inspection Pay, post-package Close box/Remove order, post-office Spawn, phone-order Spawn package, Fleetari Pending cost/State 3, service brochure Fleetari 2, engine run/stall on SORBET/CORRIS Starter FSMs) |
 | 41 | FsmRawEvent | 0 | netId + event name; receiver whitelists (TIGHTEN/UNTIGHTEN on bolts) |
-| 42 | ItemTransform | 1 (final: 0) | itemId, ownerPlayerId, seq, flags, pos, rot — items *and* vehicles |
+| 42 | ItemTransform | 1 (vehicle/final: 0) | itemId, ownerPlayerId, seq, flags, pos, rot [, velocity when flags bit 3] — items *and* vehicles |
 | 43 | TimeSync | 0 | host -> guests: hour (1-24), minutes, forecast temps, snowing, forecast index, daysPassed, dayOfWeek (0=Mon..6=Sun, 255 unknown) |
 | 44 | BoltState | 0 | netId, boltTightness, screwInt — sent after each wrench turn settles (Set pos); receivers overwrite Screw FSM vars and replay Set pos |
 | 45 | PartState | 0 | netId, flags (bit 0 installed), tightness (0-255), wear (0-255) — sent when a car part settles (Stop/Bolted/Unbolted); receivers overwrite Data FSM Installed/Tightness/Wear |
@@ -92,6 +92,7 @@ transforms to other guests and is authoritative for all world state.
 | 49 | WorldObjectStateRequest | 0 | guest -> host: netId — host replies with the best single-object state it has (final ItemTransform, VehicleState/Climate, FsmStateEnter, PartState, or BoltState); guests auto-request after a pending FSM event expires (5 s cooldown per id) |
 | 60 | VehicleState | 1 | vehicleId, ownerPlayerId, seq, flags (bit 0 engine on, bit 1 ACC/electrics on, bit 2 blinker left, bit 3 blinker right, bit 4 hazard), rpm, speedTenthsKmh, fuelLevel (0-255), coolantTemp (0-255 → 0-120 °C) — ~4 Hz from whoever is driving *or* left the engine/ACC running locally; receivers replay Electricity ON/OFF FSM, push rpm/speed/fuel/coolant into gauge variables (CORRIS angle gauges included), apply blinker/hazard stalk/events + hazard button replay, and synthesize engine audio (pitch from RPM), stopping after 2 s without packets |
 | 61 | VehicleClimate | 1 | vehicleId, ownerPlayerId, seq, frost (0-255 exterior ice), flags (bit 0 window heater, bit 1 glass defrosting, bit 2 player in cabin), heaterTemp, heaterBlower, heaterDirection, fog (0-255 interior condensation), cabinTemp (0-255 → 0-40 °C) — ~2 Hz; receivers split frost (Frost + Freezing cutoffs + color.a) from fog (SweatRate + color.rgb + InteriorTemp + PlayerIn), replay window-heater On/Off, pulse DEFROST; LateUpdate keeps visuals pinned; included in join snapshot |
+| 62 | VehicleCargo | 1 (empty set: 0) | vehicleId, ownerPlayerId, seq, count (≤24), entries (itemId, localPos, localRot in vehicle-root space) — sent by the vehicle's transform owner at the vehicle send rate while it moves; the owner's physics simulates the cargo and streams its live vehicle-local poses. Each packet is the COMPLETE cargo set: receivers pin listed items kinematically (composed against their own smoothed vehicle pose, colliders untouched) and release tracked items that are no longer listed, seeding them with the pin's observed world motion (a rider inherits ~the car's velocity, an item merely shielded at its resting pose stays at rest; the car's velocity is the fallback when no fresh sample exists). The non-empty → empty transition is sent reliably; per-vehicle wrap-aware seq dedup per owner |
 | 80 | WalletState | 0 | money (float mk), seq — host -> guests every ~2 s and on join; guests overwrite the PlayMaker global `Money` + HUD (host wins) |
 | 81 | PurchaseIntent | 0 | guest -> host only: playerId, netId (Buy/CashRegister/Use/Data/Button buy FSM), eventName (USE/PURCHASE/DEPURCHASE/PAY/PAYMENT/BUY/CLICK), seq — guest aborts local buy guard and restores wallet; host fires the event and broadcasts resulting FsmStateEnter + WalletState |
 | 100 | NpcTransform | 1 (final: 0) | netId, seq, flags, pos, rot — host-only stream for TRAFFIC/, NPC_CARS/, HUMANS/ rigidbodies; guests pin kinematic and ease toward pose; distance tiers ~8 Hz (≤80 m), ~3 Hz (≤200 m), off beyond; moving bodies still stream until a reliable **final** at-rest packet |
@@ -109,9 +110,20 @@ guests never relay.
 `ItemTransform.flags`: bit 0 = **final** (at-rest pose, sent reliable; receiver
 restores physics and sleeps the body), bit 1 = **driver** (sender's player sits
 in this vehicle; driver claims beat proximity claims, ties broken by lowest
-player id). A seated driver never releases on stillness — it keeps the vehicle
-with ~2.5 Hz keepalives until the player leaves the seat, and receivers block
-the vehicle's drive trigger while a remote driver holds it.
+player id), bit 2 = **vehicle** (stream is a registered vehicle root; sent
+reliable), bit 3 = **hasVelocity** (payload appends the sender's rigidbody
+velocity as a Vector3; set on moving-vehicle packets — receivers dead-reckon
+toward pose + velocity·min(age, 0.3 s) instead of trailing the last pose, and
+seed released bodies with it). A seated driver never releases on stillness — it
+keeps the vehicle with ~2.5 Hz keepalives until the player leaves the seat, and
+receivers block the vehicle's drive trigger while a remote driver holds it.
+
+`VehicleCargo` interplay: while an item is pinned by a live cargo stream, a
+world-space `ItemTransform` for it is accepted only from the *same* owner (the
+authority handing it off: flung out, grabbed, or settled at rest) — third-party
+streams wait until the pin goes stale (1 s without cargo packets). Items held
+by the local player are never pinned, and a machine never applies cargo packets
+for a vehicle it streams itself.
 
 `TimeSync` semantics: guests jump their sun/cloud hour FSMs only when total
 drift exceeds 10 game-minutes; forecast and `DaysPassed` variables are
@@ -122,7 +134,7 @@ schedulers stay aligned.
 ### Reserved ranges
 
 - 50–59 world events — M3+
-- 61–79 vehicles (attachment, fuel/damage) — M4/M5
+- 63–79 vehicles (attachment, fuel/damage) — M4/M5
 - 82–99 economy (phone orders, deliveries) — M5
 - 100–119 NPCs/jobs — M6
 - 123–139 snapshot/bulk transfer control (save data) — M3+

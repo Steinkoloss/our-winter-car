@@ -38,6 +38,11 @@ namespace WinterMP.Core
         /// <summary>Test tooling: auto open/close a door N seconds after world sync is ready. 0 = off.</summary>
         public float DoorTestDelaySeconds { get; private set; }
 
+        /// <summary>Test tooling: N seconds after a guest is present, the host drops loose
+        /// items onto the nearest vehicle and pushes it, and both roles log CARGOTEST
+        /// vehicle-local poses — offline diff verifies cargo pose streaming. 0 = off.</summary>
+        public float CargoTestDelaySeconds { get; private set; }
+
         /// <summary>Deprecated: auto-load is handled by WinterMP FastBoot. Flag is ignored.</summary>
         public bool AutoLoadSave { get; private set; }
 
@@ -88,6 +93,15 @@ namespace WinterMP.Core
                         System.Globalization.CultureInfo.InvariantCulture, out float doorTestDelay))
                 {
                     options.DoorTestDelaySeconds = doorTestDelay;
+                    continue;
+                }
+
+                if (string.Equals(args[i], "-wintermp-cargotest", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                    && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out float cargoTestDelay))
+                {
+                    options.CargoTestDelaySeconds = cargoTestDelay;
                     continue;
                 }
 

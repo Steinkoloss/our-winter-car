@@ -53,6 +53,7 @@ namespace WinterMP.Core.Sync
         private bool _snapshotRequested;
         private bool _wasSessionActive;
         private float _doorTestDelay;
+        private float _cargoTestDelay;
         private bool _selfTest;
         private bool _readyAnnounced;
         private bool _worldSyncDisabled;
@@ -81,6 +82,7 @@ namespace WinterMP.Core.Sync
         {
             _doorTestDelay = launch.DoorTestDelaySeconds;
             _selfTest = launch.DoorTestDelaySeconds > 0f;
+            _cargoTestDelay = launch.CargoTestDelaySeconds;
         }
 
         private void Awake()
@@ -239,6 +241,9 @@ namespace WinterMP.Core.Sync
 
             if (_selfTest)
                 _fsm.RunDoorTest();
+
+            if (_cargoTestDelay > 0f)
+                _items.RunCargoTest(session!, _cargoTestDelay);
 
             if (WinterMPPlugin.DevKeysEnabled.Value)
                 HandleDevKeys(session);
@@ -647,6 +652,7 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteVehicleState(VehicleState message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleState(message); }
         public void OnRemoteVehicleClimate(VehicleClimate message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleClimate(message); }
+        public void OnRemoteVehicleCargo(VehicleCargo message) { EnsureSyncReady(); _items.OnRemoteVehicleCargo(message); }
 
         public struct VehicleInfo
         {

@@ -14,6 +14,11 @@ namespace WinterMP.Core.Sync
             {
                 if (!_items.TryGetValue(id, out var item) || item.Body == null || item.IsVehicle) continue;
                 if (item.LocallyOwned || item.RemoteOwner != WorldSyncIds.NoOwner) continue;
+                // Cargo mid-ride is streamed state sampled at different instants per peer;
+                // like owned/remote items it never checksums identically, so skip it. (The
+                // old weld left welded items IN the CRC — kinematic, zero velocity — while
+                // the authority excluded them as moving: resync spam on every drive.)
+                if (item.RemoteCargoVehicleId != 0 || item.LocalCargoVehicleId != 0) continue;
 
                 var body = item.Body;
                 if (!body.IsSleeping() && body.velocity.sqrMagnitude > 0.04f) continue;

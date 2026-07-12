@@ -33,25 +33,14 @@ namespace WinterMP.Core.Sync
             }
 
             float now = Time.unscaledTime;
-            if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
-                && cargoVehicle != null)
-            {
-                // Driver simulates cargo with the vehicle — never apply guest item streams.
-                if (IsLocalVehicleOperator(cargoVehicle))
-                    return;
-
-                if (ItemTransformPolicy.ShouldIgnoreRemoteItemTransformForVehicleCargo(
-                        item.IsVehicle,
-                        IsVehicleInMotion(cargoVehicle, now)))
-                    return;
-            }
 
             // Stale, out-of-order packets from the owner whose sequence baseline we hold
             // are dropped (wrap-aware). LastRemoteSequenceOwner survives a final packet's
             // RemoteOwner reset, so a late straggler that arrives AFTER the reliable final
             // (a non-vehicle moving packet on the unreliable channel can overtake it) is
             // still recognised as stale and dropped instead of reviving the just-rested
-            // item at a mid-flight pose (#7).
+            // item at a mid-flight pose (#7). Checked BEFORE the cargo-pin hand-off below:
+            // a stale straggler must not be able to kill a live pin and then get dropped.
             if (message.OwnerPlayerId == item.RemoteOwner
                 || message.OwnerPlayerId == item.LastRemoteSequenceOwner)
             {
@@ -61,6 +50,20 @@ namespace WinterMP.Core.Sync
                         ConnectionQuality.Instance.NoteUnreliableDropped();
                     return;
                 }
+            }
+
+            if (item.RemoteCargoVehicleId != 0)
+            {
+                // A live cargo pin yields only to its own authority: that stream handing
+                // the item off to world space (flung out, grabbed, settled). Third-party
+                // streams wait until the pin goes stale.
+                if (!ItemTransformPolicy.ShouldAcceptItemTransformOverCargoPin(
+                        ItemTransformPolicy.IsCargoStreamFresh(item.RemoteCargoAt, now),
+                        item.RemoteCargoOwner,
+                        message.OwnerPlayerId))
+                    return;
+
+                ReleaseRemoteCargo(item, item.Body, now, seedVelocity: false);
             }
 
             if (!message.IsFinal && !message.IsDriver)
@@ -79,13 +82,6 @@ namespace WinterMP.Core.Sync
                 item.LocallyOwned = false;
                 item.LocalDriveActive = false;
             }
-
-            // We only get here once the item is no longer an active cargo weld (the
-            // cargo branch above returns while the vehicle is in motion / locally
-            // driven). If it transitioned straight from welded to a remote stream
-            // without passing ClearCargoFollow — a stop-boundary race on an observer —
-            // give it its colliders back: a remote-smoothed item collides normally.
-            RestoreCargoColliders(item);
 
             bool firstPacket = item.RemoteOwner != message.OwnerPlayerId;
             item.RemoteOwner = message.OwnerPlayerId;
@@ -118,6 +114,7 @@ namespace WinterMP.Core.Sync
                 item.RemoteOwner = WorldSyncIds.NoOwner;
                 item.RemoteIsDriver = false;
                 item.RemoteVehicleStream = false;
+                item.HasRemoteVelocity = false;
                 item.LastRemoteAt = -999f;
                 item.LastMovedAt = -999f; // the landing must not look like local motion
                 item.LastPosition = position;
@@ -143,12 +140,25 @@ namespace WinterMP.Core.Sync
                         body.transform.position = position;
                         body.transform.rotation = rotation;
                     }
-                    InvalidateCargoFollowOffsets(item.Id);
                 }
 
                 item.TargetPosition = position;
                 item.TargetRotation = rotation;
                 item.LastRemoteAt = Time.unscaledTime;
+
+                if (message.HasVelocity)
+                {
+                    // Garbage velocity must not poison the extrapolation; the validated
+                    // pose is still worth keeping.
+                    var velocity = message.Velocity.ToUnity();
+                    item.HasRemoteVelocity = IsFinite(velocity);
+                    if (item.HasRemoteVelocity)
+                        item.RemoteVelocity = velocity;
+                }
+                else
+                {
+                    item.HasRemoteVelocity = false;
+                }
 
                 // A remotely-driven vehicle must count as "in motion" on the observing
                 // machine so cargo-follow and per-item-stream suppression engage
@@ -170,15 +180,25 @@ namespace WinterMP.Core.Sync
         private static void ApplyRemoteSmoothing(SyncedItem item, Rigidbody body)
         {
             var transform = body.transform;
-            if ((transform.position - item.TargetPosition).sqrMagnitude > RemoteSnapDistance * RemoteSnapDistance)
+            Vector3 target = item.TargetPosition;
+            if (item.HasRemoteVelocity)
             {
-                transform.position = item.TargetPosition;
+                // Dead-reckon ahead of the last packet so a fast car doesn't trail its
+                // true pose by the smoothing constant (#14); capped so a stalling stream
+                // stops extrapolating instead of driving through the scenery.
+                target += item.RemoteVelocity
+                    * ItemTransformPolicy.GetExtrapolationSeconds(item.LastRemoteAt, Time.unscaledTime);
+            }
+
+            if ((transform.position - target).sqrMagnitude > RemoteSnapDistance * RemoteSnapDistance)
+            {
+                transform.position = target;
                 transform.rotation = item.TargetRotation;
             }
             else
             {
                 float t = 1f - Mathf.Exp(-RemoteLerpSpeed * Time.deltaTime);
-                transform.position = Vector3.Lerp(transform.position, item.TargetPosition, t);
+                transform.position = Vector3.Lerp(transform.position, target, t);
                 transform.rotation = Quaternion.Slerp(transform.rotation, item.TargetRotation, t);
             }
 

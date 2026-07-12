@@ -78,7 +78,10 @@ namespace WinterMP.Core.Util
             }
 
             string absolutePath = Path.Combine(BepInEx.Paths.BepInExRootPath, localPath);
-            listeners.Add(new DiskLogListener(absolutePath, LogLevel.Debug, false, true));
+            // LogLevel is a FLAGS mask here, not a threshold: passing LogLevel.Debug
+            // wrote ONLY [Debug] lines and silently dropped Info/Warning/Error from
+            // the per-role logs (the guest log was typically 0 bytes).
+            listeners.Add(new DiskLogListener(absolutePath, LogLevel.All, false, true));
         }
     }
 }

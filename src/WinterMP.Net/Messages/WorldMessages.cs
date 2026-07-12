@@ -71,6 +71,13 @@ namespace WinterMP.Net.Messages
         /// <summary>Transform stream is for a registered vehicle root rigidbody.</summary>
         public const byte FlagVehicle = 4;
 
+        /// <summary>
+        /// Packet carries the sender's rigidbody velocity (moving vehicles). Receivers
+        /// dead-reckon between packets so a fast car doesn't trail its true pose, and
+        /// seed physics with it when a stream dies mid-drive.
+        /// </summary>
+        public const byte FlagHasVelocity = 8;
+
         public uint ItemId;
         /// <summary>Session player id of the peer simulating this item right now.</summary>
         public byte OwnerPlayerId;
@@ -78,10 +85,13 @@ namespace WinterMP.Net.Messages
         public byte Flags;
         public NetVector3 Position;
         public NetQuaternion Rotation = NetQuaternion.Identity;
+        /// <summary>Only on the wire when <see cref="FlagHasVelocity"/> is set.</summary>
+        public NetVector3 Velocity;
 
         public bool IsFinal => (Flags & FlagFinal) != 0;
         public bool IsDriver => (Flags & FlagDriver) != 0;
         public bool IsVehicle => (Flags & FlagVehicle) != 0;
+        public bool HasVelocity => (Flags & FlagHasVelocity) != 0;
 
         public MessageId Id => MessageId.ItemTransform;
 
@@ -93,6 +103,8 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(Flags);
             writer.WriteVector3(Position);
             writer.WriteQuaternion(Rotation);
+            if (HasVelocity)
+                writer.WriteVector3(Velocity);
         }
 
         public void Read(NetReader reader)
@@ -103,6 +115,76 @@ namespace WinterMP.Net.Messages
             Flags = reader.ReadByte();
             Position = reader.ReadVector3();
             Rotation = reader.ReadQuaternion();
+            if (HasVelocity)
+                Velocity = reader.ReadVector3();
+        }
+    }
+
+    /// <summary>
+    /// Live vehicle-local poses of loose items riding a moving vehicle, streamed by
+    /// the vehicle's transform owner alongside the vehicle stream. The owner's own
+    /// physics simulates the cargo (sliding, rolling, tumbling — the fun part);
+    /// receivers pin listed items kinematically and compose the streamed local pose
+    /// against their own smoothed vehicle transform, so cargo tracks the car with
+    /// zero world-space lag and replays the authority's in-car physics.
+    ///
+    /// Each packet is the COMPLETE cargo set for that vehicle: a tracked item that
+    /// stops being listed is released back to local physics (seeded with the
+    /// vehicle's velocity). The empty-set transition packet is sent reliably; the
+    /// rest of the stream is best-effort.
+    /// </summary>
+    public sealed class VehicleCargo : IMessage
+    {
+        /// <summary>Hard cap on entries per packet; senders demote the farthest
+        /// items back to ordinary world-space streams when exceeded.</summary>
+        public const int MaxEntries = 24;
+
+        private static readonly Entry[] NoEntries = new Entry[0];
+
+        public struct Entry
+        {
+            public uint ItemId;
+            /// <summary>Pose in the vehicle root rigidbody's local space.</summary>
+            public NetVector3 LocalPosition;
+            public NetQuaternion LocalRotation;
+        }
+
+        public uint VehicleId;
+        /// <summary>Session player id of the peer streaming the vehicle (and its cargo).</summary>
+        public byte OwnerPlayerId;
+        public ushort Sequence;
+        public Entry[] Entries = NoEntries;
+
+        public MessageId Id => MessageId.VehicleCargo;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(VehicleId);
+            writer.WriteByte(OwnerPlayerId);
+            writer.WriteUInt16(Sequence);
+            int count = Entries.Length > MaxEntries ? MaxEntries : Entries.Length;
+            writer.WriteByte((byte)count);
+            for (int i = 0; i < count; i++)
+            {
+                writer.WriteUInt32(Entries[i].ItemId);
+                writer.WriteVector3(Entries[i].LocalPosition);
+                writer.WriteQuaternion(Entries[i].LocalRotation);
+            }
+        }
+
+        public void Read(NetReader reader)
+        {
+            VehicleId = reader.ReadUInt32();
+            OwnerPlayerId = reader.ReadByte();
+            Sequence = reader.ReadUInt16();
+            int count = reader.ReadByte();
+            Entries = count == 0 ? NoEntries : new Entry[count];
+            for (int i = 0; i < count; i++)
+            {
+                Entries[i].ItemId = reader.ReadUInt32();
+                Entries[i].LocalPosition = reader.ReadVector3();
+                Entries[i].LocalRotation = reader.ReadQuaternion();
+            }
         }
     }
 

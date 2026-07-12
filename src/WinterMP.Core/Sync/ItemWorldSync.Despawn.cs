@@ -68,18 +68,20 @@ namespace WinterMP.Core.Sync
         }
 
         /// <summary>
-        /// When a vehicle is despawned, any loose item that was riding it (cargo-follow)
-        /// would otherwise be left kinematic and frozen in mid-air, its follow offset
-        /// pointing at a now-dead vehicle id. Fully clear the follow on each such item so
-        /// its original kinematic flag is restored and it falls/simulates normally again.
-        /// (InvalidateCargoFollowOffsets only drops the flag; it does NOT restore physics.)
+        /// When a vehicle is despawned, any loose item riding it would otherwise stay
+        /// kinematic-pinned in mid-air against a dead vehicle id. Release every pin
+        /// (restoring physics) and forget local cargo membership for that vehicle.
         /// </summary>
         private void ReleaseCargoFollowingVehicle(uint vehicleId)
         {
+            ReleaseRemoteCargoForVehicle(vehicleId, Time.unscaledTime, seedVelocity: false);
             foreach (var other in _items.Values)
             {
-                if (other.CargoFollowActive && other.CargoFollowVehicleId == vehicleId)
-                    ClearCargoFollow(other, other.Body);
+                if (other.LocalCargoVehicleId == vehicleId)
+                {
+                    other.LocalCargoVehicleId = 0;
+                    RestoreCargoPhysics(other);
+                }
             }
         }
     }

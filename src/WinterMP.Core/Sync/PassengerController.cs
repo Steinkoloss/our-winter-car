@@ -24,8 +24,20 @@ namespace WinterMP.Core.Sync
     /// </summary>
     public sealed class PassengerController : MonoBehaviour
     {
-        /// <summary>Must be on the cushion — same scale as the in-cabin drive seat.</summary>
-        private const float EnterRadius = 0.55f;
+        /// <summary>
+        /// Horizontal reach of the "sit down" prompt, measured on the car's floor
+        /// plane (not a 3D sphere). The seat anchors live at cushion height inside
+        /// the cabin while the PLAYER pivot is on the ground outside the door, so a
+        /// tight 3D sphere never overlapped the seat — the feet-to-cushion height
+        /// gap alone exceeded it, which is why riding shotgun was impossible. Entry
+        /// parents the player onto the seat, so reaching it from beside the adjacent
+        /// door is enough; we don't need them physically on the cushion.
+        /// </summary>
+        private const float EnterRadius = 1.0f;
+        /// <summary>Vertical slack between the ground-level player pivot and the
+        /// cushion-height seat anchor; wide enough to always clear that gap, tight
+        /// enough to keep the prompt off cars parked on a level above or below.</summary>
+        private const float EnterVerticalTolerance = 1.3f;
         /// <summary>Return is also the game's own enter-car key; never compete with
         /// the drive trigger when the player stands next to the driver's door.</summary>
         private const float DriveTriggerExclusionRadius = 1.0f;
@@ -40,6 +52,12 @@ namespace WinterMP.Core.Sync
         private const float ExitLateralMeters = 1.3f;
         private const float RearBenchHalfWidth = 0.35f;
         private const string PlayerObjectName = "PLAYER";
+        /// <summary>The game's interaction indicator — the on-screen TextMesh the
+        /// drive/use prompts write to. Driving its SetText FSM makes the passenger
+        /// prompt render exactly like the game's own get-in-car prompt.</summary>
+        private const string InteractionObjectPath = "GUI/Indicators/Interaction";
+        private const string InteractionFsmName = "SetText";
+        private const float InteractionSearchIntervalSeconds = 2f;
 
         public static PassengerController? Instance { get; private set; }
 
@@ -82,9 +100,19 @@ namespace WinterMP.Core.Sync
         private bool _controllerWasEnabled;
         private float _nextKeyAt;
         private float _nextRebroadcastAt;
+        /// <summary>Passenger's own look yaw, accumulated relative to the vehicle
+        /// (not the world), so mouse-look survives the rotation pin below.</summary>
+        private float _seatYawOffset;
+        private float _lastPinnedYaw;
 
         private string? _hint;
-        private GUIStyle? _hintStyle;
+
+        // The passenger prompt is rendered through the game's own interaction
+        // indicator (below) rather than a bespoke OnGUI overlay, so it matches the
+        // drive prompt's font, position and styling for free.
+        private HutongGames.PlayMaker.FsmString? _interactionText;
+        private bool _wroteInteraction;
+        private float _nextInteractionSearchAt;
 
         private void Awake()
         {
@@ -127,6 +155,10 @@ namespace WinterMP.Core.Sync
 
         private void LateUpdate()
         {
+            // Apply after every Update() so our text wins the frame over the
+            // game's interaction raycast when both target the shared indicator.
+            ApplyInteractionHint();
+
             // Re-pin every frame: player FSMs (and the game's own gravity code)
             // keep writing to the transform.
             if (!_seated || _player == null) return;
@@ -136,35 +168,57 @@ namespace WinterMP.Core.Sync
             _player.position = vehicle.Body.transform.TransformPoint(SeatedLocalOffset(seat));
             // Pin rotation too, or the seated body keeps its world-fixed facing while the
             // car turns (the player FSM rewrites rotation each frame) and visibly slides
-            // relative to the seat. Match the car's orientation, as the Enter parenting
-            // intends (#32).
-            _player.rotation = vehicle.Body.transform.rotation;
+            // relative to the seat (#32). But pin only the vehicle's own turning, not the
+            // player's mouse-look: fold in the yaw delta the FSM added this frame (its
+            // look-around input) as an offset from the vehicle's heading, so passengers
+            // can still look left/right instead of snapping back to dead-ahead every frame.
+            float delta = Mathf.DeltaAngle(_lastPinnedYaw, _player.eulerAngles.y);
+            _seatYawOffset += delta;
+            _player.rotation = vehicle.Body.transform.rotation * Quaternion.Euler(0f, _seatYawOffset, 0f);
+            _lastPinnedYaw = _player.eulerAngles.y;
         }
 
-        private void OnGUI()
+        /// <summary>
+        /// Push the current passenger prompt into the game's interaction indicator
+        /// (the same TextMesh the drive prompt uses). We only ever own the text
+        /// while a hint is showing; when it clears we blank it once and hand the
+        /// indicator back to the game — the seat cushions sit away from any native
+        /// interactable, so there's nothing to clobber.
+        /// </summary>
+        private void ApplyInteractionHint()
         {
-            if (_hint == null) return;
+            var text = ResolveInteractionText();
+            if (text == null) return;
 
-            if (_hintStyle == null)
+            if (_hint != null)
             {
-                _hintStyle = new GUIStyle
-                {
-                    alignment = TextAnchor.MiddleCenter,
-                    fontSize = 16,
-                    fontStyle = FontStyle.Bold,
-                };
-                _hintStyle.normal.textColor = Color.white;
+                text.Value = _hint;
+                _wroteInteraction = true;
+            }
+            else if (_wroteInteraction)
+            {
+                text.Value = string.Empty;
+                _wroteInteraction = false;
+            }
+        }
+
+        private HutongGames.PlayMaker.FsmString? ResolveInteractionText()
+        {
+            if (_interactionText != null) return _interactionText;
+            if (Time.unscaledTime < _nextInteractionSearchAt) return null;
+            _nextInteractionSearchAt = Time.unscaledTime + InteractionSearchIntervalSeconds;
+
+            var indicator = GameObject.Find(InteractionObjectPath);
+            if (indicator == null) return null;
+
+            foreach (var fsm in indicator.GetComponents<PlayMakerFSM>())
+            {
+                if (fsm.FsmName != InteractionFsmName) continue;
+                _interactionText = fsm.FsmVariables.FindFsmString("Text");
+                break;
             }
 
-            var rect = new Rect(Screen.width / 2f - 200f, Screen.height - 110f, 400f, 26f);
-            var shadow = rect;
-            shadow.x += 1f;
-            shadow.y += 1f;
-            var color = GUI.color;
-            GUI.color = Color.black;
-            GUI.Label(shadow, _hint, _hintStyle);
-            GUI.color = color;
-            GUI.Label(rect, _hint, _hintStyle);
+            return _interactionText;
         }
 
         // ------------------------------------------------------------------ local seat logic
@@ -199,7 +253,7 @@ namespace WinterMP.Core.Sync
 
             VehicleSeats? bestVehicle = null;
             int bestSeat = -1;
-            float bestDistanceSqr = EnterRadius * EnterRadius;
+            float bestHorizontalSqr = EnterRadius * EnterRadius;
 
             foreach (var vehicle in _vehicles.Values)
             {
@@ -215,15 +269,24 @@ namespace WinterMP.Core.Sync
                     continue;
                 }
 
+                // Match in the car's local frame: a flat disc on the cabin floor
+                // plane plus a vertical band. Comparing world-space 3D distance to
+                // the cushion-height anchor never triggered from the ground beside
+                // the door (that's where the player actually stands to get in).
+                var playerLocal = root.InverseTransformPoint(_player.position);
                 for (int seat = 0; seat < 3; seat++)
                 {
                     if (IsSeatOccupied(vehicle.VehicleId, (byte)seat)) continue;
 
-                    var world = root.TransformPoint(vehicle.SeatLocal[seat]);
-                    float distanceSqr = (world - _player.position).sqrMagnitude;
-                    if (distanceSqr < bestDistanceSqr)
+                    var seatLocal = vehicle.SeatLocal[seat];
+                    if (Mathf.Abs(playerLocal.y - seatLocal.y) > EnterVerticalTolerance) continue;
+
+                    float dx = playerLocal.x - seatLocal.x;
+                    float dz = playerLocal.z - seatLocal.z;
+                    float horizontalSqr = dx * dx + dz * dz;
+                    if (horizontalSqr < bestHorizontalSqr)
                     {
-                        bestDistanceSqr = distanceSqr;
+                        bestHorizontalSqr = horizontalSqr;
                         bestVehicle = vehicle;
                         bestSeat = seat;
                     }
@@ -254,6 +317,8 @@ namespace WinterMP.Core.Sync
             _seated = true;
             _seatedVehicleId = vehicle.VehicleId;
             _seatedIndex = seat;
+            _seatYawOffset = 0f;
+            _lastPinnedYaw = _player.eulerAngles.y;
             _nextRebroadcastAt = Time.unscaledTime + RebroadcastSeconds;
 
             SendSeatState(session, vehicle.VehicleId, (byte)seat);
@@ -569,6 +634,11 @@ namespace WinterMP.Core.Sync
             _remoteSeats.Clear();
             _nextPlayerSearchAt = 0f;
             _nextVehicleScanAt = 0f;
+
+            // The old scene's interaction indicator is gone; re-resolve it lazily.
+            _interactionText = null;
+            _wroteInteraction = false;
+            _nextInteractionSearchAt = 0f;
         }
 
         private void FindPlayer()

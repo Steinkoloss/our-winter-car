@@ -100,7 +100,7 @@ namespace WinterMP.Core.Sync
                 $"WorldSync: despawn snapshot — {message.ItemIds.Count} ids, {removed} removed, {parked} parked.");
         }
 
-        private static void ApplySnapshotPose(SyncedItem item, Vector3 position, Quaternion rotation)
+        private void ApplySnapshotPose(SyncedItem item, Vector3 position, Quaternion rotation)
         {
             // Validate the snapshot pose like OnRemoteItemTransform does: snapshot floats
             // reach the transform verbatim (ToUnity copies raw wire components), and Unity
@@ -114,10 +114,12 @@ namespace WinterMP.Core.Sync
             }
 
             var body = item.Body;
-            // A snapshot teleport overrides any in-progress cargo-follow: clear the follow
-            // state (and restore the saved kinematic flag) so the next ApplyVehicleCargoFollow
-            // recaptures the local offset from this pose instead of snapping back to a stale one.
-            ClearCargoFollow(item, body);
+            // A snapshot teleport overrides any in-progress cargo pin or membership:
+            // release (restoring the saved kinematic flag) so the pose lands on a body
+            // in its normal physics state; a live cargo stream simply re-pins from here.
+            ReleaseRemoteCargo(item, body, Time.unscaledTime, seedVelocity: false);
+            item.LocalCargoVehicleId = 0;
+            RestoreCargoPhysics(item);
             body.transform.position = position;
             body.transform.rotation = rotation;
             if (!body.isKinematic)

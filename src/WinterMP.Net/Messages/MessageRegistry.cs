@@ -39,6 +39,7 @@ namespace WinterMP.Net.Messages
                 { MessageId.WorldObjectStateRequest, () => new WorldObjectStateRequest() },
                 { MessageId.VehicleState, () => new VehicleState() },
                 { MessageId.VehicleClimate, () => new VehicleClimate() },
+                { MessageId.VehicleCargo, () => new VehicleCargo() },
                 { MessageId.WalletState, () => new WalletState() },
                 { MessageId.PurchaseIntent, () => new PurchaseIntent() },
                 { MessageId.WorldSnapshotRequest, () => new WorldSnapshotRequest() },

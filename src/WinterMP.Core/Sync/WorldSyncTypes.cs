@@ -29,10 +29,10 @@ namespace WinterMP.Core.Sync
     public byte LastRemoteSequenceOwner = WorldSyncIds.NoOwner;
     public Vector3 TargetPosition;
     public Quaternion TargetRotation = Quaternion.identity;
-    // Receiver-side dead reckoning: implied velocity from the last two accepted poses
-    // lets ApplyRemoteSmoothing ease toward a predicted point instead of trailing the
-    // last received pose, removing the steady-state lag behind a fast remote car (#14).
-    public float PrevRemoteAt = -999f;
+    // Wire-fed dead reckoning (v27): the owner's rigidbody velocity rides along on
+    // vehicle packets, so ApplyRemoteSmoothing eases toward an extrapolated point
+    // instead of trailing the last received pose (#14), and mid-drive releases can
+    // seed physics instead of dead-stopping the body.
     public Vector3 RemoteVelocity;
     public bool HasRemoteVelocity;
 
@@ -44,21 +44,52 @@ namespace WinterMP.Core.Sync
     public Vector3 LastPosition;
     public float LastMovedAt = -999f;
 
-    // Guests parent cargo to a remote-driven vehicle instead of lerping independent
-    // world-space item streams (which desync from the vehicle and fight physics).
-    public bool CargoFollowActive;
-    public uint CargoFollowVehicleId;
-    public byte CargoFollowDriverId = WorldSyncIds.NoOwner;
-    public Vector3 CargoFollowLocalPos;
-    public Quaternion CargoFollowLocalRot = Quaternion.identity;
+    // Cargo pose streaming (v27). On the machine streaming a vehicle, the game's own
+    // physics simulates the items riding it and their vehicle-local poses go out in
+    // VehicleCargo packets; observers pin listed items kinematically and compose the
+    // streamed local pose against their own smoothed vehicle transform. Cargo keeps
+    // the authority's live sliding/tumbling instead of freezing to the floor.
 
-    // While welded as cargo the item is kinematic (infinite mass) and we drive its
-    // pose directly, so its solid colliders have nothing to do but fight the car they
-    // ride in — pinning the dynamic chassis (the car "can't move") and slamming the
-    // hinged door rigidbodies (doors glitch / become unclickable). Disable them for
-    // the duration of the weld and restore exactly the ones we turned off.
-    public bool CargoCollidersDisabled;
-    public Collider[]? CargoDisabledColliders;
+    // Sender side: id of the locally-streamed vehicle whose cargo set carries this
+    // item (0 = none). While set, the item's own claim/stream pipeline is bypassed.
+    public uint LocalCargoVehicleId;
+    // Cap-overflow demotions sit out membership for a moment so they don't flap
+    // between cargo entry and world-space claim every frame.
+    public float LocalCargoBlockedUntil = -999f;
+
+    // Observer side: which remote cargo stream pins this item, and the smoothed
+    // vehicle-local pose being composed each frame.
+    public uint RemoteCargoVehicleId;
+    public byte RemoteCargoOwner = WorldSyncIds.NoOwner;
+    public float RemoteCargoAt = -999f;
+    public Vector3 RemoteCargoTargetPos;
+    public Quaternion RemoteCargoTargetRot = Quaternion.identity;
+    public Vector3 RemoteCargoPos;
+    public Quaternion RemoteCargoRot = Quaternion.identity;
+    public bool RemoteCargoSmoothingInit;
+    // Apparent world motion of the composed pin, sampled each compose: the release
+    // seed. A rider reads ~the car's velocity; an item the car merely drove past
+    // (enter-radius physics shield) reads ~zero and stays put on release.
+    public Vector3 RemoteCargoWorldPos;
+    public float RemoteCargoWorldAt = -999f;
+    public Vector3 RemoteCargoObservedVelocity;
+
+    // Cargo physics hardening on the authority: members ride with continuous
+    // collision detection + a depenetration clamp (a bump squeezing a small item
+    // against the thin floor colliders must nudge it out, not pop it through), and
+    // the streaming vehicle body goes Continuous so member sweeps test against it.
+    // Saved values restored when the item exits the set / the stream ends.
+    public bool CargoPhysicsSaved;
+    public CollisionDetectionMode CargoSavedDetectionMode;
+    public float CargoSavedMaxDepenetration;
+
+    // Vehicles only: cargo stream bookkeeping (out on the authority, in on observers).
+    public ushort OutCargoSequence;
+    public float NextCargoSendAt;
+    public bool LocalCargoWasStreaming;
+    public ushort LastRemoteCargoSequence;
+    public byte LastRemoteCargoOwner = WorldSyncIds.NoOwner;
+    public bool RemoteCargoAnnounced;
 
     // Vehicles only: the game's drive trigger (seat). Blocked while a
     // remote driver holds the vehicle; also anchors the driver's avatar.

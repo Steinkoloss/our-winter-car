@@ -32,6 +32,7 @@ namespace WinterMP.Core.Sync
 
             _bridge.FindLocalPlayer();
             float now = Time.unscaledTime;
+            CollectActiveCargoVehicles(now);
 
             foreach (var pair in _items)
             {
@@ -62,13 +63,25 @@ namespace WinterMP.Core.Sync
                     remoteDriven = false;
                 }
 
-                if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
-                    && cargoVehicle != null
-                    && ShouldCargoRideVehicle(item, cargoVehicle, now))
+                if (!item.IsVehicle)
                 {
-                    PrepareCargoForVehicleFollow(item, body);
-                    ApplyVehicleCargoFollow(item, cargoVehicle, body);
-                    continue;
+                    // Pinned by a remote cargo stream: composed after this loop, once
+                    // every vehicle has been smoothed for the frame.
+                    if (item.RemoteCargoVehicleId != 0 && HandleRemoteCargoState(item, body, now))
+                        continue;
+
+                    // Riding a vehicle we stream: the game's own physics simulates it
+                    // here; SendLocalCargo broadcasts its vehicle-local pose.
+                    var cargoVehicle = FindLocalCargoVehicle(item, now, out float cargoDistanceSqr);
+                    if (cargoVehicle != null)
+                    {
+                        TrackMotion(item, body, now);
+                        EnterLocalCargo(item, cargoVehicle, body, cargoDistanceSqr);
+                        continue;
+                    }
+
+                    if (item.LocalCargoVehicleId != 0)
+                        HandleLocalCargoExit(session, item, body, now, demoted: false);
                 }
 
                 if (remoteDriven && !item.LocallyOwned)
@@ -76,8 +89,6 @@ namespace WinterMP.Core.Sync
                     ApplyRemoteSmoothing(item, body);
                     continue;
                 }
-
-                ClearCargoFollow(item, body);
 
                 if (item.RemoteOwner != WorldSyncIds.NoOwner && !remoteDriven)
                 {
@@ -96,16 +107,11 @@ namespace WinterMP.Core.Sync
                     item.RemoteOwner = WorldSyncIds.NoOwner;
                     item.RemoteIsDriver = false;
                     item.RemoteVehicleStream = false;
+                    item.HasRemoteVelocity = false;
                     SetSeatBlocked(item, false);
                 }
 
-                var position = body.transform.position;
-                if ((position - item.LastPosition).sqrMagnitude > item.MoveThresholdSqr)
-                {
-                    item.LastMovedAt = now;
-                    item.LastPosition = position;
-                }
-
+                TrackMotion(item, body, now);
                 bool moving = now - item.LastMovedAt < item.StillSeconds;
 
                 if (item.LocallyOwned)
@@ -178,7 +184,7 @@ namespace WinterMP.Core.Sync
                         item.NextSendAt = now + 1f / item.SendRateHz;
                     }
                 }
-                else if (moving && CanClaim(item, position, now)
+                else if (moving && CanClaim(item, body.transform.position, now)
                          && !ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
                 {
                     ClaimItem(session, item, body, now);
@@ -190,6 +196,19 @@ namespace WinterMP.Core.Sync
                 foreach (uint id in _deadItemIds)
                     RemoveTrackedItem(id, null);
                 _deadItemIds.Clear();
+            }
+
+            SendLocalCargo(session, now);
+            ComposeRemoteCargo(now);
+        }
+
+        private static void TrackMotion(SyncedItem item, Rigidbody body, float now)
+        {
+            var position = body.transform.position;
+            if ((position - item.LastPosition).sqrMagnitude > item.MoveThresholdSqr)
+            {
+                item.LastMovedAt = now;
+                item.LastPosition = position;
             }
         }
 
@@ -209,11 +228,10 @@ namespace WinterMP.Core.Sync
             if ((position - _bridge.LocalPlayer.position).sqrMagnitude >= item.ClaimRadius * item.ClaimRadius)
                 return false;
 
-            if (TryGetContainingVehicle(item, out SyncedItem? cargoVehicle)
-                && cargoVehicle != null
-                && ItemTransformPolicy.ShouldBlockClaimForVehicleCargo(
+            if (ItemTransformPolicy.ShouldBlockClaimForVehicleCargo(
                     item.IsVehicle,
-                    IsVehicleInMotion(cargoVehicle, now)))
+                    ItemTransformPolicy.IsCargoStreamFresh(item.RemoteCargoAt, now),
+                    IsPlayerHeldItem(item)))
                 return false;
 
             return true;
@@ -221,6 +239,8 @@ namespace WinterMP.Core.Sync
 
         private void ClaimItem(SessionManager session, SyncedItem item, Rigidbody body, float now)
         {
+            ReleaseRemoteCargo(item, body, now, seedVelocity: false);
+
             // Taking over from a remote stream: restore physics before simulating.
             if (item.RemoteOwner != WorldSyncIds.NoOwner || (body.isKinematic && item.KinematicSaved))
             {
@@ -231,6 +251,11 @@ namespace WinterMP.Core.Sync
                 item.LastRemoteAt = -999f;
                 SetSeatBlocked(item, false);
             }
+
+            // Claiming a vehicle also ends the previous owner's cargo authority over the
+            // items riding it — our physics simulates them from here on.
+            if (item.IsVehicle)
+                ReleaseRemoteCargoForVehicle(item.Id, now, seedVelocity: true);
 
             item.RemoteEngineUntil = -999f;
 
@@ -269,6 +294,14 @@ namespace WinterMP.Core.Sync
                 Position = body.transform.position.ToNet(),
                 Rotation = body.transform.rotation.ToNet(),
             };
+
+            // Moving vehicles carry velocity so receivers dead-reckon between packets
+            // and can seed physics when a stream dies mid-drive.
+            if (isVehicle && !final && !body.isKinematic)
+            {
+                message.Flags |= ItemTransform.FlagHasVelocity;
+                message.Velocity = body.velocity.ToNet();
+            }
 
             session.SendWorldMessage(message, ItemTransformPolicy.SelectSendChannel(final, isVehicle));
 

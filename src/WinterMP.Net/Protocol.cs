@@ -28,7 +28,10 @@ namespace WinterMP.Net
         // v24: HandshakeResponse sessionFlags; PlayerDeathReport/Event/Respawn (29-31).
         // v25: NpcTransform (100) — host streams NPC/traffic rigidbody poses to guests.
         // v26: VehicleState/Climate snapshot sentinel (SnapshotSequence = ushort.MaxValue) to bypass dedup on join.
-        public const ushort Version = 26;
+        // v27: VehicleCargo (62) — live vehicle-local cargo pose streaming replaces the
+        //      kinematic cargo weld; ItemTransform gains optional velocity (FlagHasVelocity)
+        //      for receiver-side dead reckoning of moving vehicles.
+        public const ushort Version = 27;
     }
 
     /// <summary>

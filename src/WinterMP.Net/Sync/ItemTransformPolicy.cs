@@ -81,17 +81,76 @@ namespace WinterMP.Net.Sync
             return diff == 0 || diff > short.MaxValue;
         }
 
-        /// <summary>Loose items inside an actively driven vehicle are not proximity-claimable.</summary>
-        public static bool ShouldBlockClaimForVehicleCargo(bool isVehicle, bool insideActivelyDrivenVehicle) =>
-            !isVehicle && insideActivelyDrivenVehicle;
+        // --- Vehicle cargo streaming (protocol v27) ---
+
+        /// <summary>How long a received cargo pin stays fresh with no new cargo packet.
+        /// While fresh the pin owns the item; past it (with the vehicle stream still
+        /// live) the item holds its last local pose — a lost packet must not drop
+        /// cargo to physics inside a moving car.</summary>
+        public const float CargoRemoteHoldSeconds = 1f;
 
         /// <summary>
-        /// Per-item streams are ignored while cargo rides a moving vehicle; only the
-        /// vehicle transform matters until the car is parked.
+        /// Cargo membership hysteresis around the vehicle anchor: items closer than
+        /// the enter radius join the set, members stay until the exit radius. The
+        /// enter radius also acts as a physics shield — items the car merely drives
+        /// past get streamed at their true (resting) pose, so an observer's kinematic
+        /// copy of the car cannot punt them.
         /// </summary>
-        public static bool ShouldIgnoreRemoteItemTransformForVehicleCargo(
-            bool isVehicle,
-            bool insideActivelyDrivenVehicle) =>
-            !isVehicle && insideActivelyDrivenVehicle;
+        public const float CargoEnterRadius = 5f;
+        public const float CargoExitRadius = 7f;
+
+        public static bool ShouldBeCargoMember(bool wasMember, float distanceSqr)
+        {
+            float radius = wasMember ? CargoExitRadius : CargoEnterRadius;
+            return distanceSqr <= radius * radius;
+        }
+
+        public static bool IsCargoStreamFresh(float lastCargoAt, float now) =>
+            now - lastCargoAt < CargoRemoteHoldSeconds;
+
+        /// <summary>
+        /// Release seeding for a dropped cargo pin. The observer samples the pin's own
+        /// composed world motion each frame; on release that sample — not the car's
+        /// velocity — seeds the item's physics, so an item the car merely drove past
+        /// (pinned at its resting pose by the enter-radius shield) stays at rest instead
+        /// of launching down the road at car speed, while a genuine rider still inherits
+        /// ~the car's motion. The car's velocity remains the fallback when no fresh
+        /// sample exists, and the cap keeps a compose hiccup from flinging the item.
+        /// </summary>
+        public const float CargoObservedVelocityMaxAge = 0.5f;
+        public const float CargoReleaseSeedMaxSpeed = 30f;
+
+        public static bool IsObservedCargoVelocityFresh(float observedAt, float now) =>
+            now - observedAt < CargoObservedVelocityMaxAge;
+
+        /// <summary>
+        /// A world-space item stream may override a live cargo pin only when it comes
+        /// from the cargo authority itself — that is the hand-off signal (item flung
+        /// out, grabbed, or settled). Anyone else's stream is noise while the vehicle
+        /// owner's physics carries the item.
+        /// </summary>
+        public static bool ShouldAcceptItemTransformOverCargoPin(
+            bool cargoFresh, byte cargoOwner, byte messageOwner) =>
+            !cargoFresh || messageOwner == cargoOwner;
+
+        /// <summary>Items pinned by a live remote cargo stream are not proximity-claimable —
+        /// unless the local player physically holds them (hands beat floor physics).</summary>
+        public static bool ShouldBlockClaimForVehicleCargo(
+            bool isVehicle, bool remoteCargoFresh, bool heldByLocalPlayer) =>
+            !isVehicle && remoteCargoFresh && !heldByLocalPlayer;
+
+        // --- Dead reckoning (protocol v27) ---
+
+        /// <summary>Cap on velocity extrapolation past the last received pose: enough to
+        /// bridge packet gaps, short enough that a stalled stream doesn't drive the car
+        /// through scenery.</summary>
+        public const float MaxExtrapolationSeconds = 0.3f;
+
+        public static float GetExtrapolationSeconds(float lastRemoteAt, float now)
+        {
+            float age = now - lastRemoteAt;
+            if (age < 0f) return 0f;
+            return age > MaxExtrapolationSeconds ? MaxExtrapolationSeconds : age;
+        }
     }
 }

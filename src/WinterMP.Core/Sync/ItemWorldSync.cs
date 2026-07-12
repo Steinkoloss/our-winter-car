@@ -36,24 +36,31 @@ namespace WinterMP.Core.Sync
             _pendingItemPoses.Clear();
             _sessionDespawnedItems.Clear();
             _pendingDespawnedItems.Clear();
+            _cargoCandidates.Clear();
         }
 
         internal void ReleaseSession()
         {
+            float now = Time.unscaledTime;
             foreach (var item in _items.Values)
             {
+                ReleaseRemoteCargo(item, item.Body, now, seedVelocity: false);
                 if (item.Body != null && item.RemoteOwner != WorldSyncIds.NoOwner)
                     item.Body.isKinematic = item.OriginalKinematic;
                 item.RemoteOwner = WorldSyncIds.NoOwner;
                 item.RemoteIsDriver = false;
                 item.RemoteVehicleStream = false;
+                item.HasRemoteVelocity = false;
                 item.LocalDriveActive = false;
                 item.LocallyOwned = false;
                 item.LastRemoteAt = -999f;
-                item.CargoFollowActive = false;
-                item.CargoFollowVehicleId = 0;
-                item.CargoFollowDriverId = WorldSyncIds.NoOwner;
-                RestoreCargoColliders(item);
+                item.LocalCargoVehicleId = 0;
+                item.LocalCargoBlockedUntil = -999f;
+                item.LocalCargoWasStreaming = false;
+                RestoreCargoPhysics(item);
+                item.NextCargoSendAt = 0f;
+                item.LastRemoteCargoOwner = WorldSyncIds.NoOwner;
+                item.RemoteCargoAnnounced = false;
                 item.RemoteEngineUntil = -999f;
                 item.RemoteClimateUntil = -999f;
                 item.RemoteEngineOn = false;

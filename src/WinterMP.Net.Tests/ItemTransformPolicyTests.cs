@@ -100,19 +100,78 @@ namespace WinterMP.Net.Tests
         }
 
         [Theory]
-        [InlineData(false, true, true)]
-        [InlineData(false, false, false)]
-        [InlineData(true, true, false)]
-        public void VehicleCargoPolicy_BlocksClaimAndAllItemStreamsWhileMoving(
-            bool isVehicle,
-            bool insideActivelyDrivenVehicle,
-            bool ignoreStream)
+        [InlineData(false, true, false, true)]  // pinned loose item: not claimable
+        [InlineData(false, true, true, false)]  // ...unless the local player holds it
+        [InlineData(false, false, false, false)] // stale pin: claimable again
+        [InlineData(true, true, false, false)]  // vehicles are never cargo
+        public void ShouldBlockClaimForVehicleCargo_PinBlocksUnlessHeld(
+            bool isVehicle, bool remoteCargoFresh, bool heldByLocalPlayer, bool blocked)
         {
-            Assert.Equal(insideActivelyDrivenVehicle && !isVehicle,
-                ItemTransformPolicy.ShouldBlockClaimForVehicleCargo(isVehicle, insideActivelyDrivenVehicle));
-            Assert.Equal(ignoreStream,
-                ItemTransformPolicy.ShouldIgnoreRemoteItemTransformForVehicleCargo(
-                    isVehicle, insideActivelyDrivenVehicle));
+            Assert.Equal(blocked, ItemTransformPolicy.ShouldBlockClaimForVehicleCargo(
+                isVehicle, remoteCargoFresh, heldByLocalPlayer));
+        }
+
+        [Theory]
+        [InlineData(false, 1, 2, true)]  // stale pin: anyone's stream may take over
+        [InlineData(true, 1, 1, true)]   // live pin: the cargo authority hands off
+        [InlineData(true, 1, 2, false)]  // live pin: third parties wait
+        public void ShouldAcceptItemTransformOverCargoPin_OnlyAuthorityBeatsLivePin(
+            bool cargoFresh, byte cargoOwner, byte messageOwner, bool accepted)
+        {
+            Assert.Equal(accepted, ItemTransformPolicy.ShouldAcceptItemTransformOverCargoPin(
+                cargoFresh, cargoOwner, messageOwner));
+        }
+
+        [Fact]
+        public void ShouldBeCargoMember_HasEnterExitHysteresis()
+        {
+            float betweenRadii =
+                (ItemTransformPolicy.CargoEnterRadius + ItemTransformPolicy.CargoExitRadius) / 2f;
+            float betweenSqr = betweenRadii * betweenRadii;
+
+            // Between the radii: members stay, non-members don't join.
+            Assert.True(ItemTransformPolicy.ShouldBeCargoMember(wasMember: true, betweenSqr));
+            Assert.False(ItemTransformPolicy.ShouldBeCargoMember(wasMember: false, betweenSqr));
+
+            float inside = ItemTransformPolicy.CargoEnterRadius - 0.5f;
+            Assert.True(ItemTransformPolicy.ShouldBeCargoMember(wasMember: false, inside * inside));
+
+            float outside = ItemTransformPolicy.CargoExitRadius + 0.5f;
+            Assert.False(ItemTransformPolicy.ShouldBeCargoMember(wasMember: true, outside * outside));
+        }
+
+        [Fact]
+        public void IsCargoStreamFresh_ExpiresAfterHold()
+        {
+            float now = 100f;
+            Assert.True(ItemTransformPolicy.IsCargoStreamFresh(
+                now - ItemTransformPolicy.CargoRemoteHoldSeconds / 2f, now));
+            Assert.False(ItemTransformPolicy.IsCargoStreamFresh(
+                now - ItemTransformPolicy.CargoRemoteHoldSeconds - 0.01f, now));
+            Assert.False(ItemTransformPolicy.IsCargoStreamFresh(-999f, now));
+        }
+
+        [Fact]
+        public void IsObservedCargoVelocityFresh_ExpiresAfterMaxAge()
+        {
+            float now = 100f;
+            Assert.True(ItemTransformPolicy.IsObservedCargoVelocityFresh(
+                now - ItemTransformPolicy.CargoObservedVelocityMaxAge / 2f, now));
+            Assert.False(ItemTransformPolicy.IsObservedCargoVelocityFresh(
+                now - ItemTransformPolicy.CargoObservedVelocityMaxAge - 0.01f, now));
+            // The -999 sentinel (never sampled / reset after a compose snap) must fall
+            // back to the vehicle-velocity seed, never a stale baseline.
+            Assert.False(ItemTransformPolicy.IsObservedCargoVelocityFresh(-999f, now));
+        }
+
+        [Fact]
+        public void GetExtrapolationSeconds_TracksAgeAndCaps()
+        {
+            float now = 100f;
+            Assert.Equal(0.1f, ItemTransformPolicy.GetExtrapolationSeconds(now - 0.1f, now), 3);
+            Assert.Equal(ItemTransformPolicy.MaxExtrapolationSeconds,
+                ItemTransformPolicy.GetExtrapolationSeconds(now - 5f, now));
+            Assert.Equal(0f, ItemTransformPolicy.GetExtrapolationSeconds(now + 1f, now));
         }
 
         [Fact]

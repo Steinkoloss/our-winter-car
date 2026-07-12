@@ -51,6 +51,97 @@ namespace WinterMP.Net.Tests
         {
             var decoded = Assert.IsType<ItemTransform>(PacketCodec.Decode(PacketCodec.Encode(new ItemTransform())));
             Assert.False(decoded.IsFinal);
+            Assert.False(decoded.HasVelocity);
+        }
+
+        [Fact]
+        public void ItemTransform_VelocityRoundTripsOnlyWhenFlagged()
+        {
+            var withVelocity = new ItemTransform
+            {
+                ItemId = 7,
+                OwnerPlayerId = 1,
+                Sequence = 99,
+                Flags = ItemTransform.FlagVehicle | ItemTransform.FlagDriver | ItemTransform.FlagHasVelocity,
+                Position = new NetVector3(1f, 2f, 3f),
+                Rotation = NetQuaternion.Identity,
+                Velocity = new NetVector3(-8.25f, 0.5f, 19.75f),
+            };
+
+            var decoded = Assert.IsType<ItemTransform>(PacketCodec.Decode(PacketCodec.Encode(withVelocity)));
+            Assert.True(decoded.HasVelocity);
+            Assert.Equal(withVelocity.Velocity.X, decoded.Velocity.X);
+            Assert.Equal(withVelocity.Velocity.Z, decoded.Velocity.Z);
+
+            // Without the flag the field stays off the wire entirely.
+            var withoutVelocity = new ItemTransform
+            {
+                ItemId = 7,
+                Flags = ItemTransform.FlagVehicle,
+                Velocity = new NetVector3(1f, 2f, 3f),
+            };
+
+            var bare = Assert.IsType<ItemTransform>(PacketCodec.Decode(PacketCodec.Encode(withoutVelocity)));
+            Assert.False(bare.HasVelocity);
+            Assert.Equal(0f, bare.Velocity.X);
+        }
+
+        [Fact]
+        public void VehicleCargo_RoundTrips()
+        {
+            var original = new VehicleCargo
+            {
+                VehicleId = 0xCAFE1234,
+                OwnerPlayerId = 3,
+                Sequence = 777,
+                Entries = new[]
+                {
+                    new VehicleCargo.Entry
+                    {
+                        ItemId = 0x11,
+                        LocalPosition = new NetVector3(0.5f, -0.25f, 1.75f),
+                        LocalRotation = new NetQuaternion(0f, 0.7071f, 0f, 0.7071f),
+                    },
+                    new VehicleCargo.Entry
+                    {
+                        ItemId = 0x22,
+                        LocalPosition = new NetVector3(-1f, 0f, 2f),
+                        LocalRotation = NetQuaternion.Identity,
+                    },
+                },
+            };
+
+            var decoded = Assert.IsType<VehicleCargo>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.VehicleId, decoded.VehicleId);
+            Assert.Equal(original.OwnerPlayerId, decoded.OwnerPlayerId);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.Equal(2, decoded.Entries.Length);
+            Assert.Equal(0x11u, decoded.Entries[0].ItemId);
+            Assert.Equal(0.5f, decoded.Entries[0].LocalPosition.X);
+            Assert.Equal(0.7071f, decoded.Entries[0].LocalRotation.Y);
+            Assert.Equal(0x22u, decoded.Entries[1].ItemId);
+            Assert.Equal(2f, decoded.Entries[1].LocalPosition.Z);
+        }
+
+        [Fact]
+        public void VehicleCargo_EmptySetRoundTrips()
+        {
+            var original = new VehicleCargo { VehicleId = 42, OwnerPlayerId = 1, Sequence = 5 };
+            var decoded = Assert.IsType<VehicleCargo>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(42u, decoded.VehicleId);
+            Assert.Empty(decoded.Entries);
+        }
+
+        [Fact]
+        public void VehicleCargo_WriteCapsEntriesAtMax()
+        {
+            var entries = new VehicleCargo.Entry[VehicleCargo.MaxEntries + 8];
+            for (int i = 0; i < entries.Length; i++)
+                entries[i] = new VehicleCargo.Entry { ItemId = (uint)i, LocalRotation = NetQuaternion.Identity };
+
+            var decoded = Assert.IsType<VehicleCargo>(PacketCodec.Decode(PacketCodec.Encode(
+                new VehicleCargo { VehicleId = 1, Entries = entries })));
+            Assert.Equal(VehicleCargo.MaxEntries, decoded.Entries.Length);
         }
 
         [Fact]

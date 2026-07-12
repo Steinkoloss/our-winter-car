@@ -53,6 +53,7 @@ namespace WinterMP.Net.Messages
         // 60-79: vehicles — M4
         VehicleState = 60,
         VehicleClimate = 61,
+        VehicleCargo = 62,
 
         // 80-99: economy — M5
         WalletState = 80,
@@ -70,7 +71,7 @@ namespace WinterMP.Net.Messages
         WorldItemDespawnSnapshot = 125,
 
         // Reserved ranges for future subsystems:
-        //   62-79 vehicles (attachment, fuel/damage)
+        //   63-79 vehicles (attachment, fuel/damage)
         //   82-99 economy
         //   101-119 NPCs/jobs (NpcTransform = 100)
         //   126-139 snapshot/bulk transfer control

@@ -863,6 +863,20 @@ namespace WinterMP.Core.Session
                         Broadcast(vehicleClimate, Channel.UnreliableSequenced, except: peer);
                     break;
 
+                case VehicleCargo vehicleCargo:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVehicleCargo(vehicleCargo);
+                    if (IsHost)
+                    {
+                        // Empty-set transitions ride the reliable channel end to end —
+                        // losing one on relay would strand pinned cargo on other guests.
+                        Broadcast(vehicleCargo,
+                            vehicleCargo.Entries.Length == 0
+                                ? Channel.ReliableOrdered
+                                : Channel.UnreliableSequenced,
+                            except: peer);
+                    }
+                    break;
+
                 case TimeSync timeSync when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteTimeSync(timeSync);
                     break;
