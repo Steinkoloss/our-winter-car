@@ -34,6 +34,8 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<uint, float> _nextObjectRequestAt = new Dictionary<uint, float>();
         private readonly TimeWeatherSync _timeWeather = new TimeWeatherSync();
         private readonly WalletSync _wallet = new WalletSync();
+        private readonly ClothingSync _clothing = new ClothingSync();
+        private readonly HeatSourceSync _heat = new HeatSourceSync();
 
         private bool _syncReady;
 
@@ -238,6 +240,8 @@ namespace WinterMP.Core.Sync
             _npcTraffic.Update(session!);
             _vehicles.UpdateVehicleStates(session!);
             _vehicles.UpdateVehicleClimate(session!);
+            _clothing.Update(session!);
+            _heat.Update(session!);
 
             if (_selfTest)
                 _fsm.RunDoorTest();
@@ -285,6 +289,8 @@ namespace WinterMP.Core.Sync
             _nextObjectRequestAt.Clear();
             _timeWeather.Reset();
             _wallet.Reset();
+            _clothing.Clear();
+            _heat.Clear();
             _snapshotRequested = false;
             _outChecksumSequence = 0;
             _nextChecksumAt = 0f;
@@ -649,6 +655,16 @@ namespace WinterMP.Core.Sync
         public void OnRemoteNpcTransform(NpcTransform message) { EnsureSyncReady(); _npcTraffic.OnRemoteNpcTransform(message); }
         public void OnRemoteItemSnapshot(WorldItemSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemSnapshot(message); }
         public void OnRemoteItemDespawnSnapshot(WorldItemDespawnSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemDespawnSnapshot(message); }
+
+        public void OnRemoteClothingState(PlayerClothingState message) { EnsureSyncReady(); _clothing.OnRemoteClothingState(message); }
+        public void OnRemoteHeatSourceState(HeatSourceState message) { EnsureSyncReady(); _heat.OnRemoteState(message); }
+        public void OnHostHeatSourceIntent(HeatSourceIntent message) { EnsureSyncReady(); _heat.OnHostIntent(message); }
+
+        public bool TryGetRemoteClothing(byte playerId, out byte stage, out byte type)
+        {
+            if (!_syncReady) { stage = 0; type = 0; return false; }
+            return _clothing.TryGetClothing(playerId, out stage, out type);
+        }
 
         public void OnRemoteVehicleState(VehicleState message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleState(message); }
         public void OnRemoteVehicleClimate(VehicleClimate message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleClimate(message); }

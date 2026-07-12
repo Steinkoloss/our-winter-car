@@ -110,26 +110,32 @@ namespace WinterMP.Core.Sync
             {
                 if (!item.IsVehicle || item.Body == null) continue;
                 EnsureClimateProbe(item);
-                if (!ShouldStreamVehicleClimate(item, now)) continue;
+                if (!ShouldStreamVehicleClimate(item)) continue;
                 SendVehicleClimate(session, item, now);
             }
         }
 
-        private bool ShouldStreamVehicleClimate(SyncedItem item, float now)
+        private bool ShouldStreamVehicleClimate(SyncedItem item)
         {
+            // Whoever is actively operating or occupying the car is its live climate
+            // authority (a guest driving their own car, or the host driving).
             if (item.LocallyOwned || HasLocalIgnitionActivity(item)) return true;
 
             var passenger = PassengerController.Instance;
             if (passenger != null && passenger.IsLocalSeatedInVehicle(item.Id))
                 return true;
 
-            // Parked frost still matters to anyone standing near the car.
-            if (now - item.LastRemoteAt < ItemTransformPolicy.GetRemoteHoldSeconds(item.RemoteIsDriver, item.RemoteVehicleStream)) return false;
-            _bridge.FindLocalPlayer();
-            if (_bridge.LocalPlayer == null || item.Body == null) return false;
+            // A remote player owns/drives it — mirror them, never fight their stream.
+            if (item.RemoteOwner != WorldSyncIds.NoOwner) return false;
 
-            float distSq = (_bridge.LocalPlayer.position - item.Body.transform.position).sqrMagnitude;
-            return distSq <= item.ClaimRadius * item.ClaimRadius;
+            // Nobody owns it (parked). Frost/fog is slow world state like weather, and
+            // the game re-simulates it locally on every machine — so if it free-runs
+            // unsynced the two windshields drift apart and one player's car ends up
+            // permanently clear while the other keeps frosting. Make the HOST the
+            // standing climate authority for every unowned car, even parked and far
+            // away; guests just mirror it. (Old behaviour only streamed within 7 m, so
+            // a car parked away from both players desynced — the reported bug.)
+            return _bridge.Session != null && _bridge.Session.IsHost;
         }
 
         public VehicleClimate? TryBuildVehicleClimate(SyncedItem item)

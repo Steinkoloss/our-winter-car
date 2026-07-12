@@ -417,6 +417,7 @@ namespace WinterMP.Net.Tests
                 Fatigue = 88f,
                 Thirst = 40f,
                 Urine = 5f,
+                BodyTemp = 36.6f,
             };
             var decoded = Assert.IsType<GuestSpawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.HostPosition.X, decoded.HostPosition.X, 3);
@@ -425,6 +426,7 @@ namespace WinterMP.Net.Tests
             Assert.True(decoded.HasSavedNeeds);
             Assert.Equal(original.Hunger, decoded.Hunger, 3);
             Assert.Equal(original.Urine, decoded.Urine, 3);
+            Assert.Equal(original.BodyTemp, decoded.BodyTemp, 3);
         }
 
         [Fact]
@@ -437,12 +439,14 @@ namespace WinterMP.Net.Tests
                 Fatigue = 20f,
                 Thirst = 30f,
                 Urine = 40f,
+                BodyTemp = 50f,
                 Sequence = 7,
             };
             var decoded = Assert.IsType<PlayerNeedsReport>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.PlayerId, decoded.PlayerId);
             Assert.Equal(original.Sequence, decoded.Sequence);
             Assert.Equal(original.Thirst, decoded.Thirst, 3);
+            Assert.Equal(original.BodyTemp, decoded.BodyTemp, 3);
         }
 
         [Fact]
