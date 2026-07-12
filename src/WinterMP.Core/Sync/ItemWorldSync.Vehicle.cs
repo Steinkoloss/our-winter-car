@@ -59,18 +59,21 @@ namespace WinterMP.Core.Sync
             if (_bridge.LocalPlayer.IsChildOf(vehicleBody.transform))
                 return true;
 
-            // PlayerInVar and the 1.5 m MassDriver fallback can also promote the local
-            // player to "driver", but neither is a clean local-only signal:
-            //  - PlayerInVar is the game's PlayerIn FsmBool, which the REMOTE climate
-            //    stream overwrites on the observing machine (see
-            //    VehicleWorldSync.Climate.ApplyRemoteFogLevel), so on an observer it
-            //    reflects whether the *remote* occupant is in the car, not the local one;
-            //  - the 1.5 m fallback fires for ANY nearby player, not only a seated one.
-            // Trust them only when no remote owner is asserting this car. Otherwise an
-            // observer (or a bystander standing by the door) of a remotely owned/driven
-            // car would be mis-detected as its driver and could wrongly claim it with
-            // FlagDriver, fighting the real owner. Entering your own free car still works
-            // because an unowned car has RemoteOwner == NoOwner.
+            // PlayerInVar (the game's PlayerIn FsmBool) is the game's own "actually got in"
+            // signal, but it is not a clean local-only one: the REMOTE climate stream
+            // overwrites it on the observing machine (see
+            // VehicleWorldSync.Climate.ApplyRemoteFogLevel), so on an observer it reflects
+            // whether the *remote* occupant is in the car, not the local one. Trust it only
+            // when no remote owner is asserting this car — otherwise an observer of a
+            // remotely owned/driven car would be mis-detected as its driver and could
+            // wrongly claim it with FlagDriver, fighting the real owner. Entering your own
+            // free car still works because an unowned car has RemoteOwner == NoOwner.
+            //
+            // We deliberately do NOT fall back to raw proximity (distance to MassDriver):
+            // that promoted anyone merely standing by the driver's door to "driver", so
+            // other players saw them snap into the seat without ever getting in. Sitting is
+            // detected only from actually being seated — parented under the car (above) or
+            // the game's PlayerIn flag (below).
             if (item != null && item.RemoteOwner == WorldSyncIds.NoOwner)
             {
                 // Additional guard for PlayerInVar specifically: the transform stream can
@@ -81,16 +84,6 @@ namespace WinterMP.Core.Sync
                 if (item.PlayerInVar != null && item.PlayerInVar.Value
                     && Time.unscaledTime >= item.RemoteClimateUntil)
                     return true;
-
-                // Enter-seat race: hierarchy may lag one frame; MassDriver is the
-                // in-cabin physics anchor the game uses while driving.
-                EnsureSeat(item);
-                if (item.DriverAnchorTransform != null)
-                {
-                    float distSq = (_bridge.LocalPlayer.position - item.DriverAnchorTransform.position).sqrMagnitude;
-                    if (distSq <= 2.25f)
-                        return true;
-                }
             }
 
             return false;
@@ -124,10 +117,8 @@ namespace WinterMP.Core.Sync
                 {
                     item.SeatTransform = transform;
                     item.SeatCollider = transform.GetComponent<Collider>();
+                    break;
                 }
-
-                if (item.DriverAnchorTransform == null && name == "MassDriver")
-                    item.DriverAnchorTransform = transform;
             }
         }
 

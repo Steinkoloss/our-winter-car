@@ -95,7 +95,6 @@ namespace WinterMP.Core.Sync
     // remote driver holds the vehicle; also anchors the driver's avatar.
     public bool SeatSearched;
     public Transform? SeatTransform;
-    public Transform? DriverAnchorTransform;
     public Collider? SeatCollider;
     public bool SeatBlocked;
 
@@ -201,6 +200,7 @@ namespace WinterMP.Core.Sync
     public float NextDefrostPulseAt;
     public bool LoggedClimateSend;
     public bool LoggedClimateApply;
+    public float NextClimateDiagAt;
 
     public float ClaimRadius => IsVehicle ? 7f : 4f;
     public float SendRateHz => IsVehicle ? 15f : 10f;

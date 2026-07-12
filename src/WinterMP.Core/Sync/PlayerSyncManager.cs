@@ -240,6 +240,9 @@ namespace WinterMP.Core.Sync
                     avatar.SetAnchor(seat, vehicle);
                 else
                     avatar.ClearAnchor();
+
+                if (world != null && world.TryGetRemoteClothing(player.PlayerId, out byte clothStage, out byte clothType))
+                    avatar.SetClothing(clothStage, clothType);
             }
 
             // Players that left the session.
@@ -248,6 +251,7 @@ namespace WinterMP.Core.Sync
                 if (_avatars.TryGetValue(playerId, out var avatar) && avatar != null)
                     Destroy(avatar.gameObject);
                 _avatars.Remove(playerId);
+                WorldSyncManager.Instance?.ForgetRemoteClothing(playerId);
             }
         }
 

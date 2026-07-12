@@ -807,6 +807,12 @@ namespace WinterMP.Core.Session
                     Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn);
                     break;
 
+                case PlayerClothingState clothingState:
+                    Sync.WorldSyncManager.Instance?.OnRemoteClothingState(clothingState);
+                    if (IsHost)
+                        Broadcast(clothingState, Channel.ReliableOrdered, except: peer);
+                    break;
+
                 case FsmStateEnter stateEnter:
                     Sync.WorldSyncManager.Instance?.OnRemoteStateEnter(stateEnter);
                     if (IsHost)
@@ -887,6 +893,14 @@ namespace WinterMP.Core.Session
 
                 case PurchaseIntent purchaseIntent when IsHost:
                     Sync.WorldSyncManager.Instance?.OnHostPurchaseIntent(purchaseIntent);
+                    break;
+
+                case HeatSourceState heatState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteHeatSourceState(heatState);
+                    break;
+
+                case HeatSourceIntent heatIntent when IsHost:
+                    Sync.WorldSyncManager.Instance?.OnHostHeatSourceIntent(heatIntent);
                     break;
 
                 case WorldSnapshotRequest snapshotRequest when IsHost:
@@ -1103,6 +1117,7 @@ namespace WinterMP.Core.Session
                 offer.Fatigue = needs.Fatigue;
                 offer.Thirst = needs.Thirst;
                 offer.Urine = needs.Urine;
+                offer.BodyTemp = needs.BodyTemp;
                 offer.Flags |= GuestSpawn.FlagHasSavedNeeds;
             }
 
@@ -1121,6 +1136,7 @@ namespace WinterMP.Core.Session
                     Fatigue = report.Fatigue,
                     Thirst = report.Thirst,
                     Urine = report.Urine,
+                    BodyTemp = report.BodyTemp,
                     Valid = true,
                 });
                 return;

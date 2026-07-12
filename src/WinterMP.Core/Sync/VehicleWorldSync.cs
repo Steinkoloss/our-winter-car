@@ -42,6 +42,8 @@ namespace WinterMP.Core.Sync
         /// <summary>Keep pushing frost/defrost visuals after the last climate packet.</summary>
         private const float ClimateHoldSeconds = 3f;
         private const float DefrostPulseSeconds = 0.5f;
+        /// <summary>Throttle for the climate desync diagnostic trace (temporary).</summary>
+        private const float ClimateDiagIntervalSeconds = 2f;
         /// <summary>Remote engine audio stops when no state arrived for this long.</summary>
         private const float EngineAudioHoldSeconds = 2f;
         private const float EnginePitchBase = 0.55f;

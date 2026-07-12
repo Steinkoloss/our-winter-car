@@ -252,8 +252,8 @@ Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
 | Player avatars | Custom rig (head/hands/body) streamed ~20 Hz, name tags. Remote players *visual only* (no physics pushing) v1 | ✅ |
 | Player animation | Derived state machine (walk/run/crouch/carry/drive) — low bandwidth | ✅ |
 | Player needs (hunger/fatigue/thirst/urine) | Per-player, reported to host every ~12 s, saved in `wintermp-guests.json` sidecar | ✅ |
-| **Body temperature / cold** | Per-player **5th need** (`BodyTemp`); reported to host + sidecar like other needs. Ambient temp shared via `TimeSync`; `ColdArea`/`ColdMultiplier` are position-derived (computed locally from the same world). Only hypothermia *death* is synced today — see §4.8 | ⬜ (M7) |
-| **Clothing** | Per-player `ClothingStage`/`ClothingType` (`CLOTHESHOME`/`CLOTHESWORK`) — drives insulation (warmth math) **and** the remote-avatar visual | ⬜ (M7) |
+| **Body temperature / cold** | Per-player **5th need** (`BodyTemp`); reported to host + sidecar like other needs. Ambient temp shared via `TimeSync`; `ColdArea`/`ColdMultiplier` are position-derived (computed locally from the same world). Synced as the 5th need at **v28** (`PLAYER/BodyTemp.Temperature` → host + sidecar, restored on rejoin) — see §4.8 | 🚧 (v28, not soak-tested) |
+| **Clothing** | Per-player `ClothingStage`/`ClothingType` (`CLOTHESHOME`/`CLOTHESWORK`) — drives insulation (warmth math) **and** the remote-avatar visual. Synced at **v28** (`PlayerClothingState`: `ClothingStage`+`ClothingType`, owner-authoritative + host-relayed; avatar shirt tint best-effort) | 🚧 (v28, not soak-tested) |
 | Text / voice chat | Text chat done; positional voice via Steam Voice later | 🚧 (M11) |
 | Money/economy | **Single shared wallet** owned by host. All transactions are intents → host validates → broadcasts `WalletState`. No race conditions by construction | ✅ |
 | Shops & cash registers | `anyone-triggers` purchase intents; host executes, spawns goods, applies money | ✅ |
@@ -264,7 +264,7 @@ Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
 | **Fuel / jerrycan / pumps** | Refuel as `anyone-triggers` intent; fuel level already rides in `VehicleState` | 🚧 (M8) |
 | World items (pickables / cargo / consumables) | Event-synced + ownership streaming when in motion; eat/drink despawn synced | ✅ |
 | Doors / switches / controls | `anyone-triggers` events (incl. lights, wipers, hazards, handbrake) | ✅ |
-| **Home heating & cooking** | Cabin woodstove (`CABIN/Cabin/woodstove/Fireplace`: `SetFire`/`WoodTrigger`/`SausageTrigger`), sauna kiuas (`StoveHeat`/`SaunaStove`), cottage/living-room fireplaces. Host-owned progression (lit, fuel, heat output, sauna temp); feed/light/grill = `anyone-triggers`. See §4.8 | ⬜ (M7) |
+| **Home heating & cooking** | Cabin woodstove (`CABIN/Cabin/woodstove/Fireplace`: `SetFire`/`WoodTrigger`/`SausageTrigger`), sauna kiuas (`StoveHeat`/`SaunaStove`), cottage/living-room fireplaces. Host-owned progression (lit, fuel, heat output, sauna temp); feed/light/grill = `anyone-triggers`. Synced at **v28** (`HeatSourceState`/`HeatSourceIntent`: woodstove/sauna/fireplaces; host reads authoritative signals + broadcasts, guests apply locally, light/feed/grill/löyly intents fire real game events on the host). See §4.8 | 🚧 (v28, not soak-tested) |
 | **Home appliances** | TV (`TVSwitch`), radio (station+power), fridge, lights, fuse box — host-owned vars + `anyone-triggers` | ⬜ (M11) |
 | NPCs & traffic | `host-only` sim; transform + FSM streaming with distance-based rates | ✅ |
 | **Police / cops** | Speeding & DUI detection host-authoritative; fines → shared wallet; arrest / impound flow | ⬜ (M9) |

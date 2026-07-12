@@ -103,7 +103,6 @@ namespace WinterMP.Core.Sync
         /// <summary>Passenger's own look yaw, accumulated relative to the vehicle
         /// (not the world), so mouse-look survives the rotation pin below.</summary>
         private float _seatYawOffset;
-        private float _lastPinnedYaw;
 
         private string? _hint;
 
@@ -168,14 +167,15 @@ namespace WinterMP.Core.Sync
             _player.position = vehicle.Body.transform.TransformPoint(SeatedLocalOffset(seat));
             // Pin rotation too, or the seated body keeps its world-fixed facing while the
             // car turns (the player FSM rewrites rotation each frame) and visibly slides
-            // relative to the seat (#32). But pin only the vehicle's own turning, not the
-            // player's mouse-look: fold in the yaw delta the FSM added this frame (its
-            // look-around input) as an offset from the vehicle's heading, so passengers
-            // can still look left/right instead of snapping back to dead-ahead every frame.
-            float delta = Mathf.DeltaAngle(_lastPinnedYaw, _player.eulerAngles.y);
-            _seatYawOffset += delta;
+            // relative to the seat (#32). Pin only the vehicle's own turning, not the
+            // player's mouse-look: recover just the look the FSM added this frame by diffing
+            // against the CURRENT vehicle heading plus our accumulated look. Diffing against
+            // last frame's pinned yaw used a STALE vehicle heading, so the car's own turn
+            // (V_now - V_lastframe) leaked into the offset and the camera over-rotated.
+            float vehicleYaw = vehicle.Body.transform.eulerAngles.y;
+            float lookDelta = Mathf.DeltaAngle(vehicleYaw + _seatYawOffset, _player.eulerAngles.y);
+            _seatYawOffset += lookDelta;
             _player.rotation = vehicle.Body.transform.rotation * Quaternion.Euler(0f, _seatYawOffset, 0f);
-            _lastPinnedYaw = _player.eulerAngles.y;
         }
 
         /// <summary>
@@ -317,8 +317,9 @@ namespace WinterMP.Core.Sync
             _seated = true;
             _seatedVehicleId = vehicle.VehicleId;
             _seatedIndex = seat;
+            // First seated frame folds the player's current facing-vs-car into the offset,
+            // so they keep looking where they were at entry (see the pin in LateUpdate).
             _seatYawOffset = 0f;
-            _lastPinnedYaw = _player.eulerAngles.y;
             _nextRebroadcastAt = Time.unscaledTime + RebroadcastSeconds;
 
             SendSeatState(session, vehicle.VehicleId, (byte)seat);
@@ -592,9 +593,12 @@ namespace WinterMP.Core.Sync
             float rearZ = benchAnchor != null
                 ? root.InverseTransformPoint(benchAnchor.position).z
                 : driverLocal.z - 0.85f;
-            float rearY = benchAnchor != null
-                ? root.InverseTransformPoint(benchAnchor.position).y
-                : front.y + 0.02f;
+            // Take the rear seat's HEIGHT from the front mass point, never from the bench
+            // pivot: that pivot's origin is a mesh/object anchor, not a seated point — on the
+            // CORRIS it sits ~1.1 m above cushion level, which parked the passenger camera up
+            // by the roof. The rear cushion is at essentially the same height as the front
+            // seat, so front.y is both reliable and correct. The pivot still gives fore/aft.
+            float rearY = front.y;
 
             var seats = new VehicleSeats
             {

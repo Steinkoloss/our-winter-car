@@ -46,6 +46,11 @@ namespace WinterMP.Core.Sync
         private Transform? _anchorSeat;
         private Transform? _anchorVehicle;
 
+        private const byte ClothingUnset = 255;
+        private byte _clothingStage = ClothingUnset;
+        private byte _clothingType = ClothingUnset;
+        private Renderer[]? _clothingRenderers;
+
         public static RemoteAvatar Create(byte playerId, string playerName)
         {
             var root = new GameObject($"WinterMP_Avatar_{playerId}");
@@ -193,6 +198,58 @@ namespace WinterMP.Core.Sync
         }
 
         public void ClearAnchor() => SetAnchor(null, null);
+
+        /// <summary>
+        /// Apply a remote player's worn clothing. State is always stored (authoritative);
+        /// the visual is best-effort. The avatar clone has all PlayMaker FSMs stripped
+        /// (NpcCharacterFactory.StripVisualSimulation), so the in-game SetMaterials /
+        /// CLOTHESHOME-CLOTHESWORK path is unavailable here — we tint the shirt material by
+        /// warmth stage instead (warmer stage = darker/heavier look) so dressing up/down is
+        /// visible. Fully crash-contained; no-op if renderers are unavailable.
+        /// </summary>
+        public void SetClothing(byte stage, byte type)
+        {
+            if (_clothingStage == stage && _clothingType == type) return;
+            _clothingStage = stage;
+            _clothingType = type;
+
+            try
+            {
+                ApplyClothingTint();
+            }
+            catch (System.Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug("RemoteAvatar: clothing visual failed: " + e.Message);
+            }
+        }
+
+        private void ApplyClothingTint()
+        {
+            if (_clothingRenderers == null)
+            {
+                _clothingRenderers = _bodyRenderer != null
+                    ? new[] { _bodyRenderer }
+                    : GetComponentsInChildren<Renderer>(true);
+            }
+
+            if (_clothingRenderers == null || _clothingRenderers.Length == 0) return;
+
+            // Approximate: darker as the warmth stage climbs. Stages are small enum indices;
+            // clamp to a sane span so a stray value can't blow the brightness out.
+            float darkness = Mathf.Clamp01(_clothingStage / 6f);
+            float brightness = Mathf.Lerp(1f, 0.55f, darkness);
+            var tint = new Color(brightness, brightness, brightness);
+
+            for (int i = 0; i < _clothingRenderers.Length; i++)
+            {
+                var renderer = _clothingRenderers[i];
+                if (renderer == null) continue;
+
+                var material = renderer.material;
+                if (material != null && material.HasProperty("_Color"))
+                    material.color = tint;
+            }
+        }
 
         private void ApplyMoveState()
         {
