@@ -37,6 +37,7 @@ namespace WinterMP.Core.Sync
         private readonly HeatSourceSync _heat = new HeatSourceSync();
         private FluidContainerSync _fluids = null!;
         private readonly WorldProgressSync _progress = new WorldProgressSync();
+        private readonly JobSiteSync _jobSites = new JobSiteSync();
 
         private bool _syncReady;
 
@@ -250,6 +251,7 @@ namespace WinterMP.Core.Sync
             _heat.Update(session!);
             _fluids.Update(session!);
             _progress.Update(session!);
+            _jobSites.Update(session!);
 
             if (_selfTest)
                 _fsm.RunDoorTest();
@@ -300,6 +302,7 @@ namespace WinterMP.Core.Sync
             _clothing.Clear();
             _heat.Clear();
             _progress.Reset();
+            _jobSites.Clear();
             _snapshotRequested = false;
             _outChecksumSequence = 0;
             _nextChecksumAt = 0f;
@@ -654,6 +657,9 @@ namespace WinterMP.Core.Sync
             byte ownerPlayerId = session != null ? session.LocalPlayerId : WorldSyncIds.NoOwner;
             foreach (var fluid in _fluids.BuildSnapshots(ownerPlayerId))
                 yield return fluid;
+
+            foreach (var jobSite in _jobSites.BuildSnapshots())
+                yield return jobSite;
         }
 
         public TimeSync? BuildTimeSync() => _timeWeather.BuildMessage();
@@ -709,6 +715,7 @@ namespace WinterMP.Core.Sync
         public void OnHostHeatSourceIntent(HeatSourceIntent message) { EnsureSyncReady(); _heat.OnHostIntent(message); }
         public void OnRemoteFluidContainerState(FluidContainerState message) { EnsureSyncReady(); _fluids.OnRemoteState(message); }
         public void OnRemoteWorldProgressState(WorldProgressState message) { EnsureSyncReady(); _progress.Apply(message); }
+        public void OnRemoteJobSiteState(JobSiteState message) { EnsureSyncReady(); _jobSites.Apply(message); }
         public void ForceHeatSourceBroadcast() { EnsureSyncReady(); _heat.ForceBroadcast(); }
 
         public bool TryGetRemoteClothing(byte playerId, out byte stage, out byte type)

@@ -44,6 +44,7 @@ namespace WinterMP.Net.Messages
                 { MessageId.SpawnIntent, () => new SpawnIntent() },
                 { MessageId.FluidContainerState, () => new FluidContainerState() },
                 { MessageId.WorldProgressState, () => new WorldProgressState() },
+                { MessageId.JobSiteState, () => new JobSiteState() },
                 { MessageId.VehicleState, () => new VehicleState() },
                 { MessageId.VehicleClimate, () => new VehicleClimate() },
                 { MessageId.VehicleCargo, () => new VehicleCargo() },

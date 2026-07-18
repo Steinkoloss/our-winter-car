@@ -981,6 +981,10 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteWorldProgressState(progressState);
                     break;
 
+                case JobSiteState jobSiteState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteJobSiteState(jobSiteState);
+                    break;
+
                 case WorldSnapshotRequest snapshotRequest when IsHost:
                     HandleSnapshotRequest(peer, snapshotRequest);
                     break;

@@ -51,5 +51,27 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Tertiary, decoded.Tertiary);
             Assert.Equal(original.Value, decoded.Value);
         }
+
+        [Fact]
+        public void JobSiteState_RoundTrips()
+        {
+            var original = new JobSiteState
+            {
+                SiteId = 0x4411AA22,
+                Kind = JobSiteState.KindSewage,
+                Flags = JobSiteState.FlagActive,
+                Sequence = 65530,
+                Primary = 1843.25f,
+                Secondary = 42.5f,
+            };
+
+            var decoded = Assert.IsType<JobSiteState>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.SiteId, decoded.SiteId);
+            Assert.Equal(original.Kind, decoded.Kind);
+            Assert.True(decoded.IsActive);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.Equal(original.Primary, decoded.Primary);
+            Assert.Equal(original.Secondary, decoded.Secondary);
+        }
     }
 }

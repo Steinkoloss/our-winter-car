@@ -48,6 +48,7 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 | Jerrycan / liquid contents | `Sync/FluidContainerSync.cs` |
 | Vehicles | `Sync/VehicleWorldSync.*`, `Sync/ItemWorldSync.Vehicle.cs` |
 | Classifieds / factory / Marketti progress | `Sync/WorldProgressSync.cs` |
+| Sewage / firewood delivery sites | `Sync/JobSiteSync.cs` |
 | Time / weather | `Sync/TimeWeatherSync.cs` |
 | Shared wallet | `Sync/WalletSync.cs` |
 | Scene paths / net IDs | `Sync/ScenePath.cs` |

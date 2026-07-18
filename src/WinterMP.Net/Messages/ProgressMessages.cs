@@ -87,4 +87,47 @@ namespace WinterMP.Net.Messages
         public const byte Factory = 2;
         public const byte MarkettiMagazine = 3;
     }
+
+    /// <summary>
+    /// Host-authoritative dynamic state for one sewage or firewood delivery site.
+    /// Unlike the global work snapshots, there are several live sites, so each is
+    /// keyed by the stable hash of its own PlayMaker FSM path.
+    /// </summary>
+    public sealed class JobSiteState : IMessage
+    {
+        public const byte KindSewage = 1;
+        public const byte KindFirewood = 2;
+        public const byte FlagActive = 1;
+
+        public uint SiteId;
+        public byte Kind;
+        public byte Flags;
+        public ushort Sequence;
+        public float Primary;
+        public float Secondary;
+
+        public bool IsActive => (Flags & FlagActive) != 0;
+
+        public MessageId Id => MessageId.JobSiteState;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(SiteId);
+            writer.WriteByte(Kind);
+            writer.WriteByte(Flags);
+            writer.WriteUInt16(Sequence);
+            writer.WriteSingle(Primary);
+            writer.WriteSingle(Secondary);
+        }
+
+        public void Read(NetReader reader)
+        {
+            SiteId = reader.ReadUInt32();
+            Kind = reader.ReadByte();
+            Flags = reader.ReadByte();
+            Sequence = reader.ReadUInt16();
+            Primary = reader.ReadSingle();
+            Secondary = reader.ReadSingle();
+        }
+    }
 }

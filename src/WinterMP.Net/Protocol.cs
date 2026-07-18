@@ -55,7 +55,9 @@ namespace WinterMP.Net
         // v33: FluidContainerState (54) streams tracked jerrycan/container contents;
         //      WorldProgressState (55) mirrors host-owned classifieds, factory, and
         //      market listing progress for guests and joiners.
-        public const ushort Version = 33;
+        // v34: JobSiteState (56) mirrors all sewage and firewood site progress:
+        //      work-order active flag plus the site-specific level/surplus values.
+        public const ushort Version = 34;
     }
 
     /// <summary>

@@ -63,6 +63,8 @@ namespace WinterMP.Net.Messages
         FluidContainerState = 54,
         /// <summary>Host -> guests: shared classifieds, factory, or market progress.</summary>
         WorldProgressState = 55,
+        /// <summary>Host -> guests: current sewage/firewood site state.</summary>
+        JobSiteState = 56,
 
         // 60-79: vehicles — M4
         VehicleState = 60,

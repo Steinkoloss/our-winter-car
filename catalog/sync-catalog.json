@@ -208,6 +208,20 @@
       "fsmName": "Use",
       "states": ["Open"],
       "requireStates": ["Wait button", "Open"]
+    },
+    {
+      "pathPrefix": "JOBS/HouseShit",
+      "pathContains": "/PayMoney",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathPrefix": "JOBS/HouseWood",
+      "pathContains": "/PayMoney",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
     }
   ],
   "switchRules": [
