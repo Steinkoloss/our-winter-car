@@ -59,6 +59,10 @@ namespace WinterMP.Net.Messages
         ItemSpawn = 52,
         /// <summary>Guest -> host: "I opened a grocery bag; you spawn it authoritatively".</summary>
         SpawnIntent = 53,
+        /// <summary>Owner -> host -> others: liquid amount in a tracked container.</summary>
+        FluidContainerState = 54,
+        /// <summary>Host -> guests: shared classifieds, factory, or market progress.</summary>
+        WorldProgressState = 55,
 
         // 60-79: vehicles — M4
         VehicleState = 60,

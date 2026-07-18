@@ -42,6 +42,8 @@ namespace WinterMP.Net.Messages
                 { MessageId.HeatSourceIntent, () => new HeatSourceIntent() },
                 { MessageId.ItemSpawn, () => new ItemSpawn() },
                 { MessageId.SpawnIntent, () => new SpawnIntent() },
+                { MessageId.FluidContainerState, () => new FluidContainerState() },
+                { MessageId.WorldProgressState, () => new WorldProgressState() },
                 { MessageId.VehicleState, () => new VehicleState() },
                 { MessageId.VehicleClimate, () => new VehicleClimate() },
                 { MessageId.VehicleCargo, () => new VehicleCargo() },

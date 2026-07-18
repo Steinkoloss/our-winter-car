@@ -41,6 +41,19 @@ namespace WinterMP.Core.Sync
     public ushort OutSequence;
     public float NextSendAt;
 
+    // Fuel/liquid containers (M8). These are deliberately separate from vehicle
+    // fuel: a jerrycan can be held by a different delegated owner than the car.
+    public float NextFluidProbeAt;
+    public HutongGames.PlayMaker.FsmFloat? FluidLevelVar;
+    public HutongGames.PlayMaker.FsmFloat? FluidCapacityVar;
+    public HutongGames.PlayMaker.FsmBool? FluidPouringVar;
+    public ushort OutFluidSequence;
+    public ushort LastRemoteFluidSequence;
+    public byte LastRemoteFluidOwner = WorldSyncIds.NoOwner;
+    public float NextFluidSendAt;
+    public float LastSentFluidLevel = float.NaN;
+    public bool LastSentFluidPouring;
+
     public Vector3 LastPosition;
     public float LastMovedAt = -999f;
 

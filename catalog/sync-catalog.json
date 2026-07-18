@@ -190,6 +190,24 @@
       "fsmName": "Button",
       "states": ["Next page"],
       "requireStates": ["Next page"]
+    },
+    {
+      "pathPrefix": "JOBS/FACTORY/OpeningTimes/Functions/TimeClock/TriggerPunchIn",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathPrefix": "JOBS/FACTORY/OpeningTimes/Functions/TimeClock/TriggerPunchOut",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathPrefix": "JOBS/ADs/AdvertSpawn/advert pile(itemx)",
+      "fsmName": "Use",
+      "states": ["Open"],
+      "requireStates": ["Wait button", "Open"]
     }
   ],
   "switchRules": [

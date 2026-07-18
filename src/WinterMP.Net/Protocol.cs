@@ -52,7 +52,10 @@ namespace WinterMP.Net
         //      materializes from the manifest. No peer fires another peer's bag
         //      FSM anymore (its player-interaction checks made that impossible).
         //      DeathCause values 14-21 (sewage..smoking) also land with this bump.
-        public const ushort Version = 32;
+        // v33: FluidContainerState (54) streams tracked jerrycan/container contents;
+        //      WorldProgressState (55) mirrors host-owned classifieds, factory, and
+        //      market listing progress for guests and joiners.
+        public const ushort Version = 33;
     }
 
     /// <summary>

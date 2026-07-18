@@ -36,6 +36,8 @@ namespace WinterMP.Core.Sync
         private readonly WalletSync _wallet = new WalletSync();
         private readonly ClothingSync _clothing = new ClothingSync();
         private readonly HeatSourceSync _heat = new HeatSourceSync();
+        private FluidContainerSync _fluids = null!;
+        private readonly WorldProgressSync _progress = new WorldProgressSync();
 
         private bool _syncReady;
 
@@ -105,6 +107,7 @@ namespace WinterMP.Core.Sync
             _bridge = new WorldSyncBridge(this, _hookedFsms);
             _items = new ItemWorldSync(_bridge);
             _vehicles = new VehicleWorldSync(_bridge, _items);
+            _fluids = new FluidContainerSync(_items);
             _npcTraffic = new NpcTrafficSync(_bridge);
             _items.BindVehicles(_vehicles);
             _bridge.BindItems(_items);
@@ -246,6 +249,8 @@ namespace WinterMP.Core.Sync
             _vehicles.UpdateVehicleClimate(session!);
             _clothing.Update(session!);
             _heat.Update(session!);
+            _fluids.Update(session!);
+            _progress.Update(session!);
 
             if (_selfTest)
                 _fsm.RunDoorTest();
@@ -295,6 +300,7 @@ namespace WinterMP.Core.Sync
             _wallet.Reset();
             _clothing.Clear();
             _heat.Clear();
+            _progress.Reset();
             _snapshotRequested = false;
             _outChecksumSequence = 0;
             _nextChecksumAt = 0f;
@@ -641,6 +647,14 @@ namespace WinterMP.Core.Sync
             // late joiner materializes container-spawned items it can't ever scan.
             foreach (var spawn in _items.BuildSpawnReplayManifests())
                 yield return spawn;
+
+            foreach (var progress in _progress.BuildSnapshots())
+                yield return progress;
+
+            var session = SessionManager.Instance;
+            byte ownerPlayerId = session != null ? session.LocalPlayerId : WorldSyncIds.NoOwner;
+            foreach (var fluid in _fluids.BuildSnapshots(ownerPlayerId))
+                yield return fluid;
         }
 
         public TimeSync? BuildTimeSync() => _timeWeather.BuildMessage();
@@ -694,6 +708,8 @@ namespace WinterMP.Core.Sync
         public void OnRemoteClothingState(PlayerClothingState message) { EnsureSyncReady(); _clothing.OnRemoteClothingState(message); }
         public void OnRemoteHeatSourceState(HeatSourceState message) { EnsureSyncReady(); _heat.OnRemoteState(message); }
         public void OnHostHeatSourceIntent(HeatSourceIntent message) { EnsureSyncReady(); _heat.OnHostIntent(message); }
+        public void OnRemoteFluidContainerState(FluidContainerState message) { EnsureSyncReady(); _fluids.OnRemoteState(message); }
+        public void OnRemoteWorldProgressState(WorldProgressState message) { EnsureSyncReady(); _progress.Apply(message); }
         public void ForceHeatSourceBroadcast() { EnsureSyncReady(); _heat.ForceBroadcast(); }
 
         public bool TryGetRemoteClothing(byte playerId, out byte stage, out byte type)

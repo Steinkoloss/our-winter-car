@@ -915,6 +915,25 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnHostHeatSourceIntent(heatIntent);
                     break;
 
+                case FluidContainerState fluidState when IsHost:
+                    if (!IsPeerPlayer(peer, fluidState.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped FluidContainerState claiming player {fluidState.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnRemoteFluidContainerState(fluidState);
+                    Broadcast(fluidState, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case FluidContainerState fluidState:
+                    Sync.WorldSyncManager.Instance?.OnRemoteFluidContainerState(fluidState);
+                    break;
+
+                case WorldProgressState progressState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteWorldProgressState(progressState);
+                    break;
+
                 case WorldSnapshotRequest snapshotRequest when IsHost:
                     HandleSnapshotRequest(peer, snapshotRequest);
                     break;
@@ -1291,6 +1310,12 @@ namespace WinterMP.Core.Session
             // Host relays transforms so all guests see all players.
             if (IsHost)
                 Broadcast(transform, Channel.UnreliableSequenced, except: peer);
+        }
+
+        /// <summary>Guest-originated owner fields must match the authenticated peer.</summary>
+        private bool IsPeerPlayer(PeerId peer, byte playerId)
+        {
+            return _playersByPeer.TryGetValue(peer, out var player) && player.PlayerId == playerId;
         }
 
         // ---------------------------------------------------------------- send helpers

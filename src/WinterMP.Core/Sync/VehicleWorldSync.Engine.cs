@@ -150,6 +150,8 @@ namespace WinterMP.Core.Sync
             item.RemoteBlinkerRight = message.BlinkerRight;
             item.RemoteHazard = message.HazardOn;
 
+            ApplyRemoteFuel(item, message.FuelLevel);
+
             if (!item.LocallyOwned && electricsChanged)
                 ApplyRemoteElectricity(item, electricsOn);
 
@@ -218,6 +220,26 @@ namespace WinterMP.Core.Sync
                 item.GaugeCoolantVar.Value = coolantC;
             if (item.GaugeCoolantAngleVar != null)
                 item.GaugeCoolantAngleVar.Value = CoolantAngleForTemp(coolantC);
+        }
+
+        /// <summary>
+        /// Fuel was previously presentation-only on remote vehicles. That loses a
+        /// guest driver's refuel because the host's authoritative tank never changes.
+        /// The transform owner already has delegated driving authority, so its vehicle
+        /// state is the accepted fuel source while it owns the car.
+        /// </summary>
+        private static void ApplyRemoteFuel(SyncedItem item, byte level)
+        {
+            EnsureVehicleSystemsProbe(item);
+            if (item.FuelTankLevelVar == null) return;
+
+            float capacity = item.FuelTankCapacityVar != null
+                ? item.FuelTankCapacityVar.Value
+                : FuelTankDefaultLiters;
+            if (capacity <= 0f || float.IsNaN(capacity) || float.IsInfinity(capacity))
+                capacity = FuelTankDefaultLiters;
+
+            item.FuelTankLevelVar.Value = Mathf.Clamp(level / 255f * capacity, 0f, capacity);
         }
 
         private static void ApplyRemoteLights(SyncedItem item, bool left, bool right, bool hazard)
