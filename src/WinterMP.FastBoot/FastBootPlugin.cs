@@ -1,7 +1,6 @@
 using System;
 using BepInEx;
 using BepInEx.Configuration;
-using BepInEx.Logging;
 using UnityEngine;
 
 namespace WinterMP.FastBoot
@@ -9,9 +8,13 @@ namespace WinterMP.FastBoot
     /// <summary>
     /// Boot accelerators: skip splash, dismiss setup UI, auto-continue when a save exists.
     /// All PlayMaker automation is restricted to SplashScreen / MainMenu — never GAME.
+    ///
+    /// Soft (not hard) dependency on Core: the save-safe boot tiers (splash/config skip, fast
+    /// Continue, async GAME preload) work standalone, so FastBoot must still load and apply even if
+    /// Core fails to initialize after a game update. SessionGate reaches Core by reflection when present.
     /// </summary>
     [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
-    [BepInDependency("com.ourwintercar.wintermp", BepInDependency.DependencyFlags.HardDependency)]
+    [BepInDependency("com.ourwintercar.wintermp", BepInDependency.DependencyFlags.SoftDependency)]
     public sealed class FastBootPlugin : BaseUnityPlugin
     {
         internal static FastBootPlugin? Instance { get; private set; }
@@ -107,11 +110,14 @@ namespace WinterMP.FastBoot
                 "Boot", "DevDirectGameLoad", false,
                 "EXPERIMENTAL: skip Continue + ES2 and LoadLevel(GAME) from MainMenu. Crashes — leave false.");
             _devSkipEs2Tags = Config.Bind(
-                "Boot", "DevSkipEs2Tags", true,
-                "Skip nonessential ES2 tags during Continue hydrate.");
+                "Boot", "DevSkipEs2Tags", false,
+                "UNSAFE/dev only. Skip nonessential ES2 tags during Continue hydrate. The game loads "
+                + "save data lazily and saves are per-tag merges of the live value, so a skipped tag "
+                + "stays default and the next save overwrites the real data. Leave false.");
             _devEs2Whitelist = Config.Bind(
-                "Boot", "DevEs2Whitelist", true,
-                "Only hydrate core boot tags (World*, Player*, vehicles). Much faster Continue→GAME.");
+                "Boot", "DevEs2Whitelist", false,
+                "UNSAFE/dev only. Only hydrate core boot tags and skip the rest for a faster Continue→GAME. "
+                + "Same save-corruption risk as DevSkipEs2Tags (the skipped tags are never restored). Leave false.");
             _devSkipEs2ExtraPrefixes = Config.Bind(
                 "Boot", "DevSkipEs2ExtraPrefixes", string.Empty,
                 "Extra comma-separated ES2 tag prefixes to skip during dev hydrate.");
@@ -122,8 +128,10 @@ namespace WinterMP.FastBoot
                 "Boot", "AnalyzeEs2SaveOnStartup", false,
                 "Scan savefile.txt tag names at plugin load (dev diagnostics only — costs startup time).");
             _deferredEs2Hydrate = Config.Bind(
-                "Boot", "DeferredEs2Hydrate", true,
-                "After GAME loads, background-hydrate ES2 tags skipped by the boot whitelist.");
+                "Boot", "DeferredEs2Hydrate", false,
+                "Dev only. Intended to background-restore tags skipped by the boot whitelist, but "
+                + "ES2.LoadAll cannot push values back into the world, so this does NOT actually repair "
+                + "a skipped save — it is not a safety net. Only meaningful with the unsafe ES2 skip on.");
             _deferredHydrateDelaySeconds = Config.Bind(
                 "Boot", "DeferredHydrateDelaySeconds", 3f,
                 "Seconds after GAME before deferred hydrate (lets MP snapshot apply first).");
@@ -159,7 +167,17 @@ namespace WinterMP.FastBoot
             Es2DeferredHydrator.Enabled = _deferredEs2Hydrate.Value && _es2WhitelistActive;
             Es2DeferredHydrator.DelaySeconds = _deferredHydrateDelaySeconds.Value;
             SessionGate.Configure(_bypassHostWait);
-            HarmonyBootstrap.Apply(Logger);
+            // Only hook ES2 when a dev actually opted into the (unsafe) skip — no point adding
+            // per-call prefixes to every Exists/Load when the safe profile leaves them off.
+            HarmonyBootstrap.Apply(Logger, patchEs2: _es2SkipActive);
+
+            if (_es2SkipActive)
+            {
+                Logger.LogWarning(
+                    "FastBoot: ES2 tag skipping is ON (DevSkipEs2Tags/DevEs2Whitelist) — dev-only speed hack. "
+                    + "Skipped tags load as defaults and the next in-game save overwrites the real data, so this "
+                    + "can SILENTLY CORRUPT THE SAVE. Do not use on a save you care about.");
+            }
 
             if (_analyzeEs2OnStartup.Value)
                 Es2SaveAnalyzer.TryWriteOfflineReport(Logger);

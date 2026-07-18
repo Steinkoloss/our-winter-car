@@ -7,6 +7,9 @@
     <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
     <Version>0.1.0</Version>
     <LangVersion>latest</LangVersion>
+    <!-- Nullable reference types are on for every project (AGENTS.md hard constraint).
+         Centralized here so it can't drift per-project. -->
+    <Nullable>enable</Nullable>
     <Deterministic>true</Deterministic>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>

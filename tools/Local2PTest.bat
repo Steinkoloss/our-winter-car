@@ -3,14 +3,22 @@ setlocal EnableDelayedExpansion
 title WinterMP - local 2-player test
 
 rem Override with: set WINTERMP_GAME_DIR=... before running
-set "GAME_DIR=C:\Program Files (x86)\Steam\steamapps\common\My Winter Car"
-if defined WINTERMP_GAME_DIR set "GAME_DIR=!WINTERMP_GAME_DIR!"
+rem Otherwise uses Directory.Build.props.user MwcGamePath, then a BepInEx install.
+set "TOOLS=%~dp0"
+set "REPO_ROOT=%TOOLS%.."
+
+for /f "usebackq delims=" %%G in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%TOOLS%resolve-game-dir.ps1" -RepoRoot "%REPO_ROOT%"`) do set "GAME_DIR=%%G"
+if not defined GAME_DIR goto missing_game
 
 set "READY_FLAG=%GAME_DIR%\WinterMP\hostlocal-ready.flag"
 set "MAX_WAIT=90"
-set "TOOLS=%~dp0"
 
 if not exist "%GAME_DIR%\mywintercar.exe" goto missing_game
+if not exist "%GAME_DIR%\BepInEx\plugins\WinterMP\WinterMP.Core.dll" goto missing_mod
+
+echo Using game install:
+echo   %GAME_DIR%
+echo.
 
 echo ============================================
 echo  WinterMP local 2-player test
@@ -45,8 +53,9 @@ goto wait_host
 :host_timeout
 echo.
 echo ERROR: Host never released the single-instance lock within %MAX_WAIT% seconds.
-echo        Check BepInEx\LogOutput-host.log for "HostLocal ready (mutex released)"
-echo        and make sure the latest WinterMP.Core.dll is deployed.
+echo        Check %GAME_DIR%\BepInEx\LogOutput-host.log for "HostLocal ready (mutex released)"
+echo        and make sure WinterMP.Core.dll is deployed to that install's BepInEx\plugins\WinterMP.
+echo        If you use a different game folder, set WINTERMP_GAME_DIR or MwcGamePath in Directory.Build.props.user.
 echo.
 pause
 exit /b 1
@@ -83,9 +92,15 @@ pause
 exit /b 0
 
 :missing_game
-echo ERROR: Game not found at:
-echo   "%GAME_DIR%"
-echo Edit GAME_DIR in tools\Local2PTest.bat or set WINTERMP_GAME_DIR.
+echo ERROR: Could not resolve a My Winter Car install.
+echo Set WINTERMP_GAME_DIR or MwcGamePath in Directory.Build.props.user.
+pause
+exit /b 1
+
+:missing_mod
+echo ERROR: WinterMP is not installed in:
+echo   "%GAME_DIR%\BepInEx\plugins\WinterMP"
+echo Run dotnet build on WinterMP.Core with MwcGamePath set, or deploy the release payload.
 pause
 exit /b 1
 

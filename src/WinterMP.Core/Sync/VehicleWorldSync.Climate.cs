@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Catalog;
-using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
@@ -211,15 +209,22 @@ namespace WinterMP.Core.Sync
             // dedup so a fresh guest near a parked frosted car receives its state.
             if (message.Sequence != VehicleClimate.SnapshotSequence)
             {
-                ushort diff = (ushort)(message.Sequence - item.LastClimateSequence);
-                if (diff == 0 || diff > short.MaxValue)
+                // Per-sender dedup: only treat the sequence as stale when it comes from the sender
+                // whose baseline we hold. A different nearby observer resets the baseline rather than
+                // being locked out by the first sender's higher sequence (climate has no single owner).
+                if (message.OwnerPlayerId == item.LastClimateSequenceOwner)
                 {
-                    ConnectionQuality.Instance.NoteUnreliableDropped();
-                    return;
+                    ushort diff = (ushort)(message.Sequence - item.LastClimateSequence);
+                    if (diff == 0 || diff > short.MaxValue)
+                    {
+                        ConnectionQuality.Instance.NoteUnreliableDropped();
+                        return;
+                    }
                 }
 
                 ConnectionQuality.Instance.NoteUnreliableReceived();
                 item.LastClimateSequence = message.Sequence;
+                item.LastClimateSequenceOwner = message.OwnerPlayerId;
             }
 
             item.RemoteClimateUntil = Time.unscaledTime + ClimateHoldSeconds;
@@ -511,7 +516,8 @@ namespace WinterMP.Core.Sync
                 return;
             }
 
-            FsmHook.FireRemoteEntry(item.WindowHeaterButtonFsm, state);
+            // Guarded: window heater button is a catalog SyncedControl (echo guard).
+            FireKnobCommitState(item.WindowHeaterButtonFsm, state);
             SetWindowHeaterVisual(item.WindowHeaterButtonFsm, on);
         }
 

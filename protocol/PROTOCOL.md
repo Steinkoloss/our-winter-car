@@ -147,6 +147,14 @@ from the offered entry list. Container ids never need to match across peers
 capture and key the (containerNetId, epoch) manifest dedup. Once bound, spawned
 items behave as ordinary synced pickables (claim/cargo/despawn).
 
+`VehicleState` / `VehicleClimate` sequence (v26): the live stream uses a
+per-stream `Sequence` that receivers dedup against (stale/duplicate dropped).
+`Sequence == 65535` (`SnapshotSequence`) is reserved as a join/resync sentinel —
+receivers apply it *without* dedup, so a freshly joined guest (whose last-seen
+sequence is still 0) does not discard the Sequence-0 snapshot of a parked car
+and miss its engine/electrics/climate state. The live stream never emits 65535
+as a real pose (at worst one un-deduped packet after a full ushort wrap, ~4.5 h).
+
 ### Reserved ranges
 
 - 54–59 world events — M3+

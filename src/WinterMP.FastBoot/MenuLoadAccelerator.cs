@@ -6,7 +6,8 @@ namespace WinterMP.FastBoot
 {
     /// <summary>
     /// After Continue, nudges main-menu loading PlayMaker FSMs. Paths vary by game build,
-    /// so we scan every active FSM on the scene.
+    /// so we scan every active FSM on the scene. Events are only sent to an FSM whose current
+    /// state declares them (see <see cref="ActiveStateDeclares"/>) — never blindly broadcast.
     /// </summary>
     internal sealed class MenuLoadAccelerator
     {
@@ -103,6 +104,14 @@ namespace WinterMP.FastBoot
 
                 for (int e = 0; e < SkipWaitEvents.Length; e++)
                 {
+                    // Only fire an event the FSM's CURRENT state declares as a local transition.
+                    // A blind SendEvent can trip a *global* transition on an unrelated FSM we matched
+                    // by fuzzy name — that is how v0.1.1's event-spam broke menus. Gating to the active
+                    // state's own transitions means we only ever advance an FSM truly sitting in a
+                    // finishable wait state, and never sideways-jump something else.
+                    if (!ActiveStateDeclares(fsm, SkipWaitEvents[e]))
+                        continue;
+
                     try
                     {
                         fsm.SendEvent(SkipWaitEvents[e]);
@@ -157,6 +166,32 @@ namespace WinterMP.FastBoot
         private static bool ContainsIgnoreCase(string haystack, string needle)
         {
             return haystack.IndexOf(needle, System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool ActiveStateDeclares(PlayMakerFSM fsm, string eventName)
+        {
+            try
+            {
+                FsmState active = fsm.Fsm.ActiveState;
+                FsmTransition[]? transitions = active?.Transitions;
+                if (transitions == null) return false;
+
+                for (int i = 0; i < transitions.Length; i++)
+                {
+                    FsmTransition transition = transitions[i];
+                    if (transition != null
+                        && string.Equals(transition.EventName, eventName, System.StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // FSM not fully initialized — treat as "no matching transition" and skip.
+            }
+
+            return false;
         }
     }
 }

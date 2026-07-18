@@ -1,4 +1,3 @@
-using System.IO;
 using System.Reflection;
 
 namespace WinterMP.Launcher.Services
@@ -52,16 +51,38 @@ namespace WinterMP.Launcher.Services
             string modDir = Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP");
             Directory.CreateDirectory(modDir);
 
-            int copied = 0;
-            foreach (string file in RequiredFiles)
+            // All-or-nothing: stage every file to a temp name first, then swap each into place only
+            // after all copies succeed. A mid-copy failure (Defender quarantine, file lock, disk full)
+            // therefore can't leave the install with mixed-version DLLs (a Core/Net protocol mismatch
+            // that would desync or refuse connections mid-session).
+            try
             {
-                string src = Path.Combine(PayloadDir, file);
-                string dst = Path.Combine(modDir, file);
-                File.Copy(src, dst, overwrite: true);
-                copied++;
+                foreach (string file in RequiredFiles)
+                    File.Copy(Path.Combine(PayloadDir, file), Path.Combine(modDir, file + ".tmp"), overwrite: true);
+            }
+            catch
+            {
+                CleanupTemps(modDir);
+                throw;
             }
 
-            return $"Deployed {Branding.ProductName} ({LauncherVersion}) — {copied} files to {modDir}";
+            foreach (string file in RequiredFiles)
+            {
+                string dst = Path.Combine(modDir, file);
+                File.Move(dst + ".tmp", dst, overwrite: true);
+            }
+
+            return $"Deployed {Branding.ProductName} ({LauncherVersion}) — {RequiredFiles.Length} files to {modDir}";
+        }
+
+        private static void CleanupTemps(string modDir)
+        {
+            foreach (string file in RequiredFiles)
+            {
+                string tmp = Path.Combine(modDir, file + ".tmp");
+                try { if (File.Exists(tmp)) File.Delete(tmp); }
+                catch { /* best effort — leftover .tmp is harmless */ }
+            }
         }
     }
 }

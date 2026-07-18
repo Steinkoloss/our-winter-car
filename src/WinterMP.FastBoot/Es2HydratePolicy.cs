@@ -56,7 +56,7 @@ namespace WinterMP.FastBoot
             _skipTagsEnabled = skipTagsEnabled;
             _aggressiveSkip = aggressiveSkip;
             _whitelistMode = whitelistMode;
-            if (string.IsNullOrEmpty(extraPrefixesCsv))
+            if (extraPrefixesCsv == null || extraPrefixesCsv.Length == 0)
             {
                 _skipPrefixes = DefaultSkipPrefixes;
                 return;
@@ -108,7 +108,7 @@ namespace WinterMP.FastBoot
         public static bool TryShortCircuitTag(string? tag, out bool exists)
         {
             exists = false;
-            if (!_skipTagsEnabled || string.IsNullOrEmpty(tag))
+            if (!_skipTagsEnabled || tag == null || tag.Length == 0)
                 return false;
 
             if (_deferredHydrateActive)
@@ -128,9 +128,15 @@ namespace WinterMP.FastBoot
             return true;
         }
 
-        public static bool ShouldSkipTag(string? tag)
+        public static bool ShouldSkipTag(string? identifier)
         {
-            if (string.IsNullOrEmpty(tag)) return false;
+            if (string.IsNullOrEmpty(identifier)) return false;
+
+            // ES2 identifiers reach us as "<file>?tag=<name>" (e.g. "savefile.txt?tag=PlayerMoney");
+            // the prefix lists below match the bare tag name, so extract it first. A whole-file check
+            // ("savefile.txt", no tag) must NEVER be skipped — that's how the game asks "is there a
+            // save at all", and skipping it makes the game think the save is empty.
+            if (!TryGetBareTag(identifier!, out string tag)) return false;
 
             if (_deferredHydrateActive)
                 return IsBootKeepTag(tag);
@@ -175,8 +181,10 @@ namespace WinterMP.FastBoot
             return false;
         }
 
-        private static bool IsBootKeepTag(string tag)
+        private static bool IsBootKeepTag(string identifier)
         {
+            if (!TryGetBareTag(identifier, out string tag)) return false;
+
             for (int i = 0; i < BootKeepPrefixes.Length; i++)
             {
                 if (tag.StartsWith(BootKeepPrefixes[i], StringComparison.Ordinal))
@@ -184,6 +192,26 @@ namespace WinterMP.FastBoot
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Pull the bare tag out of an ES2 identifier. "savefile.txt?tag=PlayerMoney" → "PlayerMoney";
+        /// a bare tag ("PlayerMoney", from ES2Reader.TagExists/GetTags) passes through. Returns false
+        /// for a whole-file identifier ("savefile.txt") so callers never skip a file-level check.
+        /// </summary>
+        private static bool TryGetBareTag(string identifier, out string tag)
+        {
+            int q = identifier.IndexOf("?tag=", StringComparison.Ordinal);
+            if (q >= 0)
+            {
+                tag = identifier.Substring(q + 5);
+                return tag.Length > 0;
+            }
+
+            // No "?tag=": a bare tag name, or a whole-file identifier. Treat anything that looks like
+            // a filename (has an extension) as file-level — not a skippable tag.
+            tag = identifier;
+            return identifier.IndexOf('.') < 0;
         }
 
         public static string[] FilterTags(string[] tags)

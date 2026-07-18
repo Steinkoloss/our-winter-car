@@ -31,6 +31,9 @@ launch_instance() {
         source "$SCRIPT_DIR/linux-common.sh"
         run_mwc "$role" "$GAME_DIR" "$@"
     ) &
+    # Emit the PID so the caller can detect an early exit (Proton not found, launch failure)
+    # instead of silently waiting out the full ready-flag timeout.
+    echo $!
 }
 
 echo "============================================"
@@ -44,15 +47,24 @@ echo "[1/2] Starting HOST instance (HostLocal mode)..."
 rm -f "$READY_FLAG"
 "$SCRIPT_DIR/patch-mwc-maindata.sh" "$GAME_DIR"
 
-launch_instance host \
+HOST_PID="$(launch_instance host \
     -no-dialogs -fastboot-dev \
     -screen-fullscreen 0 -screen-width 1280 -screen-height 720 \
     -wintermp hostlocal \
-    -logFile "$HOST_UNITY_LOG"
+    -logFile "$HOST_UNITY_LOG")"
 
 echo "      Waiting for host single-instance unlock (up to ${MAX_WAIT}s)..."
 waited=0
 while [[ ! -f "$READY_FLAG" ]]; do
+    if ! kill -0 "$HOST_PID" 2>/dev/null; then
+        echo
+        echo "ERROR: Host instance exited before signalling ready."
+        echo "       Likely Proton was not found or the game failed to launch — see the"
+        echo "       Proton/Steam errors above and $HOST_UNITY_LOG."
+        echo
+        read -rp "Press Enter to close..." _ || true
+        exit 1
+    fi
     if (( waited >= MAX_WAIT )); then
         echo
         echo "ERROR: Host never released the single-instance lock within ${MAX_WAIT} seconds."
@@ -70,11 +82,12 @@ echo "[2/2] Starting GUEST instance..."
 
 "$SCRIPT_DIR/patch-mwc-maindata.sh" "$GAME_DIR"
 
-launch_instance guest \
+GUEST_PID="$(launch_instance guest \
     -no-dialogs -fastboot-dev \
     -screen-fullscreen 0 -screen-width 1280 -screen-height 720 \
     -wintermp joinlocal -wintermp-playername Guest \
-    -logFile "$GUEST_UNITY_LOG"
+    -logFile "$GUEST_UNITY_LOG")"
+: "${GUEST_PID:?guest failed to launch}"
 
 echo
 echo "Both instances are starting."

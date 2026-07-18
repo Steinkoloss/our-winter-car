@@ -23,7 +23,11 @@ namespace WinterMP.Net
 
         private void Require(int count)
         {
-            if (_position + count > _length)
+            // Compare against Remaining (never _position + count): a large positive count from a
+            // malformed blob length would overflow _position + count to negative and pass the check,
+            // then throw a non-ProtocolException (OOM/ArgumentException) deeper in. This keeps all
+            // truncation/garbage input surfacing as a ProtocolException the dispatch layer expects.
+            if (count < 0 || count > Remaining)
                 throw new ProtocolException($"Message truncated: need {count} more byte(s), {Remaining} available.");
         }
 

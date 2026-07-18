@@ -7,7 +7,6 @@
          newer installed runtime (e.g. a machine with only the .NET 10 runtime). -->
     <TargetFramework>net8.0</TargetFramework>
     <RollForward>Major</RollForward>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <RootNamespace>WinterMP.Launcher</RootNamespace>

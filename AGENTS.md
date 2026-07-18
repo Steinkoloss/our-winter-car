@@ -188,3 +188,31 @@ Cursor index skips build output and raw `catalog/dump-*.json` (see `.cursorignor
 use `tools/extract_fsm_details.py` to query dumps.
 
 Leave the campsite cleaner than you found it.
+
+---
+
+## Cursor Cloud specific instructions
+
+The cloud VM is **Linux** with the **.NET 8 SDK** preinstalled (system-wide at
+`/usr/bin/dotnet`). The update script runs `dotnet restore src/WinterMP.Net.Tests`
+on startup. What this means for what you can actually run here:
+
+- **Buildable/testable on this VM:** `WinterMP.Net` (the protocol library;
+  `net35;netstandard2.0`) and `WinterMP.Net.Tests`. This is the same loop CI runs
+  and the only end-to-end loop available without the game.
+- **NOT buildable here:** `WinterMP.Launcher` is WPF (`net8.0-windows`) — it
+  *restores* on Linux but cannot *build/run*. `WinterMP.Core`, `WinterMP.Tools`,
+  and `WinterMP.FastBoot` reference the game's own Unity/PlayMaker DLLs (set via
+  `Directory.Build.props.user` / `MwcGamePath`) and need a real My Winter Car
+  install on Windows. Don't fake a green build for these; make protocol/logic
+  changes in `WinterMP.Net` and lean on its tests (see §3, §5).
+
+- **Gotcha — no working solution file for the CLI:** the repo ships `WinterMP.slnx`
+  (no `.sln`), and SDK 8.0.128 does **not** understand `.slnx`. So bare
+  `dotnet build` / `dotnet test` at the repo root (and `dotnet build WinterMP.slnx`)
+  fail. Always target a project path. Canonical commands here:
+  - Tests (CI loop): `dotnet test src/WinterMP.Net.Tests`
+  - Build protocol lib: `dotnet build src/WinterMP.Net/WinterMP.Net.csproj`
+- There is no separate lint step; the build is the check (nullable refs are on,
+  see §4.2). Treat a clean `dotnet build` of `WinterMP.Net` plus green tests as the
+  bar before committing protocol changes.

@@ -115,6 +115,17 @@ namespace WinterMP.Core.Steam
                 return;
             }
 
+            // A host attempt superseded by a join (RequestJoinFromSteam → StartJoin set
+            // _isOwner=false) must not build a host transport or drive the now-join callbacks.
+            // Release the orphaned lobby rather than leaking it on Steam's servers.
+            if (!_isOwner)
+            {
+                WinterMPPlugin.Log.LogInfo($"Discarding superseded host lobby {data.m_ulSteamIDLobby}.");
+                try { SteamMatchmaking.LeaveLobby(new CSteamID(data.m_ulSteamIDLobby)); }
+                catch { /* best effort */ }
+                return;
+            }
+
             _currentLobby = new CSteamID(data.m_ulSteamIDLobby);
             SteamMatchmaking.SetLobbyData(_currentLobby, LobbyKeyHostId, SteamBootstrap.LocalSteamId.ToString());
             SteamMatchmaking.SetLobbyData(_currentLobby, LobbyKeyModVersion, MyPluginInfo.PLUGIN_VERSION);
@@ -210,6 +221,10 @@ namespace WinterMP.Core.Steam
         public static void LeaveLobby()
         {
             _activeTransport = null;
+            // Drop result handlers so a late Steam callback from this (now torn-down) attempt
+            // cannot drive a newer session's _onReady/_onFailure.
+            _onReady = null;
+            _onFailure = null;
 
             if (_currentLobby.IsValid())
             {
@@ -238,7 +253,11 @@ namespace WinterMP.Core.Steam
         private static void Fail(string error)
         {
             WinterMPPlugin.Log.LogError($"Steam lobby: {error}");
-            _onFailure?.Invoke(error);
+            // Capture-then-clear so a stale callback from a superseded attempt can't refire a handler.
+            var failure = _onFailure;
+            _onReady = null;
+            _onFailure = null;
+            failure?.Invoke(error);
         }
     }
 }

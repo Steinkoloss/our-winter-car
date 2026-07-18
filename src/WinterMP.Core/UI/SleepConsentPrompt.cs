@@ -1,6 +1,5 @@
 using UnityEngine;
 using WinterMP.Core.Session;
-using WinterMP.Core.Sync;
 using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.UI

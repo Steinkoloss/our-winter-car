@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.Versioning;
 using Microsoft.Win32;
 

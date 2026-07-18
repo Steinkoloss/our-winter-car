@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -170,10 +169,23 @@ namespace WinterMP.Launcher.Services
                     $"BepInEx package not found ({BepInExZipName}). Reinstall {Branding.ProductName} or place the zip in vendor/.");
             }
 
+            string fullGameDir = Path.GetFullPath(gameDir);
             using var archive = ZipFile.OpenRead(zipPath);
             foreach (var entry in archive.Entries)
             {
                 string dest = Path.Combine(gameDir, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
+
+                // Zip-slip guard: refuse any entry (file OR directory) that resolves outside the game
+                // folder, so a tampered/corrupted package cannot overwrite arbitrary files via a
+                // "..\" segment or a rooted entry name.
+                string fullDest = Path.GetFullPath(dest);
+                if (!fullDest.Equals(fullGameDir, StringComparison.OrdinalIgnoreCase)
+                    && !fullDest.StartsWith(fullGameDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"Refusing to extract entry outside the game folder: {entry.FullName}");
+                }
+
                 if (string.IsNullOrEmpty(entry.Name))
                 {
                     Directory.CreateDirectory(dest);

@@ -100,5 +100,18 @@ namespace WinterMP.Net.Tests
             reader.ReadUInt16();
             Assert.Throws<ProtocolException>(() => reader.ReadByte());
         }
+
+        [Fact]
+        public void OversizedBlobLength_ThrowsProtocolException_NotOverflow()
+        {
+            // A hostile/garbage blob length must surface as ProtocolException, not an
+            // overflow/OOM: the bounds check must not wrap when position + count exceeds int.MaxValue.
+            var writer = new NetWriter();
+            writer.WriteInt32(int.MaxValue); // claim ~2GB of blob...
+            writer.WriteByte(1);             // ...but provide only one byte
+
+            var reader = new NetReader(writer.ToArray());
+            Assert.Throws<ProtocolException>(() => reader.ReadBytes());
+        }
     }
 }

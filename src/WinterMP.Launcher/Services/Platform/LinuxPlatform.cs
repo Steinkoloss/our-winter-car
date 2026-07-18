@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO;
 
 namespace WinterMP.Launcher.Services
 {
@@ -85,8 +84,14 @@ namespace WinterMP.Launcher.Services
             return firstGuess;
         }
 
-        public void OpenInShell(string pathOrUrl) =>
-            Process.Start(new ProcessStartInfo { FileName = "xdg-open", Arguments = pathOrUrl, UseShellExecute = false });
+        public void OpenInShell(string pathOrUrl)
+        {
+            // ArgumentList (not Arguments) so a path with spaces — e.g. ".../common/My Winter Car" —
+            // reaches xdg-open as one argv entry instead of being split on whitespace.
+            var psi = new ProcessStartInfo { FileName = "xdg-open", UseShellExecute = false };
+            psi.ArgumentList.Add(pathOrUrl);
+            Process.Start(psi);
+        }
 
         /// <summary>Native <c>steam</c> on PATH, else Flatpak Steam, else null.</summary>
         private static (string fileName, string argPrefix)? FindSteamLauncher()

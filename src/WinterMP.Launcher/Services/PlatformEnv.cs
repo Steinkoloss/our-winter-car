@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO;
 
 namespace WinterMP.Launcher.Services
 {

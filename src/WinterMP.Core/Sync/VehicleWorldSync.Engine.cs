@@ -1,12 +1,9 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
-using WinterMP.Core.Catalog;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
-using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
@@ -149,6 +146,7 @@ namespace WinterMP.Core.Sync
             item.RemoteBlinkerLeft = message.BlinkerLeft;
             item.RemoteBlinkerRight = message.BlinkerRight;
             item.RemoteHazard = message.HazardOn;
+            item.RemoteDashDirty = true;
 
             ApplyRemoteFuel(item, message.FuelLevel);
 
@@ -168,6 +166,7 @@ namespace WinterMP.Core.Sync
         {
             EnsureVehicleSystemsProbe(item);
             item.RemoteElectricsApplied = on;
+            if (on) item.RemoteDashDirty = true; // power restored — re-present gauges/lights once
 
             if (item.ElectricityPowerFsm == null)
             {
@@ -268,8 +267,10 @@ namespace WinterMP.Core.Sync
             if (item.TurnSignalStalkFsm != null)
             {
                 string state = right ? "On" : left ? "On 2" : "Check player";
+                // Guarded: the turn-signal stalk is a catalog SyncedControl, so its state-entry
+                // hook would otherwise re-broadcast this remote apply as a local change (echo).
                 if (FsmHook.EnsureRemoteEntry(item.TurnSignalStalkFsm, state))
-                    FsmHook.FireRemoteEntry(item.TurnSignalStalkFsm, state);
+                    FireKnobCommitState(item.TurnSignalStalkFsm, state);
                 return;
             }
 
@@ -299,7 +300,8 @@ namespace WinterMP.Core.Sync
 
             string state = on ? "On" : "Off";
             if (!FsmHook.EnsureRemoteEntry(item.HazardButtonFsm, state)) return;
-            FsmHook.FireRemoteEntry(item.HazardButtonFsm, state);
+            // Guarded: hazard button is a catalog SyncedControl (echo guard — see FireKnobCommitState).
+            FireKnobCommitState(item.HazardButtonFsm, state);
             SetHazardVisual(item.HazardButtonFsm, on);
         }
 
@@ -399,10 +401,13 @@ namespace WinterMP.Core.Sync
                     ApplyRemoteElectricity(item, false);
             }
 
-            if (!item.LocallyOwned && item.RemoteElectricsApplied)
+            if (!item.LocallyOwned && item.RemoteElectricsApplied && item.RemoteDashDirty)
             {
+                // Re-write the ~10 gauge FSM vars + light state only when a new VehicleState packet
+                // (or an electrics toggle) actually changed them — not unconditionally every frame.
                 ApplyRemoteGauges(item);
                 UpdateRemoteLightPresentation(item);
+                item.RemoteDashDirty = false;
             }
 
             bool shouldPlay = !item.LocallyOwned && item.RemoteEngineOn && now < item.RemoteEngineUntil;

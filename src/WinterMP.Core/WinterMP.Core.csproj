@@ -5,7 +5,6 @@
     <TargetFramework>net35</TargetFramework>
     <AssemblyName>WinterMP.Core</AssemblyName>
     <RootNamespace>WinterMP.Core</RootNamespace>
-    <Nullable>enable</Nullable>
     <Description>WinterMP core plugin: multiplayer conversion for My Winter Car (BepInEx 5).</Description>
     <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
     <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>

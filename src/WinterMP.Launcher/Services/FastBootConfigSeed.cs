@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -8,10 +7,18 @@ namespace WinterMP.Launcher.Services
     /// <summary>
     /// Applies the launcher FastBoot speed profile before host/join launches.
     ///
-    /// Enabled: splash/config skip, fast Continue, ES2 whitelist hydrate, async GAME preload,
-    /// loading-FSM nudge, host Continue without waiting for a guest, deferred ES2 catch-up after GAME.
+    /// Enabled (all save-safe): splash/config skip, fast Continue, async GAME preload,
+    /// loading-FSM nudge, host Continue without waiting for a guest.
     ///
-    /// Excluded: direct GAME load (skips ES2 entirely — crashes), ES2 save scan at startup.
+    /// Deliberately OFF — these skip ES2 save tags during the boot load and can silently corrupt
+    /// the savefile: ES2 tag skip, ES2 boot whitelist, deferred ES2 catch-up. The game loads save
+    /// data lazily per-object via PlayMaker; saves are per-tag merges of the *live* value; and
+    /// ES2.LoadAll cannot push values back into the world — so a skipped tag stays at its default
+    /// and the next in-game save overwrites the real data. The async GAME preload is where the real
+    /// boot speedup comes from and it touches no save data. These tiers remain available as opt-in
+    /// dev flags in the .cfg, but the launcher never enables them.
+    ///
+    /// Also excluded: direct GAME load (skips ES2 entirely — crashes), ES2 save scan at startup.
     /// </summary>
     public static class FastBootConfigSeed
     {
@@ -33,11 +40,14 @@ namespace WinterMP.Launcher.Services
             ("DevMode", "true"),
             ("BypassHostContinueWait", "true"),
             ("DevDirectGameLoad", "false"),
-            ("DevSkipEs2Tags", "true"),
-            ("DevEs2Whitelist", "true"),
+            // ES2 tag skipping / boot whitelist corrupt saves (see class summary) — force OFF.
+            ("DevSkipEs2Tags", "false"),
+            ("DevEs2Whitelist", "false"),
             ("DevSkipEs2ExtraPrefixes", string.Empty),
             ("LogTimings", "false"),
-            ("DeferredEs2Hydrate", "true"),
+            // Deferred ES2 catch-up is a no-op for world state (ES2.LoadAll restores nothing) and
+            // only exists to "repair" the skip above; with the skip off it must stay off too.
+            ("DeferredEs2Hydrate", "false"),
             ("DeferredHydrateDelaySeconds", "3"),
             ("AnalyzeEs2SaveOnStartup", "false"),
         };
@@ -66,12 +76,26 @@ namespace WinterMP.Launcher.Services
             var lines = configText.Replace("\r\n", "\n").Split('\n').ToList();
             var applied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            string currentSection = string.Empty;
             for (int i = 0; i < lines.Count; i++)
             {
                 string line = lines[i];
+
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.EndsWith("]", StringComparison.Ordinal))
+                {
+                    currentSection = trimmed.Substring(1, trimmed.Length - 2).Trim();
+                    continue;
+                }
+
                 int eq = line.IndexOf('=');
                 if (eq <= 0) continue;
                 if (line.TrimStart().StartsWith("#", StringComparison.Ordinal)) continue;
+
+                // Only a managed key under [Boot] is authoritative: a same-named key in another
+                // section must not be rewritten (its value would land where FastBoot won't read it)
+                // nor counted as applied — otherwise the real [Boot] value is never inserted.
+                if (!string.Equals(currentSection, "Boot", StringComparison.OrdinalIgnoreCase)) continue;
 
                 string key = line.Substring(0, eq).Trim();
                 for (int v = 0; v < ProductionBootValues.Length; v++)
@@ -86,7 +110,7 @@ namespace WinterMP.Launcher.Services
             }
 
             if (applied.Count == ProductionBootValues.Length)
-                return string.Join(Environment.NewLine, lines).Replace("\n", Environment.NewLine);
+                return string.Join(Environment.NewLine, lines);
 
             int bootIndex = FindBootSectionIndex(lines);
             if (bootIndex < 0)
@@ -103,7 +127,7 @@ namespace WinterMP.Launcher.Services
                 lines.Insert(insertAt++, ProductionBootValues[v].Key + " = " + FormatValue(ProductionBootValues[v].Value));
             }
 
-            return string.Join(Environment.NewLine, lines).Replace("\n", Environment.NewLine);
+            return string.Join(Environment.NewLine, lines);
         }
 
         private static int FindBootSectionIndex(List<string> lines)

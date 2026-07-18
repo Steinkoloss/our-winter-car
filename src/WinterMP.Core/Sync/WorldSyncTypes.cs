@@ -156,6 +156,9 @@ namespace WinterMP.Core.Sync
     public bool RemoteEngineOn;
     public bool RemoteAccOn;
     public bool RemoteElectricsApplied;
+    // Set when a new VehicleState packet or an electrics toggle changes the dash; the per-frame
+    // remote-presentation path re-applies gauges/lights only when this is set, then clears it.
+    public bool RemoteDashDirty;
     public float RemoteRpm;
     public float RemoteSpeedKmh;
     public byte RemoteFuelLevel;
@@ -210,6 +213,9 @@ namespace WinterMP.Core.Sync
     public ushort OutClimateSequence;
     public float NextClimateAt;
     public ushort LastClimateSequence;
+    // Sender of the climate sequence baseline above. Lets a second nearby observer reset the
+    // baseline instead of being permanently locked out by the first sender's higher sequence.
+    public byte LastClimateSequenceOwner = WorldSyncIds.NoOwner;
     public byte RemoteFrost;
     public byte RemoteIce;
     public byte RemoteFog;

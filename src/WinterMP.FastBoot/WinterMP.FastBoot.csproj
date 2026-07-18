@@ -4,11 +4,10 @@
     <TargetFramework>net35</TargetFramework>
     <AssemblyName>WinterMP.FastBoot</AssemblyName>
     <RootNamespace>WinterMP.FastBoot</RootNamespace>
-    <Nullable>enable</Nullable>
     <Description>Boot accelerators for My Winter Car: skip splash, setup UI, auto-load save.</Description>
     <BepInExPluginGuid>com.ourwintercar.wintermp.fastboot</BepInExPluginGuid>
     <BepInExPluginName>WinterMP FastBoot</BepInExPluginName>
-    <Version>0.1.25</Version>
+    <Version>0.1.27</Version>
     <MwcManaged>$(MwcGamePath)/mywintercar_Data/Managed</MwcManaged>
   </PropertyGroup>
 

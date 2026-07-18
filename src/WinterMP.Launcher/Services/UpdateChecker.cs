@@ -1,8 +1,6 @@
 using System.Diagnostics;
-using System.IO;
 using System.IO.Compression;
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -290,11 +288,14 @@ namespace WinterMP.Launcher.Services
                 "WinterMP", "last-update.log");
 
             string scriptPath = Path.Combine(dir, $"mod-payload-{Guid.NewGuid():N}.cmd");
+            // cmd expands %VAR% even inside quotes, so a literal % in a path must be doubled. Only
+            // path-derived values are escaped — the script's own %date%/%LOG%/%~f0 are intentional.
+            static string PctEsc(string p) => p.Replace("%", "%%");
             var lines = new List<string>
             {
                 "@echo off",
                 "setlocal",
-                $"set LOG=\"{logPath}\"",
+                $"set LOG=\"{PctEsc(logPath)}\"",
                 $"echo [%date% %time%] Mod payload update started>>%LOG%",
                 $":wait",
                 $"tasklist /FI \"PID eq {launcherPid}\" 2>nul | find \"{launcherPid}\" >nul",
@@ -303,19 +304,19 @@ namespace WinterMP.Launcher.Services
 
             for (int i = 0; i < copies.Count; i++)
             {
-                lines.Add($"copy /y \"{copies[i].Source}\" \"{copies[i].Dest}\" >>%LOG% 2>&1");
+                lines.Add($"copy /y \"{PctEsc(copies[i].Source)}\" \"{PctEsc(copies[i].Dest)}\" >>%LOG% 2>&1");
                 lines.Add("if errorlevel 1 goto failed");
             }
 
             lines.Add($"echo [%date% %time%] Payload copied, installing into game>>%LOG%");
-            lines.Add($"\"{launcherExe}\" --install-mod --silent --game-dir \"{gameDir}\" >>%LOG% 2>&1");
+            lines.Add($"\"{PctEsc(launcherExe)}\" --install-mod --silent --game-dir \"{PctEsc(gameDir)}\" >>%LOG% 2>&1");
             lines.Add("if errorlevel 1 goto failed");
             lines.Add($"echo [%date% %time%] Mod install OK, restarting launcher>>%LOG%");
-            lines.Add($"start \"\" \"{launcherExe}\"");
+            lines.Add($"start \"\" \"{PctEsc(launcherExe)}\"");
             lines.Add("goto done");
             lines.Add(":failed");
             lines.Add($"echo [%date% %time%] Mod update FAILED>>%LOG%");
-            lines.Add($"start \"\" \"{launcherExe}\"");
+            lines.Add($"start \"\" \"{PctEsc(launcherExe)}\"");
             lines.Add(":done");
             lines.Add("del \"%~f0\"");
 

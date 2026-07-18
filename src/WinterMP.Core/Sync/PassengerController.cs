@@ -119,6 +119,7 @@ namespace WinterMP.Core.Sync
         private HutongGames.PlayMaker.FsmString? _interactionText;
         private bool _wroteInteraction;
         private float _nextInteractionSearchAt;
+        private bool _disabled;
 
         private void Awake()
         {
@@ -130,59 +131,93 @@ namespace WinterMP.Core.Sync
             if (Instance == this) Instance = null;
         }
 
+        /// <summary>
+        /// Crash containment: a fault in passenger sync must disable this subsystem and free the
+        /// local player, never escape into Unity's loop or strand the player parented to a seat.
+        /// </summary>
+        private void DisablePassengerSync(System.Exception e)
+        {
+            _disabled = true;
+            WinterMPPlugin.Log.LogError("Passenger sync disabled after unhandled error: " + e);
+            Diagnostics.SyncEventLog.Record("fatal", "Passenger: " + e);
+            Diagnostics.SyncEventLog.DumpToFile();
+            try
+            {
+                if (_seated) ForceExit("passenger sync error");
+            }
+            catch (System.Exception ex)
+            {
+                WinterMPPlugin.Log.LogError("Passenger ForceExit during disable failed: " + ex);
+            }
+        }
+
         private void Update()
         {
-            WatchLevelChanges();
-
-            var session = SessionManager.Instance;
-            bool sessionActive = session != null
-                && (session.State == SessionState.Hosting || session.State == SessionState.Connected);
-
-            _hint = null;
-
-            if (!sessionActive)
+            if (_disabled) return;
+            try
             {
-                if (_seated) ForceExit("session ended");
-                ClearRemoteSeats();
-                return;
+                WatchLevelChanges();
+
+                var session = SessionManager.Instance;
+                bool sessionActive = session != null
+                    && (session.State == SessionState.Hosting || session.State == SessionState.Connected);
+
+                _hint = null;
+
+                if (!sessionActive)
+                {
+                    if (_seated) ForceExit("session ended");
+                    ClearRemoteSeats();
+                    return;
+                }
+
+                FindPlayer();
+                ScanVehicles();
+                PurgeGonePlayers(session!);
+
+                if (_player == null) return;
+
+                if (_seated)
+                    UpdateSeated(session!);
+                else
+                    UpdateOnFoot(session!);
             }
-
-            FindPlayer();
-            ScanVehicles();
-            PurgeGonePlayers(session!);
-
-            if (_player == null) return;
-
-            if (_seated)
-                UpdateSeated(session!);
-            else
-                UpdateOnFoot(session!);
+            catch (System.Exception e)
+            {
+                DisablePassengerSync(e);
+            }
         }
 
         private void LateUpdate()
         {
-            // Apply after every Update() so our text wins the frame over the
-            // game's interaction raycast when both target the shared indicator.
-            ApplyInteractionHint();
+            if (_disabled) return;
+            try
+            {
+                // Apply after every Update() so our text wins the frame over the
+                // game's interaction raycast when both target the shared indicator.
+                ApplyInteractionHint();
 
-            // Re-pin every frame: player FSMs (and the game's own gravity code)
-            // keep writing to the transform.
-            if (!_seated || _player == null) return;
-            if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null) return;
+                // Re-pin every frame: player FSMs (and the game's own gravity code)
+                // keep writing to the transform.
+                if (!_seated || _player == null) return;
+                if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null) return;
 
-            var seat = vehicle.SeatLocal[_seatedIndex];
-            _player.position = vehicle.Body.transform.TransformPoint(LocalSeatedOffset(seat));
-            // Pin rotation too, or the seated body keeps its world-fixed facing while the
-            // car turns (the player FSM rewrites rotation each frame) and visibly slides
-            // relative to the seat (#32). Pin only the vehicle's own turning, not the
-            // player's mouse-look: recover just the look the FSM added this frame by diffing
-            // against the CURRENT vehicle heading plus our accumulated look. Diffing against
-            // last frame's pinned yaw used a STALE vehicle heading, so the car's own turn
-            // (V_now - V_lastframe) leaked into the offset and the camera over-rotated.
-            float vehicleYaw = vehicle.Body.transform.eulerAngles.y;
-            float lookDelta = Mathf.DeltaAngle(vehicleYaw + _seatYawOffset, _player.eulerAngles.y);
-            _seatYawOffset += lookDelta;
-            _player.rotation = vehicle.Body.transform.rotation * Quaternion.Euler(0f, _seatYawOffset, 0f);
+                var seat = vehicle.SeatLocal[_seatedIndex];
+                _player.position = vehicle.Body.transform.TransformPoint(LocalSeatedOffset(seat));
+                // Pin rotation too, or the seated body keeps its world-fixed facing while the
+                // car turns (the player FSM rewrites rotation each frame) and visibly slides
+                // relative to the seat (#32). Pin only the vehicle's own turning, not the
+                // player's mouse-look: recover just the look the FSM added this frame by diffing
+                // against the current vehicle heading plus our accumulated look.
+                float vehicleYaw = vehicle.Body.transform.eulerAngles.y;
+                float lookDelta = Mathf.DeltaAngle(vehicleYaw + _seatYawOffset, _player.eulerAngles.y);
+                _seatYawOffset += lookDelta;
+                _player.rotation = vehicle.Body.transform.rotation * Quaternion.Euler(0f, _seatYawOffset, 0f);
+            }
+            catch (System.Exception e)
+            {
+                DisablePassengerSync(e);
+            }
         }
 
         /// <summary>
