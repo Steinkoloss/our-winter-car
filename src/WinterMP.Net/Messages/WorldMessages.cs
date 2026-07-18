@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace WinterMP.Net.Messages
 {
     /// <summary>
@@ -276,7 +278,9 @@ namespace WinterMP.Net.Messages
         public uint VehicleId;
         public byte OwnerPlayerId;
         public ushort Sequence;
-        /// <summary>Exterior ice, 0 = clear, 255 = fully frosted.</summary>
+        /// <summary>Interior glass frost (GlassFrosting.Frost), 0 = clear, 255 = fully frosted.
+        /// Independent of <see cref="Ice"/> — a parked cold car can be iced outside yet clear
+        /// inside, so these must not be collapsed into one value.</summary>
         public byte Frost;
         public byte Flags;
         /// <summary>Heater temp / blower / direction, each 0-255 (game-specific scale).</summary>
@@ -287,6 +291,10 @@ namespace WinterMP.Net.Messages
         public byte Fog;
         /// <summary>Cabin air temperature, 0-255 maps to 0-40 °C.</summary>
         public byte CabinTemp;
+        /// <summary>Exterior window ice (Freezing.CutoffWindshield), 0 = clear, 255 = fully iced.
+        /// Wire v28: split out from <see cref="Frost"/> so parked cars stop force-frosting the
+        /// interior on observers.</summary>
+        public byte Ice;
 
         public bool WindowHeaterOn => (Flags & FlagWindowHeater) != 0;
         public bool GlassDefrosting => (Flags & FlagGlassDefrosting) != 0;
@@ -306,6 +314,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(HeaterDirection);
             writer.WriteByte(Fog);
             writer.WriteByte(CabinTemp);
+            writer.WriteByte(Ice);
         }
 
         public void Read(NetReader reader)
@@ -320,6 +329,7 @@ namespace WinterMP.Net.Messages
             HeaterDirection = reader.ReadByte();
             Fog = reader.ReadByte();
             CabinTemp = reader.ReadByte();
+            Ice = reader.ReadByte();
         }
     }
 
@@ -397,6 +407,166 @@ namespace WinterMP.Net.Messages
         public void Write(NetWriter writer) => writer.WriteUInt32(ItemId);
 
         public void Read(NetReader reader) => ItemId = reader.ReadUInt32();
+    }
+
+    /// <summary>
+    /// Host -> guests: authoritative manifest of items a container FSM just spawned
+    /// (grocery-bag "Spawn all"/"Spawn one"). Runtime-`Instantiate`d clones exist in
+    /// neither save, so peers cannot discover them by stable scene path; the host is
+    /// the sole authority for their identity. The spiller (the peer whose player
+    /// opened the bag — <see cref="OwnerPlayerId"/>) binds its own captured clones
+    /// to these net ids; every other peer materializes matching objects from its own
+    /// scene (adopt a nearby clone, else instantiate from a template) and holds them
+    /// owner-followed until the owner's <see cref="ItemTransform"/> stream rests
+    /// them. Nobody fires a bag FSM on receipt (v32; the bag's own player-interaction
+    /// checks make remote firing impossible). Sent on <see cref="Channel.ReliableOrdered"/>.
+    /// </summary>
+    public sealed class ItemSpawn : IMessage
+    {
+        /// <summary>
+        /// Wire v31: join-snapshot replay of an earlier spill. The receiver must NOT
+        /// fire its own container to materialize these (that would spend an unrelated,
+        /// unopened local bag) — it adopts/instantiates from scene templates instead.
+        /// </summary>
+        public const byte FlagReplay = 1;
+
+        public struct Entry
+        {
+            public uint NetId;
+            /// <summary>Spawned object name (e.g. "potato chips(itemx)") — diagnostic / template hint.</summary>
+            public string TemplateName;
+            public NetVector3 Position;
+            public NetQuaternion Rotation;
+        }
+
+        /// <summary>Net id of the spawning container FSM (the bag).</summary>
+        public uint ContainerNetId;
+        /// <summary>Per-container spawn counter; lets guests dedup a re-delivered manifest.</summary>
+        public ushort Epoch;
+        /// <summary>The spiller — the peer whose live physics owns these until a final packet rests them.</summary>
+        public byte OwnerPlayerId;
+        /// <summary>Container state that spilled ("Spawn one"/"Spawn all") — diagnostic and offer matching.</summary>
+        public string StateName = string.Empty;
+        public List<ItemSpawn.Entry> Items = new List<ItemSpawn.Entry>();
+        /// <summary>Wire v31 (appended): bit 0 = <see cref="FlagReplay"/>.</summary>
+        public byte Flags;
+        /// <summary>
+        /// Wire v32 (appended): echoes <see cref="SpawnIntent.Sequence"/> when this
+        /// manifest answers a guest offer; 0 for host spills and replays. The offering
+        /// guest pairs the answer to the exact offer with it — two quick "Spawn one"
+        /// offers on the same bag are indistinguishable by (container, state) alone.
+        /// </summary>
+        public ushort OfferSequence;
+
+        public bool IsReplay => (Flags & FlagReplay) != 0;
+
+        public MessageId Id => MessageId.ItemSpawn;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(ContainerNetId);
+            writer.WriteUInt16(Epoch);
+            writer.WriteByte(OwnerPlayerId);
+            writer.WriteString(StateName);
+            writer.WriteUInt16((ushort)Items.Count);
+            foreach (var entry in Items)
+            {
+                writer.WriteUInt32(entry.NetId);
+                writer.WriteString(entry.TemplateName);
+                writer.WriteVector3(entry.Position);
+                writer.WriteQuaternion(entry.Rotation);
+            }
+            writer.WriteByte(Flags);
+            writer.WriteUInt16(OfferSequence);
+        }
+
+        public void Read(NetReader reader)
+        {
+            ContainerNetId = reader.ReadUInt32();
+            Epoch = reader.ReadUInt16();
+            OwnerPlayerId = reader.ReadByte();
+            StateName = reader.ReadString();
+            int count = reader.ReadUInt16();
+            Items = new List<ItemSpawn.Entry>(count);
+            for (int i = 0; i < count; i++)
+            {
+                Items.Add(new ItemSpawn.Entry
+                {
+                    NetId = reader.ReadUInt32(),
+                    TemplateName = reader.ReadString(),
+                    Position = reader.ReadVector3(),
+                    Rotation = reader.ReadQuaternion(),
+                });
+            }
+            Flags = reader.ReadByte();
+            OfferSequence = reader.ReadUInt16();
+        }
+    }
+
+    /// <summary>
+    /// Guest -> host: "my grocery bag just spilled these clones — mint their ids".
+    /// The guest lets its bag run naturally (a bag FSM cannot be driven remotely:
+    /// its "Confirm" state bounces back to "Wait player" without a live player
+    /// interaction), captures the spilled clones, and offers their names + poses.
+    /// The host materializes matching copies from its own scene templates, mints
+    /// authoritative net ids, and answers with the <see cref="ItemSpawn"/> manifest
+    /// every peer binds to (the offering guest binds its captured clones and keeps
+    /// streaming them as owner). Items appended v32 — before that the guest aborted
+    /// its spill and asked the host to re-fire its replica bag, which the FSM's own
+    /// interaction checks made impossible.
+    /// </summary>
+    public sealed class SpawnIntent : IMessage
+    {
+        public struct Entry
+        {
+            /// <summary>Spilled clone name (e.g. "sausages(itemx)") — the host's template key.</summary>
+            public string TemplateName;
+            public NetVector3 Position;
+            public NetQuaternion Rotation;
+        }
+
+        public byte PlayerId;
+        public uint ContainerNetId;
+        public string StateName = string.Empty;
+        public ushort Sequence;
+        /// <summary>Wire v32 (appended): the clones the guest's bag spilled, in capture order.</summary>
+        public List<Entry> Items = new List<Entry>();
+
+        public MessageId Id => MessageId.SpawnIntent;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteByte(PlayerId);
+            writer.WriteUInt32(ContainerNetId);
+            writer.WriteString(StateName);
+            writer.WriteUInt16(Sequence);
+            writer.WriteUInt16((ushort)Items.Count);
+            foreach (var entry in Items)
+            {
+                writer.WriteString(entry.TemplateName);
+                writer.WriteVector3(entry.Position);
+                writer.WriteQuaternion(entry.Rotation);
+            }
+        }
+
+        public void Read(NetReader reader)
+        {
+            PlayerId = reader.ReadByte();
+            ContainerNetId = reader.ReadUInt32();
+            StateName = reader.ReadString();
+            Sequence = reader.ReadUInt16();
+            int count = reader.ReadUInt16();
+            Items = new List<Entry>(count);
+            for (int i = 0; i < count; i++)
+            {
+                Items.Add(new Entry
+                {
+                    TemplateName = reader.ReadString(),
+                    Position = reader.ReadVector3(),
+                    Rotation = reader.ReadQuaternion(),
+                });
+            }
+        }
     }
 
     /// <summary>

@@ -38,18 +38,25 @@ namespace WinterMP.Core.Sync
         /// cushion-height seat anchor; wide enough to always clear that gap, tight
         /// enough to keep the prompt off cars parked on a level above or below.</summary>
         private const float EnterVerticalTolerance = 1.3f;
-        /// <summary>Return is also the game's own enter-car key; never compete with
-        /// the drive trigger when the player stands next to the driver's door.</summary>
-        private const float DriveTriggerExclusionRadius = 1.0f;
         private const float KeyCooldownSeconds = 0.7f;
         private const float RebroadcastSeconds = 8f;
         private const float VehicleScanIntervalSeconds = 3f;
         private const float PlayerSearchIntervalSeconds = 2f;
-        /// <summary>Seat anchors sit at cushion height; the player pivot (feet)
-        /// goes below so the camera ends up at seated eye level.</summary>
-        private const float SeatPivotDrop = 0.4f;
-        private const float SeatHeightOffset = 0.5f;
-        private const float ExitLateralMeters = 1.3f;
+        /// <summary>Where a seated body sits relative to the cushion anchor — used for the
+        /// REMOTE avatar and the exit spot. Small raise so the body rests on the cushion.</summary>
+        private const float SeatBodyRaise = 0.1f;
+        /// <summary>How far BELOW the cushion anchor to park the LOCAL PLAYER pivot. The pivot
+        /// carries the first-person camera at standing eye height, so parking it at the
+        /// cushion floats the view up near the roof — drop it so the camera lands at seated
+        /// eye level. Single knob: raise if the view clips the floor, lower if it still floats.</summary>
+        private const float LocalCameraDrop = 0.45f;
+        /// <summary>Forward nudge (car-local +z, toward the windshield) for the FRONT
+        /// passenger seat only. The raw MassPassenger point sits a touch too far back, so
+        /// the seated body — and the passenger's own camera — read as sunk into the seat
+        /// back and drift past the cabin edge. Applied to SeatLocal[0], so it moves the
+        /// remote avatar, the first-person camera and entry detection together. The rear
+        /// bench derives its own fore/aft from the bench pivot and is untouched.</summary>
+        private const float FrontSeatForwardOffset = 0.15f;
         private const float RearBenchHalfWidth = 0.35f;
         private const string PlayerObjectName = "PLAYER";
         /// <summary>The game's interaction indicator — the on-screen TextMesh the
@@ -103,7 +110,6 @@ namespace WinterMP.Core.Sync
         /// <summary>Passenger's own look yaw, accumulated relative to the vehicle
         /// (not the world), so mouse-look survives the rotation pin below.</summary>
         private float _seatYawOffset;
-        private float _lastPinnedYaw;
 
         private string? _hint;
 
@@ -165,17 +171,18 @@ namespace WinterMP.Core.Sync
             if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null) return;
 
             var seat = vehicle.SeatLocal[_seatedIndex];
-            _player.position = vehicle.Body.transform.TransformPoint(SeatedLocalOffset(seat));
+            _player.position = vehicle.Body.transform.TransformPoint(LocalSeatedOffset(seat));
             // Pin rotation too, or the seated body keeps its world-fixed facing while the
             // car turns (the player FSM rewrites rotation each frame) and visibly slides
-            // relative to the seat (#32). But pin only the vehicle's own turning, not the
-            // player's mouse-look: fold in the yaw delta the FSM added this frame (its
-            // look-around input) as an offset from the vehicle's heading, so passengers
-            // can still look left/right instead of snapping back to dead-ahead every frame.
-            float delta = Mathf.DeltaAngle(_lastPinnedYaw, _player.eulerAngles.y);
-            _seatYawOffset += delta;
+            // relative to the seat (#32). Pin only the vehicle's own turning, not the
+            // player's mouse-look: recover just the look the FSM added this frame by diffing
+            // against the CURRENT vehicle heading plus our accumulated look. Diffing against
+            // last frame's pinned yaw used a STALE vehicle heading, so the car's own turn
+            // (V_now - V_lastframe) leaked into the offset and the camera over-rotated.
+            float vehicleYaw = vehicle.Body.transform.eulerAngles.y;
+            float lookDelta = Mathf.DeltaAngle(vehicleYaw + _seatYawOffset, _player.eulerAngles.y);
+            _seatYawOffset += lookDelta;
             _player.rotation = vehicle.Body.transform.rotation * Quaternion.Euler(0f, _seatYawOffset, 0f);
-            _lastPinnedYaw = _player.eulerAngles.y;
         }
 
         /// <summary>
@@ -260,14 +267,14 @@ namespace WinterMP.Core.Sync
                 if (vehicle.Body == null) continue;
                 var root = vehicle.Body.transform;
 
-                // Standing at the driver's door? That spot belongs to the game's
-                // own drive trigger (same key).
-                if (vehicle.DriveTrigger != null
-                    && (vehicle.DriveTrigger.position - _player.position).sqrMagnitude
-                        < DriveTriggerExclusionRadius * DriveTriggerExclusionRadius)
-                {
-                    continue;
-                }
+                // Defer to the game's own drive key only where the driver's door is genuinely
+                // the nearest thing. The old fixed radius skipped the WHOLE car and, on these
+                // small cars, swallowed the rear seat tucked behind the driver's door — so we
+                // compare per seat below (trigger closer than the seat → the drive key owns it)
+                // instead of bailing on the entire vehicle here.
+                float triggerDistSq = vehicle.DriveTrigger != null
+                    ? (vehicle.DriveTrigger.position - _player.position).sqrMagnitude
+                    : float.MaxValue;
 
                 // Match in the car's local frame: a flat disc on the cabin floor
                 // plane plus a vertical band. Comparing world-space 3D distance to
@@ -280,6 +287,11 @@ namespace WinterMP.Core.Sync
 
                     var seatLocal = vehicle.SeatLocal[seat];
                     if (Mathf.Abs(playerLocal.y - seatLocal.y) > EnterVerticalTolerance) continue;
+
+                    // Closer to the driver's door than to this seat? The drive key owns this
+                    // spot (front-left driver entry); leave it to the game.
+                    if (triggerDistSq < (root.TransformPoint(seatLocal) - _player.position).sqrMagnitude)
+                        continue;
 
                     float dx = playerLocal.x - seatLocal.x;
                     float dz = playerLocal.z - seatLocal.z;
@@ -317,8 +329,9 @@ namespace WinterMP.Core.Sync
             _seated = true;
             _seatedVehicleId = vehicle.VehicleId;
             _seatedIndex = seat;
+            // First seated frame folds the player's current facing-vs-car into the offset,
+            // so they keep looking where they were at entry (see the pin in LateUpdate).
             _seatYawOffset = 0f;
-            _lastPinnedYaw = _player.eulerAngles.y;
             _nextRebroadcastAt = Time.unscaledTime + RebroadcastSeconds;
 
             SendSeatState(session, vehicle.VehicleId, (byte)seat);
@@ -327,20 +340,13 @@ namespace WinterMP.Core.Sync
 
         private void Exit(SessionManager session)
         {
-            if (_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) && vehicle.Body != null && _player != null)
-            {
-                var seat = vehicle.SeatLocal[_seatedIndex];
-                float side = seat.x >= 0f ? 1f : -1f;
-                var seated = SeatedLocalOffset(seat);
-                var exitLocal = new Vector3(side * (Mathf.Abs(seat.x) + ExitLateralMeters), seated.y + 0.2f, seat.z);
+            // Just hand control back in place — don't teleport the player out to the side of
+            // the car. Reparenting preserves world position, so re-enabling the controller
+            // simply lets them walk out from the seat, like the game's own get-out.
+            if (_player != null)
                 _player.parent = _originalParent;
-                _player.position = vehicle.Body.transform.TransformPoint(exitLocal);
-            }
-            else if (_player != null)
-            {
-                _player.parent = _originalParent;
-            }
 
+            LevelPlayer();
             RestoreController();
             _seated = false;
             SendSeatState(session, 0, PassengerState.SeatNone);
@@ -351,6 +357,7 @@ namespace WinterMP.Core.Sync
         {
             if (_player != null)
                 _player.parent = _originalParent;
+            LevelPlayer();
             RestoreController();
             _seated = false;
 
@@ -364,6 +371,24 @@ namespace WinterMP.Core.Sync
         {
             if (_playerController != null && _controllerWasEnabled)
                 _playerController.enabled = true;
+        }
+
+        /// <summary>
+        /// Strip the pitch/roll a slanted car baked into the player: the seated pin
+        /// copies the FULL vehicle rotation, and the game's mouse-look only ever
+        /// writes yaw — it never clears an inherited tilt, so getting out on a slope
+        /// left the camera stuck rolled. Keep the heading, zero the tilt.
+        /// </summary>
+        private void LevelPlayer()
+        {
+            if (_player == null) return;
+            var forward = _player.forward;
+            forward.y = 0f;
+            // Car on its side/nose leaves forward near-vertical with no usable
+            // horizontal part — fall back to the euler yaw as the heading.
+            _player.rotation = forward.sqrMagnitude > 1e-4f
+                ? Quaternion.LookRotation(forward)
+                : Quaternion.Euler(0f, _player.eulerAngles.y, 0f);
         }
 
         private static void SendSeatState(SessionManager session, uint vehicleId, byte seat)
@@ -554,8 +579,15 @@ namespace WinterMP.Core.Sync
             }
         }
 
+        // Body placement (remote avatar + exit spot): rest on the cushion.
         private static Vector3 SeatedLocalOffset(Vector3 seatLocal) =>
-            new Vector3(seatLocal.x, seatLocal.y - SeatPivotDrop + SeatHeightOffset, seatLocal.z);
+            new Vector3(seatLocal.x, seatLocal.y + SeatBodyRaise, seatLocal.z);
+
+        // Local first-person pin: drop well below the cushion so the standing-height camera
+        // lands at seated eye level. Kept separate from the body offset above so lowering the
+        // local view never sinks how OTHER players see this passenger (they use the seat anchor).
+        private static Vector3 LocalSeatedOffset(Vector3 seatLocal) =>
+            new Vector3(seatLocal.x, seatLocal.y - LocalCameraDrop, seatLocal.z);
 
         /// <summary>
         /// Seat layout from the game's own in-cabin anchors. Front passenger uses
@@ -587,14 +619,20 @@ namespace WinterMP.Core.Sync
             if (driveTrigger == null || frontAnchor == null) return null;
 
             var front = root.InverseTransformPoint(frontAnchor.position);
+            // Seat the passenger forward into the cabin (see FrontSeatForwardOffset). +z is
+            // toward the windshield here — the rear bench below sits at driverLocal.z - 0.85.
+            front.z += FrontSeatForwardOffset;
             var driverLocal = root.InverseTransformPoint(driveTrigger.position);
 
             float rearZ = benchAnchor != null
                 ? root.InverseTransformPoint(benchAnchor.position).z
                 : driverLocal.z - 0.85f;
-            float rearY = benchAnchor != null
-                ? root.InverseTransformPoint(benchAnchor.position).y
-                : front.y + 0.02f;
+            // Take the rear seat's HEIGHT from the front mass point, never from the bench
+            // pivot: that pivot's origin is a mesh/object anchor, not a seated point — on the
+            // CORRIS it sits ~1.1 m above cushion level, which parked the passenger camera up
+            // by the roof. The rear cushion is at essentially the same height as the front
+            // seat, so front.y is both reliable and correct. The pivot still gives fore/aft.
+            float rearY = front.y;
 
             var seats = new VehicleSeats
             {

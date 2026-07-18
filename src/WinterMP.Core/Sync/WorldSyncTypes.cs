@@ -95,9 +95,16 @@ namespace WinterMP.Core.Sync
     // remote driver holds the vehicle; also anchors the driver's avatar.
     public bool SeatSearched;
     public Transform? SeatTransform;
-    public Transform? DriverAnchorTransform;
     public Collider? SeatCollider;
     public bool SeatBlocked;
+
+    // Vehicles only: observer-side visual wheel roll (VehicleWorldSync.Wheels). The tire
+    // meshes to spin, their shared radius, and the last body pose used for the frame delta.
+    public bool WheelsSearched;
+    public Transform[]? WheelSpinners;
+    public float WheelRadius;
+    public Vector3 WheelLastPos;
+    public bool WheelLastPosSet;
 
     // Vehicles only: stays true from claim/drive until rest final — MWC often
     // leaves PLAYER at the door while the rigidbody moves away.
@@ -191,6 +198,7 @@ namespace WinterMP.Core.Sync
     public float NextClimateAt;
     public ushort LastClimateSequence;
     public byte RemoteFrost;
+    public byte RemoteIce;
     public byte RemoteFog;
     public byte RemoteCabinTemp;
     public bool RemotePlayerIn;
@@ -201,6 +209,7 @@ namespace WinterMP.Core.Sync
     public float NextDefrostPulseAt;
     public bool LoggedClimateSend;
     public bool LoggedClimateApply;
+    public float NextClimateDiagAt;
 
     public float ClaimRadius => IsVehicle ? 7f : 4f;
     public float SendRateHz => IsVehicle ? 15f : 10f;
@@ -243,6 +252,20 @@ namespace WinterMP.Core.Sync
         public uint Id;
         public Rigidbody Body;
     }
+
+    /// <summary>A grocery-bag-style Use FSM whose "Spawn one/all" states instantiate
+    /// product clones. The peer whose player opens the bag captures the spilled
+    /// clones; the host mints net ids and broadcasts an ItemSpawn manifest; other
+    /// peers materialize from it (see ItemWorldSync.Spawn — manifest epochs are
+    /// minted there, one counter for host spills and guest offers alike).
+    /// Deliberately stays out of the world checksum — a bag spilled on only one
+    /// peer must not read as a desync.</summary>
+    internal sealed class SyncedSpawnContainer
+{
+    public PlayMakerFSM Fsm = null!;
+    public string Path = string.Empty;
+    public string[] SyncedStates = null!;
+}
 
     internal sealed class SyncedDoor
 {

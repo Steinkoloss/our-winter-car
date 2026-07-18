@@ -34,6 +34,7 @@ namespace WinterMP.Core.Catalog
         public static int BoltRuleCount => _bolts.Count;
 
         private static readonly List<CatalogRule> _doors = new List<CatalogRule>();
+        private static readonly List<CatalogRule> _spawnContainers = new List<CatalogRule>();
         private static readonly List<CatalogRule> _controls = new List<CatalogRule>();
         private static readonly List<CatalogRule> _switchRules = new List<CatalogRule>();
         private static readonly List<CatalogRule> _ignitions = new List<CatalogRule>();
@@ -49,6 +50,7 @@ namespace WinterMP.Core.Catalog
         public static void Load()
         {
             _doors.Clear();
+            _spawnContainers.Clear();
             _controls.Clear();
             _switchRules.Clear();
             _ignitions.Clear();
@@ -89,6 +91,7 @@ namespace WinterMP.Core.Catalog
             {
                 data = SyncCatalogJson.Parse(json);
                 LoadRules(data.Doors, _doors);
+                LoadRules(data.SpawnContainers, _spawnContainers);
                 LoadRules(data.Controls, _controls);
                 LoadRules(data.SwitchRules, _switchRules);
                 LoadRules(data.Ignitions, _ignitions);
@@ -107,13 +110,18 @@ namespace WinterMP.Core.Catalog
             Loaded = true;
             string build = data.GameBuild ?? "?";
             WinterMPPlugin.Log.LogInfo(
-                $"SyncCatalog: loaded {_doors.Count} doors, {_controls.Count} controls, " +
+                $"SyncCatalog: loaded {_doors.Count} doors, {_spawnContainers.Count} spawn-containers, {_controls.Count} controls, " +
                 $"{_switchRules.Count} switch rules, {_ignitions.Count} ignitions, " +
                 $"{_starters.Count} starters, {_buys.Count} buys, {_parts.Count} parts, {_bolts.Count} bolts " +
                 $"(build '{build}', hash {Hash:X8}).");
         }
 
         public static string[]? TryMatchDoor(PlayMakerFSM fsm) => TryMatch(_doors, fsm);
+
+        /// <summary>Use-FSM containers (grocery bags) whose "Spawn one/all" states pour
+        /// out instantiated products. We replay the spawn state-enter so both peers spill;
+        /// unlike doors this is a one-shot action, so it never joins the snapshot/checksum.</summary>
+        public static string[]? TryMatchSpawnContainer(PlayMakerFSM fsm) => TryMatch(_spawnContainers, fsm);
 
         public static string[]? TryMatchControl(PlayMakerFSM fsm) => TryMatch(_controls, fsm);
 
@@ -169,6 +177,9 @@ namespace WinterMP.Core.Catalog
         public static bool IsVehicleRoot(Rigidbody body) => _vehicles.IsVehicleRoot(body);
 
         public static bool IsPickableRigidbody(Rigidbody body) => _pickables.IsPickable(body);
+
+        /// <summary>Pooled-instance name suffixes ("(itemx)", ...) — spawn template matching strips these.</summary>
+        public static string[] PickableNameSuffixes => _pickables.NameSuffixes;
 
         public static void CollectConsumableDespawnStates(PlayMakerFSM fsm, List<string> states)
             => _consumables.CollectDespawnStates(fsm, states);

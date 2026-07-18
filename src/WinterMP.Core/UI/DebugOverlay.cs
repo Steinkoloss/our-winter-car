@@ -110,6 +110,16 @@ namespace WinterMP.Core.UI
             string pause = link.ShouldPauseOwnershipTransfers ? " · <color=#FFCC88>claims paused</color>" : string.Empty;
             GUILayout.Label($"Link: {link.TransportName} · {relay} · {lossText}{pause}", RichLabel());
 
+            var traffic = NetTrafficMeter.Instance;
+            if (traffic.SentBytesPerSec > 0 || traffic.RecvBytesPerSec > 0)
+            {
+                bool over = traffic.PerClientBytesPerSec > NetTrafficMeter.BudgetBytesPerSecond;
+                string budget = over
+                    ? $" · <color=#FF8888>over {NetTrafficMeter.BudgetBytesPerSecond / 1024} kB/s budget</color>"
+                    : string.Empty;
+                GUILayout.Label($"Net: {traffic.Summary()}{budget}", RichLabel());
+            }
+
             var world = Sync.WorldSyncManager.Instance;
             if (world != null && (world.DoorCount > 0 || world.BuyCount > 0 || world.ItemCount > 0))
             {

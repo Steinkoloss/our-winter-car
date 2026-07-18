@@ -11,6 +11,13 @@
       "requireStates": ["Set rotation"]
     }
   ],
+  "spawnContainers": [
+    {
+      "fsmName": "Use",
+      "states": ["Spawn one", "Spawn all"],
+      "requireStates": ["Confirm", "In car?"]
+    }
+  ],
   "controls": [
     {
       "objectName": "beercase",

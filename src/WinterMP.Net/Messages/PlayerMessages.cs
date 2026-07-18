@@ -96,6 +96,12 @@ namespace WinterMP.Net.Messages
         public float Fatigue;
         public float Thirst;
         public float Urine;
+        /// <summary>Wire v28: saved BodyTemp (5th need), restored alongside the others.</summary>
+        public float BodyTemp;
+        /// <summary>Wire v30: saved Stress (global need float), restored on rejoin.</summary>
+        public float Stress;
+        /// <summary>Wire v30: saved drunkenness ("Drunk Mode" FSM DrunkCurrent), restored on rejoin.</summary>
+        public float Drunk;
 
         public bool HasLastPosition => (Flags & FlagHasLastPosition) != 0;
         public bool HasSavedNeeds => (Flags & FlagHasSavedNeeds) != 0;
@@ -113,6 +119,9 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(Fatigue);
             writer.WriteSingle(Thirst);
             writer.WriteSingle(Urine);
+            writer.WriteSingle(BodyTemp);
+            writer.WriteSingle(Stress);
+            writer.WriteSingle(Drunk);
         }
 
         public void Read(NetReader reader)
@@ -126,6 +135,9 @@ namespace WinterMP.Net.Messages
             Fatigue = reader.ReadSingle();
             Thirst = reader.ReadSingle();
             Urine = reader.ReadSingle();
+            BodyTemp = reader.ReadSingle();
+            Stress = reader.ReadSingle();
+            Drunk = reader.ReadSingle();
         }
     }
 

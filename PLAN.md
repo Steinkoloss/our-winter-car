@@ -251,9 +251,9 @@ Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
 |---|---|---|
 | Player avatars | Custom rig (head/hands/body) streamed ~20 Hz, name tags. Remote players *visual only* (no physics pushing) v1 | ✅ |
 | Player animation | Derived state machine (walk/run/crouch/carry/drive) — low bandwidth | ✅ |
-| Player needs (hunger/fatigue/thirst/urine) | Per-player, reported to host every ~12 s, saved in `wintermp-guests.json` sidecar | ✅ |
-| **Body temperature / cold** | Per-player **5th need** (`BodyTemp`); reported to host + sidecar like other needs. Ambient temp shared via `TimeSync`; `ColdArea`/`ColdMultiplier` are position-derived (computed locally from the same world). Only hypothermia *death* is synced today — see §4.8 | ⬜ (M7) |
-| **Clothing** | Per-player `ClothingStage`/`ClothingType` (`CLOTHESHOME`/`CLOTHESWORK`) — drives insulation (warmth math) **and** the remote-avatar visual | ⬜ (M7) |
+| Player needs (hunger/fatigue/thirst/urine) | Per-player, reported to host every ~12 s, saved in `wintermp-guests.json` sidecar. **Stress + Drunk appended at v30** (`Stress` global; `DrunkCurrent` on the FPS-camera "Drunk Mode" FSM) — same report/sidecar/rejoin-restore path, so a rejoining guest keeps intoxication instead of resetting sober | 🚧 (v30 needs unverified in-game; rest ✅) |
+| **Body temperature / cold** | Per-player **5th need** (`BodyTemp`); reported to host + sidecar like other needs. Ambient temp shared via `TimeSync`; `ColdArea`/`ColdMultiplier` are position-derived (computed locally from the same world). Synced as the 5th need at **v28** (`PLAYER/BodyTemp.Temperature` → host + sidecar, restored on rejoin) — see §4.8 | 🚧 (v28, not soak-tested) |
+| **Clothing** | Per-player `ClothingStage`/`ClothingType` (`CLOTHESHOME`/`CLOTHESWORK`) — drives insulation (warmth math) **and** the remote-avatar visual. Synced at **v28** (`PlayerClothingState`: `ClothingStage`+`ClothingType`, owner-authoritative + host-relayed; avatar shirt tint best-effort). Join-sync closed: the host bursts every already-connected player's current outfit to a joining guest (clothing is change-only, so without it a joiner saw everyone in default clothing/warmth tier) | 🚧 (v28, not soak-tested) |
 | Text / voice chat | Text chat done; positional voice via Steam Voice later | 🚧 (M11) |
 | Money/economy | **Single shared wallet** owned by host. All transactions are intents → host validates → broadcasts `WalletState`. No race conditions by construction | ✅ |
 | Shops & cash registers | `anyone-triggers` purchase intents; host executes, spawns goods, applies money | ✅ |
@@ -262,18 +262,18 @@ Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
 | Car assembly (bolts/parts) | Attach/detach + bolt-tightness as reliable events keyed to part IDs; wear/tuning as synced FSM vars | ✅ |
 | Vehicle state (Sorbet, Corris, +) | Engine `owner-only` (driver owns whole vehicle); rpm/fuel/coolant/lights/blinkers + cabin **climate** (frost/fog/defrost/heater) synced | ✅ |
 | **Fuel / jerrycan / pumps** | Refuel as `anyone-triggers` intent; fuel level already rides in `VehicleState` | 🚧 (M8) |
-| World items (pickables / cargo / consumables) | Event-synced + ownership streaming when in motion; eat/drink despawn synced | ✅ |
+| World items (pickables / cargo / consumables) | Event-synced + ownership streaming when in motion; eat/drink despawn synced. **Runtime-spawned items (grocery-bag contents) via `ItemSpawn`/`SpawnIntent` (ids 52/53, reworked v32)** — the peer whose player opens the bag lets it spill *naturally* and captures the clones (a bag FSM cannot be driven remotely: "Confirm" bounces back to "Wait player" without a live player interaction, and the spiller's bag-consumption despawn destroys replica bags before any manifest could fire them — both observed in-game at v29–v31); the host mints ids (guest spills offered via SpawnIntent's item list) and every **other** peer materializes from the manifest: adopt nearby clone → steal stale clone (replay/own-offer) → instantiate from an exact- or base-name-matched template (store masters `<base>x` ↔ live instances `<base>(itemx)`). **Late-join replay (v31)**: host re-sends live-refreshed spill manifests with the join snapshot | 🚧 (v32 rework, needs 2-player check) |
 | Doors / switches / controls | `anyone-triggers` events (incl. lights, wipers, hazards, handbrake) | ✅ |
-| **Home heating & cooking** | Cabin woodstove (`CABIN/Cabin/woodstove/Fireplace`: `SetFire`/`WoodTrigger`/`SausageTrigger`), sauna kiuas (`StoveHeat`/`SaunaStove`), cottage/living-room fireplaces. Host-owned progression (lit, fuel, heat output, sauna temp); feed/light/grill = `anyone-triggers`. See §4.8 | ⬜ (M7) |
+| **Home heating & cooking** | Cabin woodstove (`CABIN/Cabin/woodstove/Fireplace`: `SetFire`/`WoodTrigger`/`SausageTrigger`), sauna kiuas (`StoveHeat`/`SaunaStove`), cottage/living-room fireplaces. Host-owned progression (lit, fuel, heat output, sauna temp); feed/light/grill = `anyone-triggers`. Synced at **v28** (`HeatSourceState`/`HeatSourceIntent`: woodstove/sauna/fireplaces; host reads authoritative signals + broadcasts, guests apply locally, light/feed/grill/löyly intents fire real game events on the host). Joining guests get a forced full re-broadcast with the world snapshot (no 20 s cold wait). See §4.8 | 🚧 (v28, not soak-tested) |
 | **Home appliances** | TV (`TVSwitch`), radio (station+power), fridge, lights, fuse box — host-owned vars + `anyone-triggers` | ⬜ (M11) |
 | NPCs & traffic | `host-only` sim; transform + FSM streaming with distance-based rates | ✅ |
 | **Police / cops** | Speeding & DUI detection host-authoritative; fines → shared wallet; arrest / impound flow | ⬜ (M9) |
-| **Animals / moose** | Host-sim AI + authoritative collision; moose-hit death already in `DeathSync` | ⬜ (M9) |
+| **Animals / moose** | Host-sim AI + authoritative collision; moose-hit death already in `DeathSync`. **Position sync shipped (no wire change)**: host streams the moose root transform over `NpcTransform` (`ScriptedMover` path in `NpcTrafficSync` — the moose has no live root rigidbody); guests freeze the local `Move` AI FSM so per-peer RNG stops desyncing its position, restore on stream end/final | 🚧 (M9, needs 2-player check) |
 | **Inspection / registration (katsastus)** | Per-vehicle persistent state; inspection pay already synced; full pass/fail + plates | 🚧 (M9) |
 | **Racing (Suvi-Sprint, Ice Rally)** | Race lifecycle enroll/grid/start/lap-timing/finish/payout; opponent (jokkis/AI) streaming; frozen-lake ice track (`RACES`, 597 bodies) | ⬜ (M10) |
 | Time/weather/calendar | Host clock is law; guests slave FSM time vars; periodic hard correction | ✅ |
 | Sleeping / time skip | Consent: all players confirm → host advances time | ✅ |
-| Death / respawn / permadeath | Per-player death (hypothermia/drown/fire/electrocute/…); world keeps running; respawn replicated | ✅ |
+| Death / respawn / permadeath | Per-player death (hypothermia/drown/fire/electrocute/…); world keeps running; respawn replicated. Full cause table since v32 (sewage/carbon-monoxide/PTO/cutter-blade/jail/piss-TV/burn/smoking — the death FSM's remaining bools); permadeath flag sync re-arms between sessions and retries outside scene changes (loopback); respawn-watch timeout self-heals instead of wedging future death reports | ✅ |
 | Computer (toy) | MSC-save-import only, non-core — **optional parity, post-1.0** | ⬜ (backlog) |
 
 ### 4.5 Join-in-progress & reconnection
@@ -308,6 +308,9 @@ Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
 - **Connection quality:** Steam Sockets stats surfaced in the TAB overlay
   (ping, loss, relay vs direct); auto-pause of physics ownership transfers on
   bad links.
+- **Bandwidth budget:** `NetTrafficMeter` counts egress per channel + ingress at
+  the send/receive chokepoints; 10 s rolling rate in the TAB overlay and the
+  log, warns when steady-state exceeds the M7 budget (64 kB/s/client).
 - **Crash containment:** all mod callbacks wrapped; an exception in one sync
   subsystem logs + disables that subsystem rather than killing the game.
 - **Telemetry-in-logs:** structured log lines for every intent/transition,

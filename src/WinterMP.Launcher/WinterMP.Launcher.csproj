@@ -40,22 +40,26 @@
     <None Include="..\..\docs\PLAYERS.md" Link="PLAYERS.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <Target Name="StageLauncherPayload" AfterTargets="Build;Publish">
-    <PropertyGroup>
-      <LauncherStageDir Condition="'$(PublishDir)' != ''">$(PublishDir)</LauncherStageDir>
-      <LauncherStageDir Condition="'$(LauncherStageDir)' == ''">$(TargetDir)</LauncherStageDir>
-    </PropertyGroup>
-    <ItemGroup>
-      <ModPayloadFiles Include="$(WinterMPCoreOut)\WinterMP.Core.dll;$(WinterMPCoreOut)\WinterMP.Net.dll;$(WinterMPCoreOut)\sync-catalog.json;$(WinterMPFastBootOut)\WinterMP.FastBoot.dll" />
-      <BepInExZip Include="$(MSBuildThisFileDirectory)..\..\vendor\BepInEx_win_x64_5.4.23.5.zip" />
-    </ItemGroup>
-    <MakeDir Directories="$(LauncherStageDir)payload" />
-    <MakeDir Directories="$(LauncherStageDir)vendor" />
-    <Copy SourceFiles="@(ModPayloadFiles)" DestinationFolder="$(LauncherStageDir)payload" SkipUnchangedFiles="false"
+  <!-- $(PublishDir) has a non-empty SDK default even on a plain `dotnet build`, so picking it
+       whenever it's "set" (the old check) always won - the dev-loop build staged the payload into
+       bin\...\publish\ while the exe it actually runs lives in bin\...\net8.0\, so ModPayload.cs
+       (which looks next to the running exe) never found it. Two self-contained targets, each keyed
+       to the target that actually fired, stage into wherever that target's own output really lands.
+       (A shared target invoked via CallTarget doesn't see the property the caller just set here -
+       inline instead of sharing.) -->
+  <ItemGroup>
+    <ModPayloadFiles Include="$(WinterMPCoreOut)\WinterMP.Core.dll;$(WinterMPCoreOut)\WinterMP.Net.dll;$(WinterMPCoreOut)\sync-catalog.json;$(WinterMPFastBootOut)\WinterMP.FastBoot.dll" />
+    <BepInExZip Include="$(MSBuildThisFileDirectory)..\..\vendor\BepInEx_win_x64_5.4.23.5.zip" />
+  </ItemGroup>
+
+  <Target Name="StageLauncherPayload" AfterTargets="Build">
+    <MakeDir Directories="$(TargetDir)payload" />
+    <MakeDir Directories="$(TargetDir)vendor" />
+    <Copy SourceFiles="@(ModPayloadFiles)" DestinationFolder="$(TargetDir)payload" SkipUnchangedFiles="false"
           Condition="Exists('%(ModPayloadFiles.Identity)')" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)Assets\wintermp-compat.json"
-          DestinationFolder="$(LauncherStageDir)payload" SkipUnchangedFiles="false" />
-    <Copy SourceFiles="@(BepInExZip)" DestinationFolder="$(LauncherStageDir)vendor" SkipUnchangedFiles="true"
+          DestinationFolder="$(TargetDir)payload" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="@(BepInExZip)" DestinationFolder="$(TargetDir)vendor" SkipUnchangedFiles="true"
           Condition="Exists('@(BepInExZip)')" />
     <Warning Text="WinterMP.Core Release build not found - build src/WinterMP.Core in Release first so the mod payload can be bundled."
              Condition="!Exists('$(WinterMPCoreOut)\WinterMP.Core.dll')" />
@@ -63,6 +67,17 @@
              Condition="!Exists('$(WinterMPFastBootOut)\WinterMP.FastBoot.dll')" />
     <Warning Text="vendor/BepInEx_win_x64_5.4.23.5.zip missing - the launcher cannot install BepInEx until it is restored."
              Condition="!Exists('@(BepInExZip)')" />
+  </Target>
+
+  <Target Name="StageLauncherPayloadPublish" AfterTargets="Publish">
+    <MakeDir Directories="$(PublishDir)payload" />
+    <MakeDir Directories="$(PublishDir)vendor" />
+    <Copy SourceFiles="@(ModPayloadFiles)" DestinationFolder="$(PublishDir)payload" SkipUnchangedFiles="false"
+          Condition="Exists('%(ModPayloadFiles.Identity)')" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Assets\wintermp-compat.json"
+          DestinationFolder="$(PublishDir)payload" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="@(BepInExZip)" DestinationFolder="$(PublishDir)vendor" SkipUnchangedFiles="true"
+          Condition="Exists('@(BepInExZip)')" />
   </Target>
 
 </Project>

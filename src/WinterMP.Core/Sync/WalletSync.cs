@@ -133,11 +133,15 @@ namespace WinterMP.Core.Sync
             Locate();
             if (_moneyVar == null) return;
 
-            if (!float.IsNaN(_lastAppliedMoney)
-                && Mathf.Abs(message.Money - _lastAppliedMoney) < ChangeEpsilon)
-            {
+            // Dedup against the LIVE local balance, not the last value we applied. A checksum-
+            // driven wallet resync (WorldResyncRequest.FlagWallet) re-sends the SAME authoritative
+            // amount to correct a drifted guest; comparing against _lastAppliedMoney would skip
+            // that correction (host value unchanged since our last apply) and the drift would
+            // never heal — the guest would just keep re-requesting resync every checksum round.
+            // Comparing against the current global still suppresses the redundant ~2 s keepalive
+            // writes whenever nothing has actually drifted.
+            if (Mathf.Abs(message.Money - _moneyVar.Value) < ChangeEpsilon)
                 return;
-            }
 
             WinterMPPlugin.Log.LogInfo(
                 $"WalletSync: money {_moneyVar.Value:0} -> {message.Money:0} mk.");

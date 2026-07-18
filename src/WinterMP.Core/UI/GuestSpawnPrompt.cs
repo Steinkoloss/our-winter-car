@@ -58,6 +58,9 @@ namespace WinterMP.Core.UI
                 Fatigue = offer.Fatigue,
                 Thirst = offer.Thirst,
                 Urine = offer.Urine,
+                BodyTemp = offer.BodyTemp,
+                Stress = offer.Stress,
+                Drunk = offer.Drunk,
                 Valid = true,
             });
         }

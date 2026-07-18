@@ -3,6 +3,8 @@ namespace WinterMP.Net.Messages
     /// <summary>
     /// Guest -> host: periodic report of local need stats (PLAN.md §4.4).
     /// Host stores these in the guest profile sidecar for reconnect.
+    /// Wire v28 appends BodyTemp (PLAYER/BodyTemp.Temperature) as the 5th need.
+    /// Wire v30 appends Stress (global) and Drunk ("Drunk Mode" FSM DrunkCurrent).
     /// </summary>
     public sealed class PlayerNeedsReport : IMessage
     {
@@ -11,6 +13,9 @@ namespace WinterMP.Net.Messages
         public float Fatigue;
         public float Thirst;
         public float Urine;
+        public float BodyTemp;
+        public float Stress;
+        public float Drunk;
         public ushort Sequence;
 
         public MessageId Id => MessageId.PlayerNeedsReport;
@@ -22,6 +27,9 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(Fatigue);
             writer.WriteSingle(Thirst);
             writer.WriteSingle(Urine);
+            writer.WriteSingle(BodyTemp);
+            writer.WriteSingle(Stress);
+            writer.WriteSingle(Drunk);
             writer.WriteUInt16(Sequence);
         }
 
@@ -32,6 +40,9 @@ namespace WinterMP.Net.Messages
             Fatigue = reader.ReadSingle();
             Thirst = reader.ReadSingle();
             Urine = reader.ReadSingle();
+            BodyTemp = reader.ReadSingle();
+            Stress = reader.ReadSingle();
+            Drunk = reader.ReadSingle();
             Sequence = reader.ReadUInt16();
         }
     }

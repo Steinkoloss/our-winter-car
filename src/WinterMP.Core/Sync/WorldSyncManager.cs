@@ -34,6 +34,8 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<uint, float> _nextObjectRequestAt = new Dictionary<uint, float>();
         private readonly TimeWeatherSync _timeWeather = new TimeWeatherSync();
         private readonly WalletSync _wallet = new WalletSync();
+        private readonly ClothingSync _clothing = new ClothingSync();
+        private readonly HeatSourceSync _heat = new HeatSourceSync();
 
         private bool _syncReady;
 
@@ -59,6 +61,8 @@ namespace WinterMP.Core.Sync
         private bool _worldSyncDisabled;
         private int _syncErrorCount;
         private float _syncErrorBackoffUntil;
+        // TEMP spawn debugging: crumb each grocery-bag-like Use FSM once per name.
+        private readonly HashSet<string> _spawnDiag = new HashSet<string>();
 
         internal bool ApplyingRemote { get; set; }
         internal bool SelfTest => _selfTest;
@@ -71,6 +75,7 @@ namespace WinterMP.Core.Sync
         public static WorldSyncManager? Instance { get; private set; }
 
         public int DoorCount => _syncReady ? _fsm.DoorCount : 0;
+        public int SpawnContainerCount => _syncReady ? _fsm.SpawnContainerCount : 0;
         public int PartCount => _syncReady ? _fsm.PartCount : 0;
         public int BuyCount => _syncReady ? _fsm.BuyCount : 0;
         public int BoltCount => _syncReady ? _fsm.BoltCount : 0;
@@ -136,7 +141,7 @@ namespace WinterMP.Core.Sync
 
             try
             {
-                _vehicles.LateUpdateClimate(Time.unscaledTime);
+                _vehicles.LateUpdateRemoteVehicles(Time.unscaledTime);
             }
             catch (Exception e)
             {
@@ -234,10 +239,13 @@ namespace WinterMP.Core.Sync
                 }
             }
 
+            _items.ProcessPendingSpawns(session!);
             _items.UpdateItems(session);
             _npcTraffic.Update(session!);
             _vehicles.UpdateVehicleStates(session!);
             _vehicles.UpdateVehicleClimate(session!);
+            _clothing.Update(session!);
+            _heat.Update(session!);
 
             if (_selfTest)
                 _fsm.RunDoorTest();
@@ -285,6 +293,8 @@ namespace WinterMP.Core.Sync
             _nextObjectRequestAt.Clear();
             _timeWeather.Reset();
             _wallet.Reset();
+            _clothing.Clear();
+            _heat.Clear();
             _snapshotRequested = false;
             _outChecksumSequence = 0;
             _nextChecksumAt = 0f;
@@ -298,7 +308,7 @@ namespace WinterMP.Core.Sync
 
         private void ScanWorld()
         {
-            int newDoors = 0, newParts = 0, newBuys = 0, newBolts = 0, newIgnitions = 0, newControls = 0, newStarters = 0;
+            int newDoors = 0, newParts = 0, newBuys = 0, newBolts = 0, newIgnitions = 0, newControls = 0, newStarters = 0, newSpawnContainers = 0;
 
             try
             {
@@ -307,6 +317,27 @@ namespace WinterMP.Core.Sync
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null || _hookedFsms.ContainsKey(fsm)) continue;
+
+                    // TEMP spawn diagnostic: report each grocery-bag-like Use FSM once
+                    // (match result + active state) — placed before the active check so
+                    // an inactive/disabled bag still shows up with active=false.
+                    try
+                    {
+                        if (fsm.FsmName == "Use")
+                        {
+                            string nm = fsm.gameObject.name;
+                            if (nm.IndexOf("shop", StringComparison.OrdinalIgnoreCase) >= 0 && _spawnDiag.Add(nm))
+                            {
+                                bool act = fsm.gameObject.activeInHierarchy;
+                                bool en = fsm.enabled;
+                                var sc = SyncCatalog.TryMatchSpawnContainer(fsm);
+                                string diag = $"bag '{nm}' active={act} enabled={en} match={(sc != null)}";
+                                WinterMPPlugin.Log.LogInfo("WorldSync: " + diag);
+                                Util.BootTrace.Crumb("SPAWN-DIAG " + diag);
+                            }
+                        }
+                    }
+                    catch { }
 
                     try
                     {
@@ -317,6 +348,7 @@ namespace WinterMP.Core.Sync
                         {
                             string[]? states = SyncCatalog.TryMatchDoor(fsm);
                             if (states != null && _fsm.RegisterDoor(fsm, states)) newDoors++;
+                            else if ((states = SyncCatalog.TryMatchSpawnContainer(fsm)) != null && _fsm.RegisterSpawnContainer(fsm, states)) newSpawnContainers++;
                             else
                             {
                                 states = SyncCatalog.TryMatchIgnition(fsm);
@@ -382,12 +414,12 @@ namespace WinterMP.Core.Sync
 
                 int newItems = _items.ScanItems();
                 int newNpcs = _npcTraffic.Scan();
-                if (newDoors > 0 || newParts > 0 || newBuys > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newItems > 0 || newNpcs > 0)
+                if (newDoors > 0 || newParts > 0 || newBuys > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newSpawnContainers > 0 || newItems > 0 || newNpcs > 0)
                 {
                     RecomputeIdHash();
                     WinterMPPlugin.Log.LogInfo(
-                        $"WorldSync: +{newDoors} doors, +{newParts} parts, +{newBuys} buys, +{newBolts} bolts, +{newIgnitions} ignitions, +{newControls} controls, +{newStarters} starters, +{newItems} items, +{newNpcs} npcs — " +
-                        $"now {_fsm.DoorCount}/{_fsm.PartCount}/{_fsm.BuyCount}/{_fsm.BoltCount}/{_fsm.IgnitionCount}/{_fsm.ControlCount}/{_fsm.StarterCount}/{_items.ItemCount}/{_npcTraffic.NpcCount} (id hash {IdHash:X8}).");
+                        $"WorldSync: +{newDoors} doors, +{newSpawnContainers} spawn-containers, +{newParts} parts, +{newBuys} buys, +{newBolts} bolts, +{newIgnitions} ignitions, +{newControls} controls, +{newStarters} starters, +{newItems} items, +{newNpcs} npcs — " +
+                        $"now {_fsm.DoorCount}/{_fsm.SpawnContainerCount}/{_fsm.PartCount}/{_fsm.BuyCount}/{_fsm.BoltCount}/{_fsm.IgnitionCount}/{_fsm.ControlCount}/{_fsm.StarterCount}/{_items.ItemCount}/{_npcTraffic.NpcCount} (id hash {IdHash:X8}).");
                 }
 
                 if (_selfTest && !_readyAnnounced && _fsm.DoorCount > 0)
@@ -603,6 +635,12 @@ namespace WinterMP.Core.Sync
 
             foreach (var climate in _vehicles.BuildJoinClimateSnapshots())
                 yield return climate;
+
+            // After the item snapshot (adoption relies on the joiner having seen the
+            // host-known id set first): re-send this session's spill manifests so a
+            // late joiner materializes container-spawned items it can't ever scan.
+            foreach (var spawn in _items.BuildSpawnReplayManifests())
+                yield return spawn;
         }
 
         public TimeSync? BuildTimeSync() => _timeWeather.BuildMessage();
@@ -645,10 +683,36 @@ namespace WinterMP.Core.Sync
         public void OnHostPurchaseIntent(PurchaseIntent intent) { EnsureSyncReady(); _fsm.OnHostPurchaseIntent(intent); }
 
         public void OnRemoteItemDespawn(ItemDespawn message) { EnsureSyncReady(); _items.OnRemoteItemDespawn(message); }
+        public void OnRemoteItemSpawn(ItemSpawn message) { EnsureSyncReady(); _items.StartGuestSpawnBind(message); }
+        public void OnHostSpawnIntent(SpawnIntent intent) { EnsureSyncReady(); _items.OnHostSpawnIntent(intent); }
+
         public void OnRemoteItemTransform(ItemTransform message) { EnsureSyncReady(); _items.OnRemoteItemTransform(message); }
         public void OnRemoteNpcTransform(NpcTransform message) { EnsureSyncReady(); _npcTraffic.OnRemoteNpcTransform(message); }
         public void OnRemoteItemSnapshot(WorldItemSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemSnapshot(message); }
         public void OnRemoteItemDespawnSnapshot(WorldItemDespawnSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemDespawnSnapshot(message); }
+
+        public void OnRemoteClothingState(PlayerClothingState message) { EnsureSyncReady(); _clothing.OnRemoteClothingState(message); }
+        public void OnRemoteHeatSourceState(HeatSourceState message) { EnsureSyncReady(); _heat.OnRemoteState(message); }
+        public void OnHostHeatSourceIntent(HeatSourceIntent message) { EnsureSyncReady(); _heat.OnHostIntent(message); }
+        public void ForceHeatSourceBroadcast() { EnsureSyncReady(); _heat.ForceBroadcast(); }
+
+        public bool TryGetRemoteClothing(byte playerId, out byte stage, out byte type)
+        {
+            if (!_syncReady) { stage = 0; type = 0; return false; }
+            return _clothing.TryGetClothing(playerId, out stage, out type);
+        }
+
+        public void ForgetRemoteClothing(byte playerId) => _clothing.Forget(playerId);
+
+        // Host -> joining guest: current clothing of every player but the joiner. Clothing
+        // isn't part of the chunked snapshot, so a joiner needs this burst to see already-
+        // dressed players correctly (see ClothingSync.BuildSnapshot).
+        public IEnumerable<PlayerClothingState> BuildClothingSnapshot(byte localPlayerId, byte excludePlayerId)
+        {
+            if (!_syncReady) yield break;
+            foreach (var clothing in _clothing.BuildSnapshot(localPlayerId, excludePlayerId))
+                yield return clothing;
+        }
 
         public void OnRemoteVehicleState(VehicleState message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleState(message); }
         public void OnRemoteVehicleClimate(VehicleClimate message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleClimate(message); }

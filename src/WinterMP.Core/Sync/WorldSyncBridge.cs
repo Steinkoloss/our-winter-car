@@ -71,6 +71,12 @@ namespace WinterMP.Core.Sync
 
         public void RequestObjectState(uint netId) => _owner.RequestObjectState(netId);
 
+        public void StartHostSpawnCapture(uint containerId, string stateName, Vector3 near)
+            => _items.StartHostSpawnCapture(containerId, stateName, near);
+
+        public void StartGuestSpawnOffer(uint containerId, string stateName, Vector3 near)
+            => _items.StartGuestSpawnOffer(containerId, stateName, near);
+
         public bool IsLocalPlayerDriving(SyncedItem item) => _items.IsLocalPlayerDriving(item);
 
         public bool IsLocalPlayerDrivingAny() => _items.IsLocalPlayerDrivingAny();

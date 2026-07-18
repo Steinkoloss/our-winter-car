@@ -198,6 +198,7 @@ namespace WinterMP.Net.Tests
                 HeaterDirection = 128,
                 Fog = 150,
                 CabinTemp = 96,
+                Ice = 233,
             };
 
             var decoded = Assert.IsType<VehicleClimate>(PacketCodec.Decode(PacketCodec.Encode(original)));
@@ -213,6 +214,7 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.HeaterDirection, decoded.HeaterDirection);
             Assert.Equal(original.Fog, decoded.Fog);
             Assert.Equal(original.CabinTemp, decoded.CabinTemp);
+            Assert.Equal(original.Ice, decoded.Ice);
         }
 
         [Fact]
@@ -297,6 +299,103 @@ namespace WinterMP.Net.Tests
             var original = new ItemDespawn { ItemId = 0xAABBCCDD };
             var decoded = Assert.IsType<ItemDespawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.ItemId, decoded.ItemId);
+        }
+
+        [Fact]
+        public void ItemSpawn_RoundTrips()
+        {
+            var original = new ItemSpawn
+            {
+                ContainerNetId = 0x0BADF00D,
+                Epoch = 42,
+                OwnerPlayerId = 1,
+                StateName = "Spawn all",
+                Flags = ItemSpawn.FlagReplay,
+                OfferSequence = 17,
+            };
+            original.Items.Add(new ItemSpawn.Entry
+            {
+                NetId = 0x11112222,
+                TemplateName = "potato chips(itemx)",
+                Position = new NetVector3(1.5f, 2.25f, -3.75f),
+                Rotation = new NetQuaternion(0f, 0.7071f, 0f, 0.7071f),
+            });
+            original.Items.Add(new ItemSpawn.Entry
+            {
+                NetId = 0x33334444,
+                TemplateName = "sausages(itemx)",
+                Position = new NetVector3(-9f, 0.1f, 4f),
+                Rotation = NetQuaternion.Identity,
+            });
+
+            var decoded = Assert.IsType<ItemSpawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.ContainerNetId, decoded.ContainerNetId);
+            Assert.Equal(original.Epoch, decoded.Epoch);
+            Assert.Equal(original.OwnerPlayerId, decoded.OwnerPlayerId);
+            Assert.Equal(original.StateName, decoded.StateName);
+            Assert.Equal(original.Items.Count, decoded.Items.Count);
+            Assert.Equal(original.Items[0].NetId, decoded.Items[0].NetId);
+            Assert.Equal(original.Items[0].TemplateName, decoded.Items[0].TemplateName);
+            Assert.Equal(original.Items[0].Position.Z, decoded.Items[0].Position.Z);
+            Assert.Equal(original.Items[1].NetId, decoded.Items[1].NetId);
+            Assert.Equal(original.Items[1].TemplateName, decoded.Items[1].TemplateName);
+            Assert.Equal(original.Items[1].Rotation.W, decoded.Items[1].Rotation.W);
+            Assert.Equal(original.Flags, decoded.Flags);
+            Assert.True(decoded.IsReplay);
+            Assert.Equal(original.OfferSequence, decoded.OfferSequence);
+        }
+
+        [Fact]
+        public void ItemSpawn_EmptyManifest_RoundTrips()
+        {
+            var original = new ItemSpawn { ContainerNetId = 7, Epoch = 1, StateName = "Spawn one" };
+            var decoded = Assert.IsType<ItemSpawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.ContainerNetId, decoded.ContainerNetId);
+            Assert.Empty(decoded.Items);
+        }
+
+        [Fact]
+        public void SpawnIntent_RoundTrips()
+        {
+            var original = new SpawnIntent
+            {
+                PlayerId = 3,
+                ContainerNetId = 0x0BADF00D,
+                StateName = "Spawn all",
+                Sequence = 9,
+            };
+            original.Items.Add(new SpawnIntent.Entry
+            {
+                TemplateName = "sausages(itemx)",
+                Position = new NetVector3(1.5f, 0.25f, -3f),
+                Rotation = new NetQuaternion(0f, 0.7071f, 0f, 0.7071f),
+            });
+            original.Items.Add(new SpawnIntent.Entry
+            {
+                TemplateName = "pizza(itemx)",
+                Position = new NetVector3(-8f, 12f, 44.5f),
+                Rotation = NetQuaternion.Identity,
+            });
+
+            var decoded = Assert.IsType<SpawnIntent>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.PlayerId, decoded.PlayerId);
+            Assert.Equal(original.ContainerNetId, decoded.ContainerNetId);
+            Assert.Equal(original.StateName, decoded.StateName);
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.Equal(2, decoded.Items.Count);
+            Assert.Equal(original.Items[0].TemplateName, decoded.Items[0].TemplateName);
+            Assert.Equal(original.Items[0].Position.Z, decoded.Items[0].Position.Z);
+            Assert.Equal(original.Items[1].TemplateName, decoded.Items[1].TemplateName);
+            Assert.Equal(original.Items[1].Rotation.W, decoded.Items[1].Rotation.W);
+        }
+
+        [Fact]
+        public void SpawnIntent_EmptyItems_RoundTrips()
+        {
+            var original = new SpawnIntent { PlayerId = 1, ContainerNetId = 42, StateName = "Spawn one", Sequence = 2 };
+            var decoded = Assert.IsType<SpawnIntent>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.Sequence, decoded.Sequence);
+            Assert.Empty(decoded.Items);
         }
 
         [Fact]
@@ -417,6 +516,9 @@ namespace WinterMP.Net.Tests
                 Fatigue = 88f,
                 Thirst = 40f,
                 Urine = 5f,
+                BodyTemp = 36.6f,
+                Stress = 42f,
+                Drunk = 3.7f,
             };
             var decoded = Assert.IsType<GuestSpawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.HostPosition.X, decoded.HostPosition.X, 3);
@@ -425,6 +527,9 @@ namespace WinterMP.Net.Tests
             Assert.True(decoded.HasSavedNeeds);
             Assert.Equal(original.Hunger, decoded.Hunger, 3);
             Assert.Equal(original.Urine, decoded.Urine, 3);
+            Assert.Equal(original.BodyTemp, decoded.BodyTemp, 3);
+            Assert.Equal(original.Stress, decoded.Stress, 3);
+            Assert.Equal(original.Drunk, decoded.Drunk, 3);
         }
 
         [Fact]
@@ -437,12 +542,18 @@ namespace WinterMP.Net.Tests
                 Fatigue = 20f,
                 Thirst = 30f,
                 Urine = 40f,
+                BodyTemp = 50f,
+                Stress = 60f,
+                Drunk = 4.2f,
                 Sequence = 7,
             };
             var decoded = Assert.IsType<PlayerNeedsReport>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.PlayerId, decoded.PlayerId);
             Assert.Equal(original.Sequence, decoded.Sequence);
             Assert.Equal(original.Thirst, decoded.Thirst, 3);
+            Assert.Equal(original.BodyTemp, decoded.BodyTemp, 3);
+            Assert.Equal(original.Stress, decoded.Stress, 3);
+            Assert.Equal(original.Drunk, decoded.Drunk, 3);
         }
 
         [Fact]
@@ -490,6 +601,39 @@ namespace WinterMP.Net.Tests
             };
             var decodedRespawn = Assert.IsType<PlayerRespawn>(PacketCodec.Decode(PacketCodec.Encode(respawn)));
             Assert.Equal(respawn.Position.Y, decodedRespawn.Position.Y, 3);
+        }
+
+        [Fact]
+        public void DeathCause_ValuesAreWireStable()
+        {
+            // Cause bytes are append-only wire contract — reordering or reuse would make
+            // peers display the wrong death. Pin every value.
+            Assert.Equal(0, DeathCause.Unknown);
+            Assert.Equal(1, DeathCause.Fatigue);
+            Assert.Equal(2, DeathCause.Hunger);
+            Assert.Equal(3, DeathCause.Thirst);
+            Assert.Equal(4, DeathCause.Urine);
+            Assert.Equal(5, DeathCause.Stress);
+            Assert.Equal(6, DeathCause.RunOver);
+            Assert.Equal(7, DeathCause.Drown);
+            Assert.Equal(8, DeathCause.Fire);
+            Assert.Equal(9, DeathCause.Electrocute);
+            Assert.Equal(10, DeathCause.Hypothermia);
+            Assert.Equal(11, DeathCause.Murder);
+            Assert.Equal(12, DeathCause.Train);
+            Assert.Equal(13, DeathCause.Accident);
+            Assert.Equal(14, DeathCause.Sewage);
+            Assert.Equal(15, DeathCause.Carbon);
+            Assert.Equal(16, DeathCause.Pto);
+            Assert.Equal(17, DeathCause.CutterBlade);
+            Assert.Equal(18, DeathCause.InJail);
+            Assert.Equal(19, DeathCause.PissTv);
+            Assert.Equal(20, DeathCause.Burn);
+            Assert.Equal(21, DeathCause.Smoking);
+
+            var report = new PlayerDeathReport { PlayerId = 5, Cause = DeathCause.Carbon, Sequence = 2 };
+            var decoded = Assert.IsType<PlayerDeathReport>(PacketCodec.Decode(PacketCodec.Encode(report)));
+            Assert.Equal(DeathCause.Carbon, decoded.Cause);
         }
 
         [Fact]

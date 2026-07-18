@@ -110,26 +110,32 @@ namespace WinterMP.Core.Sync
             {
                 if (!item.IsVehicle || item.Body == null) continue;
                 EnsureClimateProbe(item);
-                if (!ShouldStreamVehicleClimate(item, now)) continue;
+                if (!ShouldStreamVehicleClimate(item)) continue;
                 SendVehicleClimate(session, item, now);
             }
         }
 
-        private bool ShouldStreamVehicleClimate(SyncedItem item, float now)
+        private bool ShouldStreamVehicleClimate(SyncedItem item)
         {
+            // Whoever is actively operating or occupying the car is its live climate
+            // authority (a guest driving their own car, or the host driving).
             if (item.LocallyOwned || HasLocalIgnitionActivity(item)) return true;
 
             var passenger = PassengerController.Instance;
             if (passenger != null && passenger.IsLocalSeatedInVehicle(item.Id))
                 return true;
 
-            // Parked frost still matters to anyone standing near the car.
-            if (now - item.LastRemoteAt < ItemTransformPolicy.GetRemoteHoldSeconds(item.RemoteIsDriver, item.RemoteVehicleStream)) return false;
-            _bridge.FindLocalPlayer();
-            if (_bridge.LocalPlayer == null || item.Body == null) return false;
+            // A remote player owns/drives it — mirror them, never fight their stream.
+            if (item.RemoteOwner != WorldSyncIds.NoOwner) return false;
 
-            float distSq = (_bridge.LocalPlayer.position - item.Body.transform.position).sqrMagnitude;
-            return distSq <= item.ClaimRadius * item.ClaimRadius;
+            // Nobody owns it (parked). Frost/fog is slow world state like weather, and
+            // the game re-simulates it locally on every machine — so if it free-runs
+            // unsynced the two windshields drift apart and one player's car ends up
+            // permanently clear while the other keeps frosting. Make the HOST the
+            // standing climate authority for every unowned car, even parked and far
+            // away; guests just mirror it. (Old behaviour only streamed within 7 m, so
+            // a car parked away from both players desynced — the reported bug.)
+            return _bridge.Session != null && _bridge.Session.IsHost;
         }
 
         public VehicleClimate? TryBuildVehicleClimate(SyncedItem item)
@@ -156,7 +162,8 @@ namespace WinterMP.Core.Sync
                 HeaterBlower = QuantizeHeater(ReadHeaterBlower(item), HeaterBlowerMax),
                 HeaterDirection = QuantizeHeater(ReadHeaterDirection(item), HeaterDirectionMax),
                 Fog = QuantizeFrost(ReadFog(item)),
-                CabinTemp = QuantizeHeater(ReadCabinTemp(item), CabinTempMaxC),
+                CabinTemp = QuantizeRange(ReadCabinTemp(item), CabinTempMinC, CabinTempMaxC),
+                Ice = QuantizeFrost(ReadIce(item)),
             };
         }
 
@@ -178,6 +185,17 @@ namespace WinterMP.Core.Sync
                     $"WorldSync: streaming '{item.Path}' climate — frost={message.Frost} fog={message.Fog} " +
                     $"cabin={message.CabinTemp} heater={message.HeaterTemp}/{message.HeaterBlower}/{message.HeaterDirection} " +
                     $"flags=0x{message.Flags:X2}.");
+            }
+
+            if (now >= item.NextClimateDiagAt)
+            {
+                item.NextClimateDiagAt = now + ClimateDiagIntervalSeconds;
+                float liveCut = item.CutoffWindshieldVar != null ? item.CutoffWindshieldVar.Value : -1f;
+                float liveFrostVar = item.FrostVar != null ? item.FrostVar.Value : -1f;
+                bool host = _bridge.Session != null && _bridge.Session.IsHost;
+                WinterMPPlugin.Log.LogInfo(
+                    $"ClimateDiag SEND '{item.Path}' host={host} owned={item.LocallyOwned} remoteOwner={item.RemoteOwner} " +
+                    $"sentFrost={message.Frost} sentFog={message.Fog} liveFrostVar={liveFrostVar:F3} liveCutWS={liveCut:F3} flags=0x{message.Flags:X2}");
             }
 
             session.SendWorldMessage(message, Channel.UnreliableSequenced);
@@ -221,6 +239,7 @@ namespace WinterMP.Core.Sync
             bool windowHeaterChanged = windowHeater != item.RemoteWindowHeater;
 
             item.RemoteFrost = message.Frost;
+            item.RemoteIce = message.Ice;
             item.RemoteFog = message.Fog;
             item.RemoteCabinTemp = message.CabinTemp;
             item.RemotePlayerIn = message.PlayerIn;
@@ -256,6 +275,22 @@ namespace WinterMP.Core.Sync
             EnsureClimateProbe(item);
             if (!item.ClimateReady) return;
 
+            if (now >= item.NextClimateDiagAt)
+            {
+                item.NextClimateDiagAt = now + ClimateDiagIntervalSeconds;
+                float liveCut = item.CutoffWindshieldVar != null ? item.CutoffWindshieldVar.Value : -1f;
+                float liveFrostVar = item.FrostVar != null ? item.FrostVar.Value : -1f;
+                float wantFrost = DequantizeFrost(item.RemoteFrost);
+                // pre* = what the car's own Freezing/GlassFrosting FSM left the value at
+                // since our last write. If pre* keeps drifting away from want*, the local
+                // FSM is fighting the stream (needs suppression); if pre* ~= want* but the
+                // two machines still differ, the sender is reading a different frost.
+                WinterMPPlugin.Log.LogInfo(
+                    $"ClimateDiag APPLY '{item.Path}' owned={item.LocallyOwned} remoteOwner={item.RemoteOwner} " +
+                    $"wantFrost={wantFrost:F3}({item.RemoteFrost}) preFrostVar={liveFrostVar:F3} preCutWS={liveCut:F3} " +
+                    $"streamLiveFor={item.RemoteClimateUntil - now:F1}s");
+            }
+
             ApplyRemoteClimatePresentation(item);
 
             bool defrostActive = item.RemoteWindowHeater || item.RemoteGlassDefrosting;
@@ -280,13 +315,17 @@ namespace WinterMP.Core.Sync
         private static void ApplyRemoteClimatePresentation(SyncedItem item)
         {
             float frost = DequantizeFrost(item.RemoteFrost);
+            float ice = DequantizeFrost(item.RemoteIce);
             float fog = DequantizeFrost(item.RemoteFog);
-            float cabinTemp = DequantizeHeater(item.RemoteCabinTemp, CabinTempMaxC);
+            float cabinTemp = DequantizeRange(item.RemoteCabinTemp, CabinTempMinC, CabinTempMaxC);
 
             ApplyRemoteFrostLevel(item, frost);
+            ApplyRemoteIceLevel(item, ice);
             ApplyRemoteFogLevel(item, fog, cabinTemp, item.RemotePlayerIn);
         }
 
+        // Interior glass frost: the GlassFrosting amount + its material. Deliberately does NOT
+        // touch the exterior Cutoff* windows — those are the Ice channel (ApplyRemoteIceLevel).
         private static void ApplyRemoteFrostLevel(SyncedItem item, float frost)
         {
             if (item.FrostVar != null)
@@ -299,14 +338,19 @@ namespace WinterMP.Core.Sync
                 item.FrostColorVar.Value = color;
             }
 
-            WriteCutoff(item.CutoffWindshieldVar, frost);
-            WriteCutoff(item.CutoffSideLeftVar, frost);
-            WriteCutoff(item.CutoffSideRightVar, frost);
-            WriteCutoff(item.CutoffDoorLeftVar, frost);
-            WriteCutoff(item.CutoffDoorRightVar, frost);
-            WriteCutoff(item.CutoffRearVar, frost);
-
             ApplyFrostGlassMaterial(item, fog: -1f, frost: frost);
+        }
+
+        // Exterior window ice: the per-window Freezing cutoffs, applied uniformly from the Ice
+        // channel so it stays independent of the interior frost above.
+        private static void ApplyRemoteIceLevel(SyncedItem item, float ice)
+        {
+            WriteCutoff(item.CutoffWindshieldVar, ice);
+            WriteCutoff(item.CutoffSideLeftVar, ice);
+            WriteCutoff(item.CutoffSideRightVar, ice);
+            WriteCutoff(item.CutoffDoorLeftVar, ice);
+            WriteCutoff(item.CutoffDoorRightVar, ice);
+            WriteCutoff(item.CutoffRearVar, ice);
         }
 
         private static void ApplyRemoteFogLevel(SyncedItem item, float fog, float cabinTemp, bool playerIn)
@@ -500,13 +544,16 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        private static float ReadFrost(SyncedItem item)
-        {
-            float frost = item.FrostVar != null ? item.FrostVar.Value : 0f;
-            if (item.CutoffWindshieldVar != null)
-                frost = Mathf.Max(frost, item.CutoffWindshieldVar.Value);
-            return frost;
-        }
+        // Interior glass frost only (GlassFrosting.Frost). Kept separate from exterior ice
+        // (see ReadIce): a parked cold car is iced outside yet clear inside, and the old
+        // Mathf.Max collapsed the two so observers force-frosted the interior to the ice level.
+        private static float ReadFrost(SyncedItem item) =>
+            item.FrostVar != null ? item.FrostVar.Value : 0f;
+
+        // Exterior window ice (Freezing.CutoffWindshield), representative of the Cutoff*
+        // windows (the receiver applies them uniformly).
+        private static float ReadIce(SyncedItem item) =>
+            item.CutoffWindshieldVar != null ? item.CutoffWindshieldVar.Value : 0f;
 
         private static float ReadFog(SyncedItem item)
         {
@@ -617,6 +664,16 @@ namespace WinterMP.Core.Sync
         }
 
         private static float DequantizeHeater(byte wire, float max) => wire / 255f * max;
+
+        private static byte QuantizeRange(float value, float min, float max)
+        {
+            float span = max - min;
+            if (span <= 0f) return 0;
+            return (byte)Mathf.Clamp(Mathf.RoundToInt((Mathf.Clamp(value, min, max) - min) / span * 255f), 0, 255);
+        }
+
+        private static float DequantizeRange(byte wire, float min, float max) =>
+            min + wire / 255f * (max - min);
 
         private static void WriteHeaterValue(
             HutongGames.PlayMaker.FsmFloat? primary,

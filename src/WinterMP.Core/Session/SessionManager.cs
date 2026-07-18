@@ -485,6 +485,7 @@ namespace WinterMP.Core.Session
             _joinBrowseActive = false;
             _guestSlotsBySteam.Clear();
             ConnectionQuality.Instance.Reset();
+            NetTrafficMeter.Instance.Reset();
             SetState(SessionState.Idle, "Idle");
         }
 
@@ -559,6 +560,7 @@ namespace WinterMP.Core.Session
             _devClient?.Update();
 
             ConnectionQuality.Instance.TickWindow(Time.unscaledTime);
+            NetTrafficMeter.Instance.Tick(Time.unscaledTime, _playersByPeer.Count);
             PollTransportQuality();
 
             if (State == SessionState.Hosting || State == SessionState.Connected)
@@ -686,6 +688,8 @@ namespace WinterMP.Core.Session
 
         private void OnPacketReceived(PeerId peer, byte[] payload, Channel channel)
         {
+            NetTrafficMeter.Instance.RecordReceived(payload.Length);
+
             IMessage message;
             try
             {
@@ -807,6 +811,12 @@ namespace WinterMP.Core.Session
                     Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn);
                     break;
 
+                case PlayerClothingState clothingState:
+                    Sync.WorldSyncManager.Instance?.OnRemoteClothingState(clothingState);
+                    if (IsHost)
+                        Broadcast(clothingState, Channel.ReliableOrdered, except: peer);
+                    break;
+
                 case FsmStateEnter stateEnter:
                     Sync.WorldSyncManager.Instance?.OnRemoteStateEnter(stateEnter);
                     if (IsHost)
@@ -835,6 +845,14 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteItemDespawn(itemDespawn);
                     if (IsHost)
                         Broadcast(itemDespawn, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case ItemSpawn itemSpawn when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteItemSpawn(itemSpawn);
+                    break;
+
+                case SpawnIntent spawnIntent when IsHost:
+                    Sync.WorldSyncManager.Instance?.OnHostSpawnIntent(spawnIntent);
                     break;
 
                 case ItemTransform itemTransform:
@@ -887,6 +905,14 @@ namespace WinterMP.Core.Session
 
                 case PurchaseIntent purchaseIntent when IsHost:
                     Sync.WorldSyncManager.Instance?.OnHostPurchaseIntent(purchaseIntent);
+                    break;
+
+                case HeatSourceState heatState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteHeatSourceState(heatState);
+                    break;
+
+                case HeatSourceIntent heatIntent when IsHost:
+                    Sync.WorldSyncManager.Instance?.OnHostHeatSourceIntent(heatIntent);
                     break;
 
                 case WorldSnapshotRequest snapshotRequest when IsHost:
@@ -1048,7 +1074,20 @@ namespace WinterMP.Core.Session
             {
                 SendTo(peer, BuildGuestSpawn(joining), Channel.ReliableOrdered);
                 messages++;
+
+                // Clothing is change-only and not in the chunked snapshot; send the joiner
+                // every other player's current outfit so already-dressed players don't render
+                // in default clothing (wrong warmth tier + visual) until each next changes.
+                foreach (var clothing in world.BuildClothingSnapshot(LocalPlayerId, joining.PlayerId))
+                {
+                    SendTo(peer, clothing, Channel.ReliableOrdered);
+                    messages++;
+                }
             }
+
+            // Heat sources ride the periodic HeatSourceState stream, not snapshot chunks;
+            // force a full re-broadcast so the joiner isn't cold until the 20 s keepalive.
+            world.ForceHeatSourceBroadcast();
 
             WinterMPPlugin.Log.LogInfo($"Sent world snapshot to {peer} ({messages} messages).");
         }
@@ -1103,6 +1142,9 @@ namespace WinterMP.Core.Session
                 offer.Fatigue = needs.Fatigue;
                 offer.Thirst = needs.Thirst;
                 offer.Urine = needs.Urine;
+                offer.BodyTemp = needs.BodyTemp;
+                offer.Stress = needs.Stress;
+                offer.Drunk = needs.Drunk;
                 offer.Flags |= GuestSpawn.FlagHasSavedNeeds;
             }
 
@@ -1121,6 +1163,9 @@ namespace WinterMP.Core.Session
                     Fatigue = report.Fatigue,
                     Thirst = report.Thirst,
                     Urine = report.Urine,
+                    BodyTemp = report.BodyTemp,
+                    Stress = report.Stress,
+                    Drunk = report.Drunk,
                     Valid = true,
                 });
                 return;
@@ -1334,7 +1379,9 @@ namespace WinterMP.Core.Session
         {
             if (_transport == null) return;
             PacketCodec.Encode(message, _sendWriter);
-            _transport.Send(peer, _sendWriter.ToArray(), channel);
+            var payload = _sendWriter.ToArray();
+            NetTrafficMeter.Instance.RecordSent(channel, payload.Length);
+            _transport.Send(peer, payload, channel);
         }
 
         private void Broadcast(IMessage message, Channel channel, PeerId? except = null)
@@ -1345,6 +1392,7 @@ namespace WinterMP.Core.Session
             foreach (var peer in _playersByPeer.Keys)
             {
                 if (except.HasValue && peer == except.Value) continue;
+                NetTrafficMeter.Instance.RecordSent(channel, payload.Length);
                 _transport.Send(peer, payload, channel);
             }
         }

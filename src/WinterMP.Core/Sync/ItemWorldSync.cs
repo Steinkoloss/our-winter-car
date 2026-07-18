@@ -37,6 +37,11 @@ namespace WinterMP.Core.Sync
             _sessionDespawnedItems.Clear();
             _pendingDespawnedItems.Clear();
             _cargoCandidates.Clear();
+            _pendingSpawns.Clear();
+            _handledSpawns.Clear();
+            _hostSpawnManifests.Clear();
+            _snapshotSeenIds.Clear();
+            _spawnEpochs.Clear();
         }
 
         internal void ReleaseSession()
@@ -73,6 +78,24 @@ namespace WinterMP.Core.Sync
 
             _pendingItemPoses.Clear();
             _pendingDespawnedItems.Clear();
+
+            // Spawn bookkeeping is session-scoped: a restarted host re-mints from
+            // epoch 1, so a surviving _handledSpawns would drop its first manifests
+            // as "duplicates" (same container, same epoch, same hashed ids), and a
+            // stale _snapshotSeenIds would poison the steal-soundness test on the
+            // next join. Parked capture/offer clones go back to the scanner.
+            foreach (var pending in _pendingSpawns)
+            {
+                foreach (var body in pending.Captured)
+                {
+                    if (body != null) _trackedBodies.Remove(body);
+                }
+            }
+            _pendingSpawns.Clear();
+            _handledSpawns.Clear();
+            _hostSpawnManifests.Clear();
+            _snapshotSeenIds.Clear();
+            _spawnEpochs.Clear();
         }
     }
 }

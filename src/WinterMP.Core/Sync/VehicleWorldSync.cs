@@ -36,12 +36,18 @@ namespace WinterMP.Core.Sync
         private const float HeaterTempMax = 30f;
         private const float HeaterBlowerMax = 4f;
         private const float HeaterDirectionMax = 4f;
+        /// <summary>Cabin/glass temp can read well below zero on a cold parked car — clamping
+        /// it to [0, max] like the heater-knob settings would floor every unheated car at 0°C
+        /// on observers (same divergence class as the pre-v28 frost/ice merge bug).</summary>
+        private const float CabinTempMinC = -40f;
         private const float CabinTempMaxC = 40f;
         private const float CoolantTempMaxC = 120f;
         private const float ClimateProbeIntervalSeconds = 3f;
         /// <summary>Keep pushing frost/defrost visuals after the last climate packet.</summary>
         private const float ClimateHoldSeconds = 3f;
         private const float DefrostPulseSeconds = 0.5f;
+        /// <summary>Throttle for the climate desync diagnostic trace (temporary).</summary>
+        private const float ClimateDiagIntervalSeconds = 2f;
         /// <summary>Remote engine audio stops when no state arrived for this long.</summary>
         private const float EngineAudioHoldSeconds = 2f;
         private const float EnginePitchBase = 0.55f;
@@ -57,11 +63,18 @@ namespace WinterMP.Core.Sync
         private const float FuelTankDefaultLiters = 30f;
 
         /// <summary>Host broadcasts the clock/weather this often (drift is slow).</summary>
-        internal void LateUpdateClimate(float now)
+        internal void LateUpdateRemoteVehicles(float now)
         {
             foreach (var item in _items.Items.Values)
             {
                 if (!item.IsVehicle || item.LocallyOwned || item.Body == null) continue;
+
+                // Spin the wheels of any car under a live remote stream (driven or pushed) so
+                // it stops skating on frozen tires. Independent of the climate hold below,
+                // which gates on climate packets; a still car self-limits (zero displacement).
+                if (item.RemoteOwner != WorldSyncIds.NoOwner)
+                    RollRemoteWheels(item);
+
                 if (now >= item.RemoteClimateUntil) continue;
                 UpdateRemoteClimatePresentation(item, now);
             }
@@ -138,7 +151,7 @@ namespace WinterMP.Core.Sync
                 {
                     frost = QuantizeFrost(ReadFrost(item));
                     fog = QuantizeFrost(ReadFog(item));
-                    cabinTemp = QuantizeHeater(ReadCabinTemp(item), CabinTempMaxC);
+                    cabinTemp = QuantizeRange(ReadCabinTemp(item), CabinTempMinC, CabinTempMaxC);
                 }
 
                 return true;

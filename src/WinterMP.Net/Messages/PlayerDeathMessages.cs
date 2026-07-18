@@ -17,6 +17,17 @@ namespace WinterMP.Net.Messages
         public const byte Murder = 11;
         public const byte Train = 12;
         public const byte Accident = 13;
+        // Appended with v32 (append-only; values are wire-stable). These match the
+        // remaining cause bools on the game's death FSM so sewage/tractor/monoxide/...
+        // deaths stop reporting as "unknown".
+        public const byte Sewage = 14;
+        public const byte Carbon = 15;
+        public const byte Pto = 16;
+        public const byte CutterBlade = 17;
+        public const byte InJail = 18;
+        public const byte PissTv = 19;
+        public const byte Burn = 20;
+        public const byte Smoking = 21;
     }
 
     public static class PlayerDeathEventFlags

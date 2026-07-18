@@ -31,7 +31,28 @@ namespace WinterMP.Net
         // v27: VehicleCargo (62) — live vehicle-local cargo pose streaming replaces the
         //      kinematic cargo weld; ItemTransform gains optional velocity (FlagHasVelocity)
         //      for receiver-side dead reckoning of moving vehicles.
-        public const ushort Version = 27;
+        // v28: M7 winter survival — PlayerNeedsReport gains BodyTemp (5th need);
+        //      PlayerClothingState (32) syncs worn clothing; HeatSourceState (50) +
+        //      HeatSourceIntent (51) make home heat sources host-owned shared state;
+        //      VehicleClimate (61) gains Ice — exterior window ice split from interior
+        //      frost so parked cold cars stop force-frosting observers' interiors.
+        // v29: ItemSpawn (52) + SpawnIntent (53) — host-authoritative grocery-bag
+        //      content spawning: host mints net ids for container-spawned clones and
+        //      broadcasts the manifest; guests route their own bag opens via the host.
+        // v30: PlayerNeedsReport + GuestSpawn gain Stress (global need float) and
+        //      Drunk (FPSCamera "Drunk Mode" DrunkCurrent) — synced + persisted so a
+        //      rejoining guest keeps intoxication/stress instead of resetting sober.
+        // v31: ItemSpawn gains trailing Flags (bit 0 = replay). The host re-sends
+        //      live-refreshed spill manifests with the join snapshot; the replay bit
+        //      tells the joiner to adopt/instantiate from scene templates instead of
+        //      firing a local bag (which would spend an unrelated unopened one).
+        // v32: SpawnIntent gains Items (name + pose per spilled clone) and ItemSpawn
+        //      gains OfferSequence (echoes the answered offer). Bag spills are
+        //      captured by the peer that opened the bag; every other peer
+        //      materializes from the manifest. No peer fires another peer's bag
+        //      FSM anymore (its player-interaction checks made that impossible).
+        //      DeathCause values 14-21 (sewage..smoking) also land with this bump.
+        public const ushort Version = 32;
     }
 
     /// <summary>

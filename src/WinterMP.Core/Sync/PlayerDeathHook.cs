@@ -188,6 +188,14 @@ namespace WinterMP.Core.Sync
             if (TryBool(fsm, "Murder")) return DeathCause.Murder;
             if (TryBool(fsm, "Train")) return DeathCause.Train;
             if (TryBool(fsm, "Crash")) return DeathCause.Accident;
+            if (TryBool(fsm, "Sewage")) return DeathCause.Sewage;
+            if (TryBool(fsm, "Carbon")) return DeathCause.Carbon;
+            if (TryBool(fsm, "PTO")) return DeathCause.Pto;
+            if (TryBool(fsm, "CutterBlade")) return DeathCause.CutterBlade;
+            if (TryBool(fsm, "InJail")) return DeathCause.InJail;
+            if (TryBool(fsm, "PissTV")) return DeathCause.PissTv;
+            if (TryBool(fsm, "Burn")) return DeathCause.Burn;
+            if (TryBool(fsm, "Smoking")) return DeathCause.Smoking;
             return DeathCause.Unknown;
         }
 

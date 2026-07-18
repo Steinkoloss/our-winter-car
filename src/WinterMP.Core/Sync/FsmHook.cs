@@ -51,12 +51,28 @@ namespace WinterMP.Core.Sync
             var state = FindState(fsm, stateName);
             if (state == null) return false;
 
-            var actions = state.Actions ?? new FsmStateAction[0];
-            var expanded = new FsmStateAction[actions.Length + 1];
-            expanded[0] = new FsmHookAction(callback);
-            Array.Copy(actions, 0, expanded, 1, actions.Length);
-            state.Actions = expanded;
-            return true;
+            try
+            {
+                // Reading state.Actions lazy-loads the FSM's ActionData, which needs the
+                // state's back-ref to its Fsm. On an FSM that hasn't initialized yet
+                // (e.g. hooked via Transform.Find on an inactive object — state.Fsm == null)
+                // that throws deep inside PlayMaker. Swallow it and report "not hooked" so
+                // the caller retries once the FSM Awakes, instead of letting the NRE escape
+                // and trip WorldSyncManager's shared kill switch (which disables ALL world
+                // sync, vehicles included).
+                var actions = state.Actions ?? new FsmStateAction[0];
+                var expanded = new FsmStateAction[actions.Length + 1];
+                expanded[0] = new FsmHookAction(callback);
+                Array.Copy(actions, 0, expanded, 1, actions.Length);
+                state.Actions = expanded;
+                return true;
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug(
+                    $"FsmHook: state '{stateName}' on '{fsm.FsmName}' not ready to hook: {e.Message}");
+                return false;
+            }
         }
 
         /// <summary>"Open door" → "MP_OPEN_DOOR" — never collides with the game's own event names.</summary>

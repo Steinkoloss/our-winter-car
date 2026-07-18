@@ -36,6 +36,11 @@ namespace WinterMP.Core.Sync
             int applied = 0, parked = 0;
             foreach (var entry in message.Entries)
             {
+                // Remember every id the host proved it knows: spawn-manifest adoption
+                // uses "tracked here but never in a host snapshot" to spot stale clones
+                // left over from a previous connection (see MaterializeSpawnEntry).
+                _snapshotSeenIds.Add(entry.ItemId);
+
                 var position = entry.Position.ToUnity();
                 var rotation = entry.Rotation.ToUnity();
 

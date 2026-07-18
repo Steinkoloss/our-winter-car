@@ -61,11 +61,21 @@ namespace WinterMP.Core.Sync
         {
             var session = SessionManager.Instance;
             if (session == null) return;
-            if (session.State != SessionState.Hosting && session.State != SessionState.Connected) return;
+            if (session.State != SessionState.Hosting && session.State != SessionState.Connected)
+            {
+                // Between sessions. The next connection may be a different host (or the
+                // same host with permadeath toggled), so the one-shot flag must re-arm —
+                // this component lives on the persistent plugin root and outlives sessions.
+                _permadeathApplied = false;
+                return;
+            }
 
             try
             {
                 _deathHook.Probe(session);
+                // Retried here (idempotent) because the loopback dev flow connects with no
+                // scene change afterwards, so OnSceneChanged alone would never apply it.
+                TryApplyGuestPermadeath();
                 PollRespawn(session);
             }
             catch (Exception e)
@@ -200,7 +210,14 @@ namespace WinterMP.Core.Sync
             if (!_respawnWatchScheduled || session.PermanentDeathEnabled) return;
             if (Time.unscaledTime > _respawnWatchUntil)
             {
+                // Watch expired without the death FSM ever idling (patched FSM or a missed
+                // idle window). Report the respawn anyway: leaving the hook flagged "dead"
+                // would silently drop every FUTURE death report from this player, and the
+                // next real death re-marks us dead if this guess is wrong.
                 _respawnWatchScheduled = false;
+                session.SetPlayerDead(session.LocalPlayerId, dead: false);
+                _deathHook.NotifyRespawned(session);
+                WinterMPPlugin.Log.LogWarning("DeathSync: respawn watch timed out — reported respawn anyway.");
                 return;
             }
 
@@ -294,11 +311,14 @@ namespace WinterMP.Core.Sync
 
         private static void ClearCauseBools(PlayMakerFSM fsm)
         {
+            // Full BoolVariables set of Systems/Death :: Activate Dead Body (dump-23268598) —
+            // a stale bool left over from an earlier local death would misroute the wipe screen.
             string[] names =
             {
                 "Fatigue", "Hunger", "Thirst", "Urine", "Stress", "RunOver", "RunOverRally",
                 "Drown", "DrunkDrown", "Fire", "Gasolinefire", "Electrocute", "Hypothermia",
-                "Murder", "Train", "Crash",
+                "Murder", "Train", "Crash", "Sewage", "Carbon", "PTO", "CutterBlade",
+                "InJail", "PissTV", "Burn", "Smoking",
             };
 
             for (int i = 0; i < names.Length; i++)
@@ -309,6 +329,10 @@ namespace WinterMP.Core.Sync
             }
         }
 
+        // Events are State 3's transition set (dump-23268598). State 3 has no crash/vehicle
+        // transition (the CORRIS/FITTAN/... events enter elsewhere), so Accident approximates
+        // as RUNOVER — the closest vehicular death screen reachable from here. Burn has a
+        // cause bool but no event of its own → FIRE. Smoking has neither → default.
         private static string CauseToEvent(byte cause)
         {
             switch (cause)
@@ -324,6 +348,14 @@ namespace WinterMP.Core.Sync
                 case DeathCause.Hypothermia: return "HYPOTHERMIA";
                 case DeathCause.Murder: return "MURDER";
                 case DeathCause.Train: return "TRAIN";
+                case DeathCause.Accident: return "RUNOVER";
+                case DeathCause.Sewage: return "SEWAGE";
+                case DeathCause.Carbon: return "CARBON";
+                case DeathCause.Pto: return "PTO";
+                case DeathCause.CutterBlade: return "CUTTERBLADE";
+                case DeathCause.InJail: return "INJAIL";
+                case DeathCause.PissTv: return "TV";
+                case DeathCause.Burn: return "FIRE";
                 default: return "FATIGUE";
             }
         }
@@ -345,6 +377,14 @@ namespace WinterMP.Core.Sync
                 case DeathCause.Murder: return "Murder";
                 case DeathCause.Train: return "Train";
                 case DeathCause.Accident: return "Crash";
+                case DeathCause.Sewage: return "Sewage";
+                case DeathCause.Carbon: return "Carbon";
+                case DeathCause.Pto: return "PTO";
+                case DeathCause.CutterBlade: return "CutterBlade";
+                case DeathCause.InJail: return "InJail";
+                case DeathCause.PissTv: return "PissTV";
+                case DeathCause.Burn: return "Burn";
+                case DeathCause.Smoking: return "Smoking";
                 default: return "Fatigue";
             }
         }
@@ -366,6 +406,14 @@ namespace WinterMP.Core.Sync
                 case DeathCause.Murder: return "murder";
                 case DeathCause.Train: return "train";
                 case DeathCause.Accident: return "accident";
+                case DeathCause.Sewage: return "sewage";
+                case DeathCause.Carbon: return "carbon monoxide";
+                case DeathCause.Pto: return "tractor PTO";
+                case DeathCause.CutterBlade: return "cutter blade";
+                case DeathCause.InJail: return "jail";
+                case DeathCause.PissTv: return "TV accident";
+                case DeathCause.Burn: return "burns";
+                case DeathCause.Smoking: return "smoking";
                 default: return "unknown";
             }
         }

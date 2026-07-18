@@ -23,6 +23,7 @@ namespace WinterMP.Core.Catalog
                 data.GameBuild = buildText;
 
             ParseRuleArray(root, "doors", data.Doors);
+            ParseRuleArray(root, "spawnContainers", data.SpawnContainers);
             ParseRuleArray(root, "controls", data.Controls);
             ParseRuleArray(root, "switchRules", data.SwitchRules);
             ParseRuleArray(root, "ignitions", data.Ignitions);
@@ -455,6 +456,7 @@ namespace WinterMP.Core.Catalog
     {
         public string? GameBuild;
         public readonly List<CatalogRuleData> Doors = new List<CatalogRuleData>();
+        public readonly List<CatalogRuleData> SpawnContainers = new List<CatalogRuleData>();
         public readonly List<CatalogRuleData> Controls = new List<CatalogRuleData>();
         public readonly List<CatalogRuleData> SwitchRules = new List<CatalogRuleData>();
         public readonly List<CatalogRuleData> Ignitions = new List<CatalogRuleData>();

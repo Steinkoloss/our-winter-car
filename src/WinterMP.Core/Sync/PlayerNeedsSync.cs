@@ -17,6 +17,9 @@ namespace WinterMP.Core.Sync
         private HutongGames.PlayMaker.FsmFloat? _fatigue;
         private HutongGames.PlayMaker.FsmFloat? _thirst;
         private HutongGames.PlayMaker.FsmFloat? _urine;
+        private HutongGames.PlayMaker.FsmFloat? _bodyTemp;
+        private HutongGames.PlayMaker.FsmFloat? _stress;
+        private HutongGames.PlayMaker.FsmFloat? _drunk;
         private float _nextProbeAt;
         private float _nextReportAt;
         private ushort _sequence;
@@ -30,6 +33,9 @@ namespace WinterMP.Core.Sync
             _fatigue = null;
             _thirst = null;
             _urine = null;
+            _bodyTemp = null;
+            _stress = null;
+            _drunk = null;
             _nextProbeAt = 0f;
             _nextReportAt = 0f;
             _sequence = 0;
@@ -40,6 +46,16 @@ namespace WinterMP.Core.Sync
         {
             if (Time.unscaledTime < _nextProbeAt) return;
             _nextProbeAt = Time.unscaledTime + 5f;
+
+            // BodyTemp and Drunk live on local PLAYER FSMs, which can initialize after
+            // the need globals. Keep probing for them even once hunger/fatigue are resolved.
+            if (_bodyTemp == null)
+                _bodyTemp = FindLocalFloat("PLAYER/BodyTemp", "Calculations", "Temperature");
+            if (_drunk == null)
+                _drunk = FindLocalFloat("PLAYER/Pivot/AnimPivot/Camera/FPSCamera/FPSCamera", "Drunk Mode", "DrunkCurrent");
+            if (_stress == null)
+                _stress = FindGlobalFloat("PlayerStress", "Stress");
+
             if (_hunger != null && _fatigue != null) return;
 
             _hunger = FindGlobalFloat("PlayerHunger", "Hunger");
@@ -78,6 +94,9 @@ namespace WinterMP.Core.Sync
                 Fatigue = Read(_fatigue),
                 Thirst = Read(_thirst),
                 Urine = Read(_urine),
+                BodyTemp = Read(_bodyTemp),
+                Stress = Read(_stress),
+                Drunk = Read(_drunk),
                 Sequence = ++_sequence,
             };
         }
@@ -94,6 +113,9 @@ namespace WinterMP.Core.Sync
                 Fatigue = Read(_fatigue),
                 Thirst = Read(_thirst),
                 Urine = Read(_urine),
+                BodyTemp = Read(_bodyTemp),
+                Stress = Read(_stress),
+                Drunk = Read(_drunk),
                 Valid = true,
             };
         }
@@ -107,6 +129,13 @@ namespace WinterMP.Core.Sync
             Write(_fatigue, needs.Fatigue);
             Write(_thirst, needs.Thirst);
             Write(_urine, needs.Urine);
+            // 0 means "absent" for BodyTemp (pre-v28 sidecar rows) — writing it would
+            // restore the guest at freezing. Stress/Drunk 0 are honest defaults (calm,
+            // sober) so those always apply.
+            if (needs.BodyTemp != 0f)
+                Write(_bodyTemp, needs.BodyTemp);
+            Write(_stress, needs.Stress);
+            Write(_drunk, needs.Drunk);
 
             WinterMPPlugin.Log.LogInfo(
                 "PlayerNeedsSync: restored guest needs from host profile.");
@@ -129,6 +158,39 @@ namespace WinterMP.Core.Sync
             }
 
             return null;
+        }
+
+        // BodyTemp is a LOCAL fsm var on the PLAYER/BodyTemp "Calculations" FSM, so it must be
+        // path-located rather than read from GlobalVariables. Match by FsmName: today the object
+        // carries only "Calculations", but a game patch could add a second FSM and a bare
+        // GetComponent would then grab an arbitrary one and silently read 0 (ClothingSync reads
+        // ClothingStage off this same object and matches by name for exactly this reason). Null
+        // returns and the try/catch keep it safe while the object/component is mid-teardown.
+        private static HutongGames.PlayMaker.FsmFloat? FindLocalFloat(string scenePath, string fsmName, string varName)
+        {
+            try
+            {
+                var go = GameObject.Find(scenePath);
+                if (go == null) return null;
+
+                var fsms = go.GetComponents<PlayMakerFSM>();
+                if (fsms == null) return null;
+
+                foreach (var fsm in fsms)
+                {
+                    if (fsm == null || fsm.FsmName != fsmName) continue;
+                    var variable = fsm.FsmVariables.FindFsmFloat(varName);
+                    if (variable != null) return variable;
+                }
+
+                return null;
+            }
+            catch (System.Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug(
+                    "PlayerNeedsSync: local float '" + varName + "' on '" + fsmName + "' at '" + scenePath + "' failed: " + e.Message);
+                return null;
+            }
         }
 
         private static float Read(HutongGames.PlayMaker.FsmFloat? variable) =>
