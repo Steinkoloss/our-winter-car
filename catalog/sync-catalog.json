@@ -222,6 +222,78 @@
       "fsmName": "Use",
       "states": ["State 1"],
       "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathPrefix": "KEKMET(350-400psi)/LOD/Dashboard/PTO",
+      "fsmName": "Use",
+      "states": ["On", "Off"],
+      "requireStates": ["Wait player", "Wait button", "On", "Off"]
+    },
+    {
+      "pathPrefix": "GIFU(750/450psi)/ShitTank/Lever/Pivot/OpenSpill",
+      "fsmName": "Use",
+      "states": ["Open", "Close"],
+      "requireStates": ["Switch", "Open", "Close"]
+    },
+    {
+      "pathPrefix": "FleaMarket/LOD/OpenHours/MoneyFlea",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathPrefix": "PERAPORTTI/Building/LOD300/FuelPumps_1-2/Automat/Monitor/",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathContains": "/Fridge/Pivot/Handle",
+      "fsmName": "Use",
+      "states": ["Open door", "Close door"],
+      "requireStates": ["Wait player", "Wait button", "Open door", "Close door"]
+    },
+    {
+      "pathPrefix": "HOMENEW/Functions/FunctionsDisable/Stereos/Player/ButtonsCD/RadioCDSwitch",
+      "fsmName": "Use",
+      "states": ["On", "Off"],
+      "requireStates": ["Wait player", "Wait button", "Switch", "On", "Off"]
+    },
+    {
+      "pathPrefix": "HOMENEW/LOD/WC/Shower/Functions/Switch",
+      "fsmName": "Use",
+      "states": ["Shower", "Tap"],
+      "requireStates": ["Wait player", "Wait button", "Check water", "Shower", "Tap"]
+    },
+    {
+      "pathPrefix": "YARD/Building/BATHROOM/Shower/Switch",
+      "fsmName": "Use",
+      "states": ["Shower", "Tap"],
+      "requireStates": ["Wait player", "Wait button", "Check water", "Shower", "Tap"]
+    },
+    {
+      "pathPrefix": "PERAJARVI/TerraceHouse/Apartments/LOD2/LOD/WC/Shower/Functions/Switch",
+      "fsmName": "Use",
+      "states": ["Shower", "Tap"],
+      "requireStates": ["Wait player", "Wait button", "Check water", "Shower", "Tap"]
+    },
+    {
+      "pathPrefix": "HOMENEW/LOD/WC/Shower/Functions/Valve",
+      "fsmName": "Switch",
+      "states": ["ON", "OFF"],
+      "requireStates": ["Wait player", "Wait button", "Position", "ON", "OFF", "Set"]
+    },
+    {
+      "pathPrefix": "YARD/Building/BATHROOM/Shower/Valve",
+      "fsmName": "Switch",
+      "states": ["ON", "OFF"],
+      "requireStates": ["Wait player", "Wait button", "Position", "ON", "OFF", "Set"]
+    },
+    {
+      "pathPrefix": "PERAJARVI/TerraceHouse/Apartments/LOD2/LOD/WC/Shower/Functions/Valve",
+      "fsmName": "Switch",
+      "states": ["ON", "OFF"],
+      "requireStates": ["Wait player", "Wait button", "Position", "ON", "OFF", "Set"]
     }
   ],
   "switchRules": [
@@ -289,6 +361,13 @@
       "resultStates": ["Spawn", "State 2", "Disable"]
     },
     {
+      "pathPrefix": "PERAPORTTI/Building/LOD300/FuelPumps_1-2/Automat/CashTrigger",
+      "fsmName": "Use",
+      "requireStates": ["Wait button", "Check money", "Insert bill"],
+      "entryGuards": [{ "state": "Check money", "event": "USE" }],
+      "resultStates": ["Insert bill", "Take bill"]
+    },
+    {
       "pathContains": "OrderAMIS",
       "fsmName": "Data",
       "requireStates": ["Idle", "Spawn package"],
@@ -336,6 +415,27 @@
         { "state": "Purchase event", "event": "PURCHASE", "optional": true }
       ],
       "resultStates": ["Purchase"]
+    },
+    {
+      "pathPrefix": "HOMENEW/Functions/FunctionsDisable/Fines",
+      "fsmName": "Activate",
+      "requireStates": ["State 1", "State 2", "Check money", "Pay", "Reset fine"],
+      "entryGuards": [{ "state": "Check money", "event": "ACTIVATE" }],
+      "resultStates": ["Pay", "Reset fine"]
+    },
+    {
+      "pathPrefix": "RACES/ICERACE/TentContents/Prices/PriceMoneyRace",
+      "fsmName": "Use",
+      "requireStates": ["Wait player", "Wait button", "State 1", "State 2"],
+      "entryGuards": [{ "state": "State 1", "event": "USE" }],
+      "resultStates": ["State 2"]
+    },
+    {
+      "pathPrefix": "RACES/RALLY/SS3/FinishArea/Stuff/PriceMoneyRally",
+      "fsmName": "Use",
+      "requireStates": ["Wait player", "Wait button", "State 1", "State 2"],
+      "entryGuards": [{ "state": "State 1", "event": "USE" }],
+      "resultStates": ["State 2"]
     },
     {
       "template": "shopBuy",

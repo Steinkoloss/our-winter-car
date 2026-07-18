@@ -639,11 +639,12 @@ namespace WinterMP.Net.Tests
         [Fact]
         public void PassengerState_RoundTrips()
         {
-            var original = new PassengerState { PlayerId = 3, VehicleId = 0xCAFEBABE, SeatIndex = 2 };
+            var original = new PassengerState { PlayerId = 3, VehicleId = 0xCAFEBABE, SeatIndex = 2, Sequence = 491 };
             var decoded = Assert.IsType<PassengerState>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.PlayerId, decoded.PlayerId);
             Assert.Equal(original.VehicleId, decoded.VehicleId);
             Assert.Equal(original.SeatIndex, decoded.SeatIndex);
+            Assert.Equal(original.Sequence, decoded.Sequence);
             Assert.True(decoded.IsSeated);
         }
 

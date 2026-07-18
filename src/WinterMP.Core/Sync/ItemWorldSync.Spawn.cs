@@ -34,6 +34,11 @@ namespace WinterMP.Core.Sync
         /// <summary>Guest: give up waiting for the host's manifest after an offer.</summary>
         private const float SpawnOfferManifestSeconds = 6f;
 
+        private const int GuestSpawnMaxItems = 32;
+        private const int GuestSpawnMaxTemplateNameLength = 128;
+        private const float GuestSpawnPoseMaxAgeSeconds = 2f;
+        private const float GuestSpawnMaxDistance = 12f;
+
         private sealed class PendingSpawn
         {
             public uint ContainerId;
@@ -74,6 +79,7 @@ namespace WinterMP.Core.Sync
         // one counter must serve both paths or their (container, epoch) dedup keys
         // would collide.
         private readonly Dictionary<uint, ushort> _spawnEpochs = new Dictionary<uint, ushort>();
+        private readonly Dictionary<byte, ushort> _lastGuestSpawnSequences = new Dictionary<byte, ushort>();
         private ushort _outSpawnSequence;
 
         private static long SpawnKey(uint containerId, ushort epoch) => ((long)containerId << 16) | epoch;
@@ -120,6 +126,69 @@ namespace WinterMP.Core.Sync
                 HardDeadline = Time.unscaledTime + SpawnCaptureHardSeconds,
                 StableSince = Time.unscaledTime,
             });
+        }
+
+        /// <summary>
+        /// Host gate for a guest's naturally-spilled bag capture. Runtime bags have
+        /// intentionally peer-local ids, so their contents cannot be re-derived on
+        /// the host; nevertheless an offer must be fresh, bounded, replay-safe, and
+        /// physically close to the player before it can mint shared item identities.
+        /// </summary>
+        internal bool TryAcceptGuestSpawnIntent(SpawnIntent intent, byte playerId)
+        {
+            if (intent.PlayerId != playerId || intent.Items.Count == 0 || intent.Items.Count > GuestSpawnMaxItems)
+                return false;
+
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) return false;
+
+            Vector3 playerPosition = Vector3.zero;
+            bool foundPlayer = false;
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId != playerId) continue;
+                if (player.LastTransformTime <= 0f
+                    || now - player.LastTransformTime > GuestSpawnPoseMaxAgeSeconds)
+                    return false;
+                playerPosition = player.Position;
+                foundPlayer = true;
+                break;
+            }
+            if (!foundPlayer) return false;
+
+            for (int i = 0; i < intent.Items.Count; i++)
+            {
+                var entry = intent.Items[i];
+                if (string.IsNullOrEmpty(entry.TemplateName)
+                    || entry.TemplateName.Length > GuestSpawnMaxTemplateNameLength)
+                    return false;
+
+                Vector3 position = entry.Position.ToUnity();
+                Quaternion rotation = entry.Rotation.ToUnity();
+                if (!IsFinite(position) || !TryNormalize(rotation, out rotation)
+                    || (position - playerPosition).sqrMagnitude > GuestSpawnMaxDistance * GuestSpawnMaxDistance
+                    || FindSpawnBodyByName(entry.TemplateName, position, -1f, untrackedOnly: false) == null)
+                    return false;
+
+                entry.Position = new NetVector3(position.x, position.y, position.z);
+                entry.Rotation = new NetQuaternion(rotation.x, rotation.y, rotation.z, rotation.w);
+                intent.Items[i] = entry;
+            }
+
+            ushort lastSequence;
+            if (_lastGuestSpawnSequences.TryGetValue(playerId, out lastSequence))
+            {
+                ushort difference = (ushort)(intent.Sequence - lastSequence);
+                if (difference == 0 || difference > short.MaxValue)
+                {
+                    WinterMPPlugin.Log.LogDebug(
+                        $"WorldSync: dropped stale spawn offer from player {playerId} (sequence {intent.Sequence}).");
+                    return false;
+                }
+            }
+            _lastGuestSpawnSequences[playerId] = intent.Sequence;
+            return true;
         }
 
         /// <summary>Host: a guest's bag spilled — materialize its clones here, mint ids, broadcast.</summary>

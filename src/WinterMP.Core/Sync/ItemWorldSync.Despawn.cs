@@ -8,6 +8,9 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class ItemWorldSync
     {
+        private const float GuestDespawnPoseMaxAgeSeconds = 2f;
+        private const float GuestDespawnMaxDistance = 6f;
+
         private static bool SessionSyncActive(SessionManager session)
         {
             if (session.State != SessionState.Hosting && session.State != SessionState.Connected)
@@ -58,6 +61,34 @@ namespace WinterMP.Core.Sync
 
             RemoveTrackedItem(message.ItemId, item.Body);
             ReleaseCargoFollowingVehicle(message.ItemId);
+        }
+
+        /// <summary>
+        /// A guest may consume/destroy only an item it still owns in the host's
+        /// transform authority table and is physically beside. Without this gate a
+        /// raw ItemDespawn packet can delete any tracked object on every peer.
+        /// </summary>
+        public bool TryAcceptGuestDespawn(ItemDespawn message, byte playerId)
+        {
+            if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null
+                || (item.RemoteOwner != playerId && item.RemoteOwner != WorldSyncIds.NoOwner))
+                return false;
+
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) return false;
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId != playerId) continue;
+                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > GuestDespawnPoseMaxAgeSeconds)
+                    return false;
+                if ((player.Position - item.Body.transform.position).sqrMagnitude
+                    > GuestDespawnMaxDistance * GuestDespawnMaxDistance)
+                    return false;
+                OnRemoteItemDespawn(message);
+                return true;
+            }
+            return false;
         }
 
         private void RemoveTrackedItem(uint itemId, Rigidbody? body)

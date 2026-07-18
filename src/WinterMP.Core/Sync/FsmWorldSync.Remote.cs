@@ -8,12 +8,198 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class FsmWorldSync
     {
+        private const float GuestInteractionPoseMaxAgeSeconds = 2f;
+        // Interaction colliders are often nested below a door/control pivot, so
+        // this deliberately covers a car door or wide garage switch while still
+        // excluding arbitrary map-wide FSM writes from a remote peer.
+        private const float GuestInteractionMaxDistance = 12f;
+
         // ------------------------------------------------------------------ network -> world
+
+        /// <summary>
+        /// Host gate for a guest's generic FSM transition. FsmStateEnter has no
+        /// player id on the wire, so SessionManager binds it to its authenticated
+        /// peer before reaching here. Only catalogued interactable FSMs near that
+        /// peer's fresh pose may be applied or relayed.
+        /// </summary>
+        public bool TryAcceptGuestStateEnter(FsmStateEnter message, byte playerId)
+        {
+            if (!TryGetGuestInteractable(message.NetId, message.StateName, out var fsm, out var path))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropped guest FSM state {message.NetId:X8} '{message.StateName}' (not an interactable state).");
+                return false;
+            }
+            if (!IsGuestNear(session: SessionManager.Instance, playerId, fsm.transform.position))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropped distant guest FSM state {message.NetId:X8} '{message.StateName}' on {path}.");
+                return false;
+            }
+
+            OnRemoteStateEnter(message);
+            return true;
+        }
+
+        /// <summary>Host gate for the only allowed raw events: nearby bolt turns.</summary>
+        public bool TryAcceptGuestRawEvent(FsmRawEvent message, byte playerId)
+        {
+            if (Array.IndexOf(AllowedRawEvents, message.EventName) < 0
+                || !_bolts.TryGetValue(message.NetId, out var bolt) || bolt.Fsm == null)
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropped guest raw event {message.NetId:X8} '{message.EventName}'.");
+                return false;
+            }
+            if (!IsGuestNear(SessionManager.Instance, playerId, bolt.Fsm.transform.position))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropped distant guest bolt event {message.NetId:X8} '{message.EventName}'.");
+                return false;
+            }
+
+            OnRemoteRawEvent(message);
+            return true;
+        }
+
+        /// <summary>Host gate for settled bolt state sent after a valid local turn.</summary>
+        public bool TryAcceptGuestBoltState(BoltState message, byte playerId)
+        {
+            if (!_bolts.TryGetValue(message.NetId, out var bolt) || bolt.Fsm == null
+                || !IsGuestNear(SessionManager.Instance, playerId, bolt.Fsm.transform.position))
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: dropped guest bolt state {message.NetId:X8}.");
+                return false;
+            }
+            OnRemoteBoltState(message);
+            return true;
+        }
+
+        /// <summary>Host gate for install/tightness/wear snapshots from a nearby guest.</summary>
+        public bool TryAcceptGuestPartState(PartState message, byte playerId)
+        {
+            if (!_parts.TryGetValue(message.NetId, out var part) || part.Fsm == null
+                || !IsGuestNear(SessionManager.Instance, playerId, part.Fsm.transform.position))
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: dropped guest part state {message.NetId:X8}.");
+                return false;
+            }
+            OnRemotePartState(message);
+            return true;
+        }
+
+        /// <summary>
+        /// Host gate for a guest purchase. A payment intent is an authority request,
+        /// not a generic remote FSM event: it must name a catalogued entry guard,
+        /// come from the authenticated player near that exact target, and advance
+        /// that player's monotonic purchase sequence.
+        /// </summary>
+        public bool TryAcceptGuestPurchaseIntent(PurchaseIntent intent, byte playerId)
+        {
+            if (intent.PlayerId != playerId || !_buys.TryGetValue(intent.NetId, out var buy) || buy.Fsm == null)
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropped guest purchase {intent.NetId:X8} '{intent.EventName}' (unknown target or identity).");
+                return false;
+            }
+            if (!IsBuyEntryEvent(buy, intent.EventName))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropped guest purchase {intent.NetId:X8} '{intent.EventName}' (not an entry guard).");
+                return false;
+            }
+            if (!IsGuestNear(SessionManager.Instance, playerId, buy.Fsm.transform.position))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: dropped distant guest purchase {intent.NetId:X8} '{intent.EventName}' on {buy.Path}.");
+                return false;
+            }
+            if (_lastGuestPurchaseSequences.TryGetValue(playerId, out ushort previous))
+            {
+                ushort difference = (ushort)(intent.Sequence - previous);
+                if (difference == 0 || difference > short.MaxValue)
+                {
+                    WinterMPPlugin.Log.LogWarning(
+                        $"WorldSync: dropped stale guest purchase sequence {intent.Sequence} from player {playerId}.");
+                    return false;
+                }
+            }
+
+            _lastGuestPurchaseSequences[playerId] = intent.Sequence;
+            return true;
+        }
 
         public void OnRemoteStateEnter(FsmStateEnter message)
         {
             if (!TryApplyStateEnter(message.NetId, message.StateName))
                 QueuePending(message.NetId, false, message.StateName);
+        }
+
+        private bool TryGetGuestInteractable(uint netId, string stateName, out PlayMakerFSM fsm, out string path)
+        {
+            if (_doors.TryGetValue(netId, out var door) && door.Fsm != null
+                && Array.IndexOf(door.SyncedStates, stateName) >= 0)
+            {
+                fsm = door.Fsm;
+                path = door.Path;
+                return true;
+            }
+            if (_ignitions.TryGetValue(netId, out var ignition) && ignition.Fsm != null
+                && Array.IndexOf(ignition.SyncedStates, stateName) >= 0)
+            {
+                fsm = ignition.Fsm;
+                path = ignition.Path;
+                return true;
+            }
+            if (_controls.TryGetValue(netId, out var control) && control.Fsm != null
+                && Array.IndexOf(control.SyncedStates, stateName) >= 0)
+            {
+                fsm = control.Fsm;
+                path = control.Path;
+                return true;
+            }
+            if (_starters.TryGetValue(netId, out var starter) && starter.Fsm != null
+                && Array.IndexOf(starter.SyncedStates, stateName) >= 0)
+            {
+                fsm = starter.Fsm;
+                path = starter.Path;
+                return true;
+            }
+            if (_parts.TryGetValue(netId, out var part) && part.Fsm != null
+                && Array.IndexOf(part.SyncedStates, stateName) >= 0)
+            {
+                fsm = part.Fsm;
+                path = part.Path;
+                return true;
+            }
+
+            fsm = null!;
+            path = string.Empty;
+            return false;
+        }
+
+        private static bool IsGuestNear(SessionManager? session, byte playerId, Vector3 targetPosition)
+        {
+            if (session == null || !session.IsHost) return false;
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId != playerId) continue;
+                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > GuestInteractionPoseMaxAgeSeconds)
+                    return false;
+                return (player.Position - targetPosition).sqrMagnitude
+                    <= GuestInteractionMaxDistance * GuestInteractionMaxDistance;
+            }
+            return false;
+        }
+
+        private static bool IsBuyEntryEvent(SyncedBuy buy, string eventName)
+        {
+            foreach (var guard in buy.EntryGuards)
+            {
+                if (guard.TriggerEvent == eventName) return true;
+            }
+            return false;
         }
 
         public void OnRemoteRawEvent(FsmRawEvent message)

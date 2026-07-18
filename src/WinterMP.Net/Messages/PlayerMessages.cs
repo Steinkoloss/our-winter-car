@@ -145,7 +145,9 @@ namespace WinterMP.Net.Messages
     /// A player sat down in (or left) a passenger seat of a synced vehicle.
     /// Broadcast on enter/exit and re-sent every few seconds while seated so late
     /// joiners learn current occupancy. Receivers anchor that player's avatar to
-    /// the seat and refuse local entry into it. Seat 255 = not seated.
+    /// the seat and refuse local entry into it. Seat 255 = not seated. Sequence
+    /// is append-only (v52) so the host and receivers can reject delayed/replayed
+    /// reliable reports.
     /// </summary>
     public sealed class PassengerState : IMessage
     {
@@ -156,6 +158,7 @@ namespace WinterMP.Net.Messages
         public uint VehicleId;
         /// <summary>0 = front passenger, 1 = rear left, 2 = rear right, 255 = none.</summary>
         public byte SeatIndex = SeatNone;
+        public ushort Sequence;
 
         public bool IsSeated => SeatIndex != SeatNone;
 
@@ -166,6 +169,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(PlayerId);
             writer.WriteUInt32(VehicleId);
             writer.WriteByte(SeatIndex);
+            writer.WriteUInt16(Sequence);
         }
 
         public void Read(NetReader reader)
@@ -173,6 +177,7 @@ namespace WinterMP.Net.Messages
             PlayerId = reader.ReadByte();
             VehicleId = reader.ReadUInt32();
             SeatIndex = reader.ReadByte();
+            Sequence = reader.ReadUInt16();
         }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using HutongGames.PlayMaker;
 using UnityEngine;
@@ -28,6 +29,8 @@ namespace WinterMP.Core.Sync
         private const float KeepAliveSeconds = 20f;
         private const float SaunaTempScale = 100f;
         private const float IntentCooldownSeconds = 0.75f;
+        private const float IntentPlayerPoseMaxAgeSeconds = 2f;
+        private const float IntentPlayerMaxDistance = 8f;
 
         private enum Kind { Woodstove, Sauna, Fireplace }
 
@@ -37,6 +40,7 @@ namespace WinterMP.Core.Sync
             public string ContainerPath = string.Empty;
             public Kind Kind;
             public bool LoggedFound;
+            public Transform? Anchor;
 
             // Located sub-FSMs (any may stay null).
             public PlayMakerFSM? SetFire;        // ".../SetFire" :: Use    — lighting
@@ -65,6 +69,7 @@ namespace WinterMP.Core.Sync
             public bool HookedSausage;
             public bool HookedWood;
             public float NextIntentAt;
+            public ushort OutIntentSequence;
 
             // A source is "present" once at least one of its FSMs resolves — saves without
             // a given cottage/sauna never broadcast phantom state.
@@ -75,6 +80,7 @@ namespace WinterMP.Core.Sync
 
         private readonly List<Source> _sources = new List<Source>();
         private readonly Dictionary<uint, Source> _byId = new Dictionary<uint, Source>();
+        private readonly Dictionary<byte, ushort> _lastIntentSequences = new Dictionary<byte, ushort>();
         private bool _built;
         private float _nextProbeAt;
         private float _nextHostTickAt;
@@ -84,6 +90,7 @@ namespace WinterMP.Core.Sync
         {
             _sources.Clear();
             _byId.Clear();
+            _lastIntentSequences.Clear();
             _built = false;
             _nextProbeAt = 0f;
             _nextHostTickAt = 0f;
@@ -157,35 +164,40 @@ namespace WinterMP.Core.Sync
 
         // ---- Host: apply a guest's anyone-triggers intent --------------------
 
-        public void OnHostIntent(HeatSourceIntent intent)
+        public bool TryAcceptIntent(HeatSourceIntent intent)
         {
             var session = SessionManager.Instance;
-            if (session == null || !session.IsHost) return;
+            if (session == null || !session.IsHost) return false;
 
             EnsureBuilt();
-            if (!_byId.TryGetValue(intent.SourceId, out var source)) return;
+            if (!_byId.TryGetValue(intent.SourceId, out var source)) return false;
 
             LocateSource(source);
-
-            switch (intent.Action)
+            if (source.Anchor == null || !TryGetAction(source, intent.Action, out var fsm, out var eventName)
+                || fsm == null || !IsGuestNear(session, intent.PlayerId, source.Anchor.position))
             {
-                case HeatSourceIntent.ActionLight:
-                    FireEvent(source.SetFire, "USE");
-                    break;
-                case HeatSourceIntent.ActionFeedWood:
-                    FireEvent(source.WoodTrigger, "WOOD");
-                    break;
-                case HeatSourceIntent.ActionGrill:
-                    FireEvent(source.SausageTrigger, "SAUSAGE");
-                    break;
-                case HeatSourceIntent.ActionSaunaThrow:
-                    FireEvent(source.StoveTrigger, "STEAM");
-                    break;
+                WinterMPPlugin.Log.LogWarning(
+                    $"HeatSourceSync: dropped invalid or distant intent {intent.SourceId:X8} action {intent.Action} from player {intent.PlayerId}.");
+                return false;
+            }
+            if (_lastIntentSequences.TryGetValue(intent.PlayerId, out ushort previous))
+            {
+                ushort difference = (ushort)(intent.Sequence - previous);
+                if (difference == 0 || difference > short.MaxValue)
+                {
+                    WinterMPPlugin.Log.LogWarning(
+                        $"HeatSourceSync: dropped stale intent sequence {intent.Sequence} from player {intent.PlayerId}.");
+                    return false;
+                }
             }
 
-            SyncEventLog.Record("heat-intent", $"{intent.SourceId:X8} action {intent.Action}");
+            _lastIntentSequences[intent.PlayerId] = intent.Sequence;
+            FireEvent(fsm, eventName);
+
+            SyncEventLog.Record("heat-intent", $"{intent.SourceId:X8} action {intent.Action} player {intent.PlayerId}");
             // Force a fresh broadcast on the next host tick so the initiator sees the result promptly.
             _nextHostTickAt = 0f;
+            return true;
         }
 
         // ---- Host broadcast ---------------------------------------------------
@@ -299,6 +311,7 @@ namespace WinterMP.Core.Sync
             }
 
             var root = container.transform;
+            source.Anchor = root;
 
             if (source.SetFire == null) source.SetFire = FindChildFsm(root, "SetFire", "Use");
             if (source.WoodTrigger == null) source.WoodTrigger = FindChildFsm(root, "WoodTrigger", "Trigger");
@@ -364,7 +377,13 @@ namespace WinterMP.Core.Sync
             source.NextIntentAt = Time.unscaledTime + IntentCooldownSeconds;
 
             session.SendWorldMessage(
-                new HeatSourceIntent { SourceId = source.Id, Action = action },
+                new HeatSourceIntent
+                {
+                    SourceId = source.Id,
+                    Action = action,
+                    PlayerId = session.LocalPlayerId,
+                    Sequence = ++source.OutIntentSequence,
+                },
                 Channel.ReliableOrdered);
             SyncEventLog.Record("heat-intent-out", $"{source.Id:X8} action {action}");
         }
@@ -404,6 +423,47 @@ namespace WinterMP.Core.Sync
             {
                 WinterMPPlugin.Log.LogDebug("HeatSourceSync: event '" + eventName + "' failed: " + e.Message);
             }
+        }
+
+        private static bool TryGetAction(Source source, byte action, out PlayMakerFSM? fsm, out string eventName)
+        {
+            switch (action)
+            {
+                case HeatSourceIntent.ActionLight:
+                    fsm = source.SetFire;
+                    eventName = "USE";
+                    return true;
+                case HeatSourceIntent.ActionFeedWood:
+                    fsm = source.WoodTrigger;
+                    eventName = "WOOD";
+                    return true;
+                case HeatSourceIntent.ActionGrill:
+                    fsm = source.SausageTrigger;
+                    eventName = "SAUSAGE";
+                    return true;
+                case HeatSourceIntent.ActionSaunaThrow:
+                    fsm = source.StoveTrigger;
+                    eventName = "STEAM";
+                    return true;
+                default:
+                    fsm = null;
+                    eventName = string.Empty;
+                    return false;
+            }
+        }
+
+        private static bool IsGuestNear(SessionManager session, byte playerId, Vector3 targetPosition)
+        {
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId != playerId) continue;
+                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > IntentPlayerPoseMaxAgeSeconds)
+                    return false;
+                return (player.Position - targetPosition).sqrMagnitude
+                    <= IntentPlayerMaxDistance * IntentPlayerMaxDistance;
+            }
+            return false;
         }
 
         // ---- var helpers ------------------------------------------------------

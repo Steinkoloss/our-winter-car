@@ -9,7 +9,47 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class VehicleWorldSync
     {
+        private const float GuestVehiclePoseMaxAgeSeconds = 2f;
+        private const float GuestVehicleInteractionDistance = 16f;
+
         // ------------------------------------------------------------------ engine & ignition
+
+        /// <summary>Host gate for the driver-owned engine/electrics stream.</summary>
+        public bool TryAcceptGuestVehicleState(VehicleState message, byte playerId)
+        {
+            if (message.OwnerPlayerId != playerId || !_items.Items.TryGetValue(message.VehicleId, out var item)
+                || !item.IsVehicle || item.Body == null)
+                return false;
+
+            if (item.RemoteOwner == playerId) return true;
+            if (item.RemoteOwner != WorldSyncIds.NoOwner) return false;
+            return IsGuestNearVehicle(playerId, item.Body.transform.position);
+        }
+
+        /// <summary>Host gate for nearby climate observers (driver or passenger).</summary>
+        public bool TryAcceptGuestVehicleClimate(VehicleClimate message, byte playerId)
+        {
+            if (message.OwnerPlayerId != playerId || !_items.Items.TryGetValue(message.VehicleId, out var item)
+                || !item.IsVehicle || item.Body == null)
+                return false;
+            return IsGuestNearVehicle(playerId, item.Body.transform.position);
+        }
+
+        private static bool IsGuestNearVehicle(byte playerId, Vector3 vehiclePosition)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) return false;
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId != playerId) continue;
+                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > GuestVehiclePoseMaxAgeSeconds)
+                    return false;
+                return (player.Position - vehiclePosition).sqrMagnitude
+                    <= GuestVehicleInteractionDistance * GuestVehicleInteractionDistance;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Stream ignition/engine state for vehicles we are driving *or* whose engine

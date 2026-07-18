@@ -24,6 +24,9 @@ def fmt(f: dict) -> str:
     for s in f.get("states", []):
         ts = ", ".join(f"{t.get('event')}->{t.get('to')}" for t in s.get("transitions", []))
         lines.append(f"  state '{s.get('name')}'  [{ts}]")
+        actions = [a for a in s.get("actionTypes", []) if a]
+        if actions:
+            lines.append(f"    actions: {', '.join(actions)}")
     ev = ", ".join(e for e in f.get("events", []) if e)
     lines.append(f"  events: {ev}")
     var = f.get("variables", {})

@@ -89,6 +89,24 @@ namespace WinterMP.Core.Sync
             }
         }
 
+        /// <summary>
+        /// Host gate for a guest-owned container update. The item-transform stream
+        /// establishes ownership first; a guest cannot use this scalar message to
+        /// fill or drain another player's container and then have it relayed.
+        /// </summary>
+        public bool TryAcceptGuestState(FluidContainerState message, byte playerId)
+        {
+            if (message.OwnerPlayerId != playerId || !IsValidMessage(message)) return false;
+
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost
+                || !_items.Items.TryGetValue(message.ItemId, out var item)
+                || item.IsVehicle || item.Body == null || item.RemoteOwner != playerId)
+                return false;
+
+            return TryApplyKnownState(item, message);
+        }
+
         public void OnRemoteState(FluidContainerState message)
         {
             if (!_items.Items.TryGetValue(message.ItemId, out var item) || item.IsVehicle || item.Body == null)
@@ -112,17 +130,23 @@ namespace WinterMP.Core.Sync
                 return;
             }
 
+            TryApplyKnownState(item, message);
+        }
+
+        private bool TryApplyKnownState(SyncedItem item, FluidContainerState message)
+        {
+            if (!IsValidMessage(message)) return false;
+
             if (item.LastRemoteFluidOwner == message.OwnerPlayerId)
             {
                 ushort diff = (ushort)(message.Sequence - item.LastRemoteFluidSequence);
-                if (diff == 0 || diff > short.MaxValue) return;
+                if (diff == 0 || diff > short.MaxValue) return false;
             }
             item.LastRemoteFluidOwner = message.OwnerPlayerId;
             item.LastRemoteFluidSequence = message.Sequence;
 
             Locate(item, Time.unscaledTime);
-            if (item.FluidLevelVar == null) return;
-            if (float.IsNaN(message.Level) || float.IsInfinity(message.Level)) return;
+            if (item.FluidLevelVar == null) return false;
 
             float capacity = item.FluidCapacityVar != null ? item.FluidCapacityVar.Value : message.Capacity;
             if (capacity > ChangeEpsilon)
@@ -132,6 +156,7 @@ namespace WinterMP.Core.Sync
 
             if (item.FluidPouringVar != null)
                 item.FluidPouringVar.Value = message.IsPouring;
+            return true;
         }
 
         private void ApplyPending(float now)
@@ -179,6 +204,13 @@ namespace WinterMP.Core.Sync
             {
                 WinterMPPlugin.Log.LogDebug($"FluidSync: probe failed for '{item.Path}': {e.Message}");
             }
+        }
+
+        private static bool IsValidMessage(FluidContainerState message)
+        {
+            return (message.Flags & ~FluidContainerState.FlagPouring) == 0
+                && !float.IsNaN(message.Level) && !float.IsInfinity(message.Level) && message.Level >= 0f
+                && !float.IsNaN(message.Capacity) && !float.IsInfinity(message.Capacity) && message.Capacity >= 0f;
         }
     }
 }

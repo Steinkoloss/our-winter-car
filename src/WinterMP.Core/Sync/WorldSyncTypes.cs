@@ -169,6 +169,16 @@ namespace WinterMP.Core.Sync
     public bool RemoteEngineAudioSearched;
     public bool LoggedEngineSend;
 
+    // Guest fuel-station reconciliation (v39). A vehicle normally gets fuel from
+    // its transform-owner VehicleState; these fields cover the separate case where
+    // a player stands beside a parked car with a live station nozzle.
+    public float LastObservedFuelTransferLevel = float.NaN;
+    public float NextFuelTransferAt;
+    public ushort OutFuelTransferSequence;
+    public byte LastFuelTransferPlayer = WorldSyncIds.NoOwner;
+    public ushort LastFuelTransferSequence;
+    public float LastFuelTransferAt = -999f;
+
     // Vehicles only: frost + heater (M4).
     public bool ClimateReady;
     public PlayMakerFSM? GlassFrostingFsm;
@@ -264,6 +274,13 @@ namespace WinterMP.Core.Sync
         public Vector3 LastPosition;
         public float LastMovedAt = -999f;
         public bool GuestRemoteActive;
+
+        // Race opponents run several local driving FSMs with per-peer behavior. A guest
+        // freezes exactly those FSMs while receiving the host's rigidbody stream.
+        public bool IsIceRaceOpponent;
+        public PlayMakerFSM[]? GuestAiFsms;
+        public bool[]? GuestAiWasEnabled;
+        public bool GuestAiFrozen;
     }
 
     public struct VehicleInfo

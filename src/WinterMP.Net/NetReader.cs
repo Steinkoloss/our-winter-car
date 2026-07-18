@@ -21,6 +21,13 @@ namespace WinterMP.Net
 
         public int Remaining => _length - _position;
 
+        /// <summary>Rejects a packet whose message reader did not consume its entire payload.</summary>
+        public void RequireEnd()
+        {
+            if (Remaining != 0)
+                throw new ProtocolException($"Message has {Remaining} trailing byte(s).");
+        }
+
         private void Require(int count)
         {
             // Compare against Remaining (never _position + count): a large positive count from a

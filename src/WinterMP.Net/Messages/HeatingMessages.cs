@@ -60,6 +60,10 @@ namespace WinterMP.Net.Messages
 
         public uint SourceId;
         public byte Action;
+        /// <summary>Authenticated sender identity; appended in protocol v49.</summary>
+        public byte PlayerId;
+        /// <summary>Per-player monotonic action sequence; appended in protocol v49.</summary>
+        public ushort Sequence;
 
         public MessageId Id => MessageId.HeatSourceIntent;
 
@@ -67,12 +71,16 @@ namespace WinterMP.Net.Messages
         {
             writer.WriteUInt32(SourceId);
             writer.WriteByte(Action);
+            writer.WriteByte(PlayerId);
+            writer.WriteUInt16(Sequence);
         }
 
         public void Read(NetReader reader)
         {
             SourceId = reader.ReadUInt32();
             Action = reader.ReadByte();
+            PlayerId = reader.ReadByte();
+            Sequence = reader.ReadUInt16();
         }
     }
 }

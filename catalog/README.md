@@ -44,6 +44,9 @@ Shared rule fields:
 ## Adding a rule
 
 1. F9-dump the GAME scene (or use an existing dump under `<game>/WinterMP/dumps/`).
+   Schema v2 dumps also include each state’s PlayMaker action type names, which are
+   essential when a transition shape alone cannot prove whether it charges money,
+   rolls RNG, spawns an object, or only updates presentation.
 2. Find the FSM: `python tools/extract_fsm_details.py dump.json show:ButtonFoo`
 3. Add an entry to the right section in `sync-catalog.json`.
 4. Rebuild — `sync-catalog.json` deploys next to `WinterMP.Core.dll`.

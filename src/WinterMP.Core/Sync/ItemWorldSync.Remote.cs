@@ -9,6 +9,41 @@ namespace WinterMP.Core.Sync
     {
         private const float RemoteLerpSpeed = 12f;
         private const float RemoteSnapDistance = 15f;
+        private const float GuestClaimPoseMaxAgeSeconds = 2f;
+        private const float GuestClaimItemDistance = 8f;
+        private const float GuestClaimVehicleDistance = 16f;
+
+        /// <summary>
+        /// Host-side ownership gate for a guest's first transform packet. Once a
+        /// guest owns a tracked item it may continue and send its reliable final;
+        /// a new claim must originate beside an unowned item, never steal an active
+        /// remote owner or begin from across the map.
+        /// </summary>
+        public bool TryAcceptGuestItemTransform(ItemTransform message, byte playerId)
+        {
+            if (message.OwnerPlayerId != playerId || !_items.TryGetValue(message.ItemId, out var item)
+                || item.Body == null)
+                return false;
+
+            if (item.RemoteOwner == playerId)
+                return true;
+            if (item.RemoteOwner != WorldSyncIds.NoOwner)
+                return false;
+
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) return false;
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId != playerId) continue;
+                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > GuestClaimPoseMaxAgeSeconds)
+                    return false;
+
+                float maxDistance = item.IsVehicle ? GuestClaimVehicleDistance : GuestClaimItemDistance;
+                return (player.Position - item.Body.transform.position).sqrMagnitude <= maxDistance * maxDistance;
+            }
+            return false;
+        }
 
         public void OnRemoteItemTransform(ItemTransform message)
         {

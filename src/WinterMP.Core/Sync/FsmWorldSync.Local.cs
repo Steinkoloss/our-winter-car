@@ -101,6 +101,13 @@ namespace WinterMP.Core.Sync
             _bridge.RestoreGuestMoney();
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: buy {netId:X8} intent {triggerEvent} (guest).");
+            if (triggerEvent == "PAYMENT"
+                && WorldSyncManager.Instance != null
+                && WorldSyncManager.Instance.TryBuildMailOrderIntent(buy.Path, buy.Fsm, out var mailOrderIntent))
+            {
+                mailOrderIntent.PlayerId = session.LocalPlayerId;
+                session.SendWorldMessage(mailOrderIntent, Channel.ReliableOrdered);
+            }
             session.SendWorldMessage(new PurchaseIntent
             {
                 PlayerId = session.LocalPlayerId,
@@ -219,6 +226,13 @@ namespace WinterMP.Core.Sync
                 case "CLICK":
                     if (FsmHook.HasState(buy.Fsm, "Pending cost")) return "Pending cost";
                     break;
+                case "ACTIVATE":
+                    // The home Fines record normally reaches Check money through
+                    // local police-controller collisions, which a remote guest
+                    // cannot reproduce on the host. Its validated PoliceState has
+                    // already written Price, so enter the normal money check.
+                    if (FsmHook.HasState(buy.Fsm, "Check money")) return "Check money";
+                    break;
                 case "PURCHASE":
                     if (FsmHook.HasState(buy.Fsm, "Purchase event")) return "Purchase event";
                     if (FsmHook.HasState(buy.Fsm, "Check inventory")) return "Check inventory";
@@ -231,6 +245,17 @@ namespace WinterMP.Core.Sync
                     if (Array.IndexOf(buy.ResultStates, "Subtract") >= 0) return "Subtract";
                     if (Array.IndexOf(buy.ResultStates, "State 1") >= 0) return "State 1";
                     break;
+            }
+
+            // Catalogued buys may use game-specific entry states that do not fit a
+            // generic shop naming convention (for example the race payout's
+            // "State 1"). The host must enter that exact guarded state when it is
+            // not locally waiting on the button; otherwise a valid guest intent
+            // would be accepted but its USE event would be ignored.
+            foreach (var guard in buy.EntryGuards)
+            {
+                if (guard.TriggerEvent == eventName && FsmHook.HasState(buy.Fsm, guard.StateName))
+                    return guard.StateName;
             }
 
             return null;

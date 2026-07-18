@@ -799,10 +799,41 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PlayerTransform transform:
+                    if (!HasValidPlayerTransform(transform))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped malformed PlayerTransform from {peer} for player {transform.PlayerId}.");
+                        break;
+                    }
+                    if (IsHost && !IsPeerPlayer(peer, transform.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped PlayerTransform claiming player {transform.PlayerId} from {peer}.");
+                        break;
+                    }
                     HandlePlayerTransform(peer, transform);
                     break;
 
                 case PassengerState passengerState:
+                    if (IsHost && !IsPeerPlayer(peer, passengerState.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped PassengerState claiming player {passengerState.PlayerId} from {peer}.");
+                        break;
+                    }
+                    if (IsHost && !TryAcceptGuestPassengerState(peer, passengerState))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped invalid or stale PassengerState from player {passengerState.PlayerId}.");
+                        SendTo(peer, new PassengerState
+                        {
+                            PlayerId = passengerState.PlayerId,
+                            VehicleId = 0,
+                            SeatIndex = PassengerState.SeatNone,
+                            Sequence = passengerState.Sequence,
+                        }, Channel.ReliableOrdered);
+                        break;
+                    }
                     RecordPassengerState(passengerState);
                     Sync.PassengerController.Instance?.OnRemotePassengerState(passengerState);
                     if (IsHost)
@@ -814,7 +845,17 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PlayerNeedsReport needsReport when IsHost:
-                    HandlePlayerNeedsReport(needsReport);
+                    if (!IsPeerPlayer(peer, needsReport.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped PlayerNeedsReport claiming player {needsReport.PlayerId} from {peer}.");
+                        break;
+                    }
+                    if (!HandlePlayerNeedsReport(needsReport))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped invalid or stale PlayerNeedsReport from player {needsReport.PlayerId}.");
+                    }
                     break;
 
                 case SleepConsentRequest sleepRequest when !IsHost:
@@ -822,6 +863,12 @@ namespace WinterMP.Core.Session
                     break;
 
                 case SleepConsentResponse sleepResponse when IsHost:
+                    if (!IsPeerPlayer(peer, sleepResponse.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped SleepConsentResponse claiming player {sleepResponse.PlayerId} from {peer}.");
+                        break;
+                    }
                     Sync.SleepConsentManager.Instance?.OnRemoteResponse(sleepResponse);
                     break;
 
@@ -859,39 +906,65 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PlayerClothingState clothingState:
+                    if (IsHost && !IsPeerPlayer(peer, clothingState.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped PlayerClothingState claiming player {clothingState.PlayerId} from {peer}.");
+                        break;
+                    }
                     Sync.WorldSyncManager.Instance?.OnRemoteClothingState(clothingState);
                     if (IsHost)
                         Broadcast(clothingState, Channel.ReliableOrdered, except: peer);
                     break;
 
+                case FsmStateEnter stateEnter when IsHost:
+                    if (TryGetPlayerId(peer, out byte fsmPlayerId)
+                        && Sync.WorldSyncManager.Instance?.OnHostGuestStateEnter(stateEnter, fsmPlayerId) == true)
+                        Broadcast(stateEnter, Channel.ReliableOrdered, except: peer);
+                    break;
+
                 case FsmStateEnter stateEnter:
                     Sync.WorldSyncManager.Instance?.OnRemoteStateEnter(stateEnter);
-                    if (IsHost)
-                        Broadcast(stateEnter, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case FsmRawEvent rawEvent when IsHost:
+                    if (TryGetPlayerId(peer, out byte rawEventPlayerId)
+                        && Sync.WorldSyncManager.Instance?.OnHostGuestRawEvent(rawEvent, rawEventPlayerId) == true)
+                        Broadcast(rawEvent, Channel.ReliableOrdered, except: peer);
                     break;
 
                 case FsmRawEvent rawEvent:
                     Sync.WorldSyncManager.Instance?.OnRemoteRawEvent(rawEvent);
-                    if (IsHost)
-                        Broadcast(rawEvent, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case BoltState boltState when IsHost:
+                    if (TryGetPlayerId(peer, out byte boltPlayerId)
+                        && Sync.WorldSyncManager.Instance?.OnHostGuestBoltState(boltState, boltPlayerId) == true)
+                        Broadcast(boltState, Channel.ReliableOrdered, except: peer);
                     break;
 
                 case BoltState boltState:
                     Sync.WorldSyncManager.Instance?.OnRemoteBoltState(boltState);
-                    if (IsHost)
-                        Broadcast(boltState, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case PartState partState when IsHost:
+                    if (TryGetPlayerId(peer, out byte partPlayerId)
+                        && Sync.WorldSyncManager.Instance?.OnHostGuestPartState(partState, partPlayerId) == true)
+                        Broadcast(partState, Channel.ReliableOrdered, except: peer);
                     break;
 
                 case PartState partState:
                     Sync.WorldSyncManager.Instance?.OnRemotePartState(partState);
-                    if (IsHost)
-                        Broadcast(partState, Channel.ReliableOrdered, except: peer);
+                    break;
+
+                case ItemDespawn itemDespawn when IsHost:
+                    if (TryGetPlayerId(peer, out byte despawnPlayerId)
+                        && Sync.WorldSyncManager.Instance?.OnHostGuestItemDespawn(itemDespawn, despawnPlayerId) == true)
+                        Broadcast(itemDespawn, Channel.ReliableOrdered, except: peer);
                     break;
 
                 case ItemDespawn itemDespawn:
                     Sync.WorldSyncManager.Instance?.OnRemoteItemDespawn(itemDespawn);
-                    if (IsHost)
-                        Broadcast(itemDespawn, Channel.ReliableOrdered, except: peer);
                     break;
 
                 case ItemSpawn itemSpawn when !IsHost:
@@ -899,38 +972,81 @@ namespace WinterMP.Core.Session
                     break;
 
                 case SpawnIntent spawnIntent when IsHost:
-                    Sync.WorldSyncManager.Instance?.OnHostSpawnIntent(spawnIntent);
+                    if (!IsPeerPlayer(peer, spawnIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped SpawnIntent claiming player {spawnIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostGuestSpawnIntent(spawnIntent, spawnIntent.PlayerId);
+                    break;
+
+                case ItemTransform itemTransform when IsHost:
+                    if (!IsPeerPlayer(peer, itemTransform.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped ItemTransform claiming player {itemTransform.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestItemTransform(itemTransform, itemTransform.OwnerPlayerId) == true)
+                        Broadcast(itemTransform,
+                            ItemTransformPolicy.SelectSendChannel(itemTransform.IsFinal, itemTransform.IsVehicle),
+                            except: peer);
+                    else
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped unauthorized ItemTransform {itemTransform.ItemId:X8} from player {itemTransform.OwnerPlayerId}.");
                     break;
 
                 case ItemTransform itemTransform:
                     Sync.WorldSyncManager.Instance?.OnRemoteItemTransform(itemTransform);
-                    if (IsHost)
-                    {
-                        Broadcast(itemTransform,
-                            ItemTransformPolicy.SelectSendChannel(itemTransform.IsFinal, itemTransform.IsVehicle),
-                            except: peer);
-                    }
                     break;
 
                 case NpcTransform npcTransform when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteNpcTransform(npcTransform);
                     break;
 
+                case VehicleState vehicleState when IsHost:
+                    if (!IsPeerPlayer(peer, vehicleState.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped VehicleState claiming player {vehicleState.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleState(vehicleState, vehicleState.OwnerPlayerId) == true)
+                        Broadcast(vehicleState, Channel.UnreliableSequenced, except: peer);
+                    else
+                        WinterMPPlugin.Log.LogWarning($"Dropped unauthorized VehicleState {vehicleState.VehicleId:X8}.");
+                    break;
+
                 case VehicleState vehicleState:
                     Sync.WorldSyncManager.Instance?.OnRemoteVehicleState(vehicleState);
-                    if (IsHost)
-                        Broadcast(vehicleState, Channel.UnreliableSequenced, except: peer);
+                    break;
+
+                case VehicleClimate vehicleClimate when IsHost:
+                    if (!IsPeerPlayer(peer, vehicleClimate.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped VehicleClimate claiming player {vehicleClimate.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleClimate(vehicleClimate, vehicleClimate.OwnerPlayerId) == true)
+                        Broadcast(vehicleClimate, Channel.UnreliableSequenced, except: peer);
+                    else
+                        WinterMPPlugin.Log.LogWarning($"Dropped unauthorized VehicleClimate {vehicleClimate.VehicleId:X8}.");
                     break;
 
                 case VehicleClimate vehicleClimate:
                     Sync.WorldSyncManager.Instance?.OnRemoteVehicleClimate(vehicleClimate);
-                    if (IsHost)
-                        Broadcast(vehicleClimate, Channel.UnreliableSequenced, except: peer);
                     break;
 
-                case VehicleCargo vehicleCargo:
-                    Sync.WorldSyncManager.Instance?.OnRemoteVehicleCargo(vehicleCargo);
-                    if (IsHost)
+                case VehicleCargo vehicleCargo when IsHost:
+                    if (!IsPeerPlayer(peer, vehicleCargo.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped VehicleCargo claiming player {vehicleCargo.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleCargo(vehicleCargo, vehicleCargo.OwnerPlayerId) == true)
                     {
                         // Empty-set transitions ride the reliable channel end to end —
                         // losing one on relay would strand pinned cargo on other guests.
@@ -942,6 +1058,22 @@ namespace WinterMP.Core.Session
                     }
                     break;
 
+                case VehicleCargo vehicleCargo:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVehicleCargo(vehicleCargo);
+                    break;
+
+                case VehicleFuelIntent fuelIntent when IsHost:
+                    if (!IsPeerPlayer(peer, fuelIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped VehicleFuelIntent claiming player {fuelIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+
+                    if (Sync.WorldSyncManager.Instance?.OnHostVehicleFuelIntent(fuelIntent, out var fuelState) == true)
+                        Broadcast(fuelState, Channel.ReliableOrdered);
+                    break;
+
                 case TimeSync timeSync when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteTimeSync(timeSync);
                     break;
@@ -951,7 +1083,24 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PurchaseIntent purchaseIntent when IsHost:
-                    Sync.WorldSyncManager.Instance?.OnHostPurchaseIntent(purchaseIntent);
+                    if (!IsPeerPlayer(peer, purchaseIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped PurchaseIntent claiming player {purchaseIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostGuestPurchaseIntent(purchaseIntent, purchaseIntent.PlayerId);
+                    break;
+
+                case PoliceIntent policeIntent when IsHost:
+                    if (!IsPeerPlayer(peer, policeIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped PoliceIntent claiming player {policeIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostPoliceIntent(policeIntent, out var policeState) == true)
+                        Broadcast(policeState, Channel.ReliableOrdered);
                     break;
 
                 case HeatSourceState heatState when !IsHost:
@@ -959,6 +1108,12 @@ namespace WinterMP.Core.Session
                     break;
 
                 case HeatSourceIntent heatIntent when IsHost:
+                    if (!IsPeerPlayer(peer, heatIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped HeatSourceIntent claiming player {heatIntent.PlayerId} from {peer}.");
+                        break;
+                    }
                     Sync.WorldSyncManager.Instance?.OnHostHeatSourceIntent(heatIntent);
                     break;
 
@@ -969,8 +1124,16 @@ namespace WinterMP.Core.Session
                             $"Dropped FluidContainerState claiming player {fluidState.OwnerPlayerId} from {peer}.");
                         break;
                     }
-                    Sync.WorldSyncManager.Instance?.OnRemoteFluidContainerState(fluidState);
-                    Broadcast(fluidState, Channel.ReliableOrdered, except: peer);
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestFluidContainerState(
+                            fluidState, fluidState.OwnerPlayerId) == true)
+                    {
+                        Broadcast(fluidState, Channel.ReliableOrdered, except: peer);
+                    }
+                    else
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped unauthorized FluidContainerState {fluidState.ItemId:X8} from player {fluidState.OwnerPlayerId}.");
+                    }
                     break;
 
                 case FluidContainerState fluidState:
@@ -983,6 +1146,81 @@ namespace WinterMP.Core.Session
 
                 case JobSiteState jobSiteState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteJobSiteState(jobSiteState);
+                    break;
+
+                case MailOrderState mailOrderState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteMailOrderState(mailOrderState);
+                    break;
+
+                case MailOrderIntent mailOrderIntent when IsHost:
+                    if (!IsPeerPlayer(peer, mailOrderIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped MailOrderIntent claiming player {mailOrderIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostMailOrderIntent(mailOrderIntent);
+                    break;
+
+                case InspectionState inspectionState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteInspectionState(inspectionState);
+                    break;
+
+                case PoliceState remotePoliceState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemotePoliceState(remotePoliceState);
+                    break;
+
+                case HomeStereoIntent homeStereoIntent when IsHost:
+                    if (!IsPeerPlayer(peer, homeStereoIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped HomeStereoIntent claiming player {homeStereoIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostHomeStereoIntent(homeStereoIntent, out var homeStereoState) == true)
+                        Broadcast(homeStereoState, Channel.ReliableOrdered);
+                    break;
+
+                case HomeStereoState remoteHomeStereoState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteHomeStereoState(remoteHomeStereoState);
+                    break;
+
+                case RallyIntent rallyIntent when IsHost:
+                    if (!IsPeerPlayer(peer, rallyIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped RallyIntent claiming player {rallyIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostRallyIntent(rallyIntent, out var rallyState) == true)
+                        Broadcast(rallyState, Channel.ReliableOrdered);
+                    break;
+
+                case RallyState remoteRallyState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteRallyState(remoteRallyState);
+                    break;
+
+                case IceRaceIntent iceRaceIntent when IsHost:
+                    if (!IsPeerPlayer(peer, iceRaceIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped IceRaceIntent claiming player {iceRaceIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostIceRaceIntent(iceRaceIntent, out var iceRaceState) == true)
+                        Broadcast(iceRaceState, Channel.ReliableOrdered);
+                    break;
+
+                case IceRaceState remoteIceRaceState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteIceRaceState(remoteIceRaceState);
+                    break;
+
+                case IceRaceEventState iceRaceEventState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteIceRaceEventState(iceRaceEventState);
+                    break;
+
+                case IceRaceResultsState iceRaceResultsState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteIceRaceResultsState(iceRaceResultsState);
                     break;
 
                 case WorldSnapshotRequest snapshotRequest when IsHost:
@@ -1221,11 +1459,21 @@ namespace WinterMP.Core.Session
             return offer;
         }
 
-        private void HandlePlayerNeedsReport(PlayerNeedsReport report)
+        private bool HandlePlayerNeedsReport(PlayerNeedsReport report)
         {
+            if (!HasFiniteNeeds(report)) return false;
+
             foreach (var player in _playersByPeer.Values)
             {
                 if (player.PlayerId != report.PlayerId || player.SteamId == 0) continue;
+
+                if (player.HasNeedsReport)
+                {
+                    ushort difference = (ushort)(report.Sequence - player.LastNeedsSequence);
+                    if (difference == 0 || difference > short.MaxValue) return false;
+                }
+                player.LastNeedsSequence = report.Sequence;
+                player.HasNeedsReport = true;
 
                 GuestProfileStore.RememberNeeds(player.SteamId, new GuestProfileStore.NeedsSnapshot
                 {
@@ -1238,8 +1486,21 @@ namespace WinterMP.Core.Session
                     Drunk = report.Drunk,
                     Valid = true,
                 });
-                return;
+                return true;
             }
+            return false;
+        }
+
+        private static bool HasFiniteNeeds(PlayerNeedsReport report)
+        {
+            return IsFinite(report.Hunger) && IsFinite(report.Fatigue) && IsFinite(report.Thirst)
+                && IsFinite(report.Urine) && IsFinite(report.BodyTemp) && IsFinite(report.Stress)
+                && IsFinite(report.Drunk);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         private static bool TryReadHostFeet(out Vector3 feet, out Quaternion lookRotation)
@@ -1361,6 +1622,92 @@ namespace WinterMP.Core.Session
             // Host relays transforms so all guests see all players.
             if (IsHost)
                 Broadcast(transform, Channel.UnreliableSequenced, except: peer);
+        }
+
+        /// <summary>
+        /// Player poses are presentation data, but the host also uses a fresh pose
+        /// as the physical-presence proof for validated intents. Reject malformed
+        /// values before they can poison remote transforms, sidecar saves, or an
+        /// intent's proximity comparison. The normal local sender always produces a
+        /// unit quaternion and only defines the seven documented animation bits.
+        /// </summary>
+        private static bool HasValidPlayerTransform(PlayerTransform transform)
+        {
+            const byte KnownMoveStateFlags = Sync.PlayerMoveState.Walking
+                | Sync.PlayerMoveState.Running
+                | Sync.PlayerMoveState.Crouch
+                | Sync.PlayerMoveState.Carry
+                | Sync.PlayerMoveState.Driving
+                | Sync.PlayerMoveState.Passenger
+                | Sync.PlayerMoveState.Swimming;
+            const float MaxCoordinate = 100000f;
+
+            if (!IsFinite(transform.Position.X) || !IsFinite(transform.Position.Y) || !IsFinite(transform.Position.Z)
+                || !IsFinite(transform.Rotation.X) || !IsFinite(transform.Rotation.Y)
+                || !IsFinite(transform.Rotation.Z) || !IsFinite(transform.Rotation.W)
+                || Mathf.Abs(transform.Position.X) > MaxCoordinate || Mathf.Abs(transform.Position.Y) > MaxCoordinate
+                || Mathf.Abs(transform.Position.Z) > MaxCoordinate || (transform.MoveState & ~KnownMoveStateFlags) != 0)
+            {
+                return false;
+            }
+
+            float rotationLengthSquared = transform.Rotation.X * transform.Rotation.X
+                + transform.Rotation.Y * transform.Rotation.Y
+                + transform.Rotation.Z * transform.Rotation.Z
+                + transform.Rotation.W * transform.Rotation.W;
+            return rotationLengthSquared >= 0.25f && rotationLengthSquared <= 2.25f;
+        }
+
+        /// <summary>Host boundary for a guest's cosmetic passenger-seat claim. The
+        /// player identity/sequence, fresh pose, exact registered seat, and existing
+        /// occupancy are all checked before any avatar or snapshot state changes.</summary>
+        private bool TryAcceptGuestPassengerState(PeerId peer, PassengerState state)
+        {
+            if (!_playersByPeer.TryGetValue(peer, out var player) || player.PlayerId != state.PlayerId)
+                return false;
+
+            if (player.HasPassengerState)
+            {
+                ushort difference = (ushort)(state.Sequence - player.LastPassengerSequence);
+                if (difference == 0 || difference > short.MaxValue) return false;
+            }
+
+            var passengers = Sync.PassengerController.Instance;
+            if (passengers == null || !passengers.TryValidateGuestPassengerState(state, player))
+                return false;
+
+            if (state.IsSeated && !TryResolvePassengerSeatClaim(state))
+                return false;
+
+            player.LastPassengerSequence = state.Sequence;
+            player.HasPassengerState = true;
+            return true;
+        }
+
+        /// <summary>Seat races are settled by player id on the host, not packet arrival
+        /// order. A lower id replacing a higher occupant is safe: its relayed claim makes
+        /// the displaced guest's local controller exit; a higher id is corrected directly.</summary>
+        private bool TryResolvePassengerSeatClaim(PassengerState state)
+        {
+            byte occupantId = 0;
+            bool occupied = false;
+            foreach (var occupancy in _passengerOccupancy)
+            {
+                if (occupancy.Key != state.PlayerId && occupancy.Value.IsSeated
+                    && occupancy.Value.VehicleId == state.VehicleId
+                    && occupancy.Value.SeatIndex == state.SeatIndex)
+                {
+                    occupantId = occupancy.Key;
+                    occupied = true;
+                    break;
+                }
+            }
+
+            if (!occupied) return true;
+            if (occupantId < state.PlayerId) return false;
+
+            _passengerOccupancy.Remove(occupantId);
+            return true;
         }
 
         /// <summary>Guest-originated owner fields must match the authenticated peer.</summary>

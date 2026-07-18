@@ -22,13 +22,14 @@ namespace WinterMP.Net.Messages
             message.Write(writer);
         }
 
-        /// <summary>Throws <see cref="ProtocolException"/> on unknown ids or truncated payloads.</summary>
+        /// <summary>Throws <see cref="ProtocolException"/> on unknown ids, malformed payloads, or trailing bytes.</summary>
         public static IMessage Decode(byte[] payload)
         {
             var reader = new NetReader(payload);
             var id = (MessageId)reader.ReadUInt16();
             var message = MessageRegistry.Create(id);
             message.Read(reader);
+            reader.RequireEnd();
             return message;
         }
     }

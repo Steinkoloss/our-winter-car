@@ -27,11 +27,14 @@ namespace WinterMP.Core.Sync
             public FsmFloat Primary = null!;
             public FsmFloat Secondary = null!;
             public FsmBool Active = null!;
+            public FsmBool? HoseAttached;
+            public FsmBool? HoseInWaste;
+            public FsmBool? Sucking;
             public ushort OutSequence;
             public ushort LastRemoteSequence;
             public float LastPrimary = float.NaN;
             public float LastSecondary = float.NaN;
-            public bool LastActive;
+            public byte LastFlags = byte.MaxValue;
         }
 
         private readonly Dictionary<uint, Site> _sites = new Dictionary<uint, Site>();
@@ -83,6 +86,12 @@ namespace WinterMP.Core.Sync
             site.Primary.Value = Mathf.Max(0f, message.Primary);
             site.Secondary.Value = Mathf.Max(0f, message.Secondary);
             site.Active.Value = message.IsActive;
+            if (site.HoseAttached != null)
+                site.HoseAttached.Value = (message.Flags & JobSiteState.FlagHoseAttached) != 0;
+            if (site.HoseInWaste != null)
+                site.HoseInWaste.Value = (message.Flags & JobSiteState.FlagHoseInWaste) != 0;
+            if (site.Sucking != null)
+                site.Sucking.Value = (message.Flags & JobSiteState.FlagSucking) != 0;
         }
 
         private IEnumerable<JobSiteState> BuildStates(bool changedOnly)
@@ -91,21 +100,21 @@ namespace WinterMP.Core.Sync
             {
                 float primary = site.Primary.Value;
                 float secondary = site.Secondary.Value;
-                bool active = site.Active.Value;
+                byte flags = ReadFlags(site);
                 bool changed = float.IsNaN(site.LastPrimary)
                     || Mathf.Abs(primary - site.LastPrimary) > ChangeEpsilon
                     || Mathf.Abs(secondary - site.LastSecondary) > ChangeEpsilon
-                    || active != site.LastActive;
+                    || flags != site.LastFlags;
                 if (changedOnly && !changed) continue;
 
                 site.LastPrimary = primary;
                 site.LastSecondary = secondary;
-                site.LastActive = active;
+                site.LastFlags = flags;
                 yield return new JobSiteState
                 {
                     SiteId = site.Id,
                     Kind = site.Kind,
-                    Flags = active ? JobSiteState.FlagActive : (byte)0,
+                    Flags = flags,
                     Sequence = ++site.OutSequence,
                     Primary = primary,
                     Secondary = secondary,
@@ -131,6 +140,9 @@ namespace WinterMP.Core.Sync
                     FsmFloat? primary;
                     FsmFloat? secondary;
                     FsmBool? active;
+                    FsmBool? hoseAttached = null;
+                    FsmBool? hoseInWaste = null;
+                    FsmBool? sucking = null;
 
                     if (path.StartsWith("JOBS/HouseShit", StringComparison.Ordinal)
                         && fsm.FsmName == "Level")
@@ -147,6 +159,16 @@ namespace WinterMP.Core.Sync
                         primary = fsm.FsmVariables.FindFsmFloat("Surplus");
                         secondary = fsm.FsmVariables.FindFsmFloat("Penalty");
                         active = fsm.FsmVariables.FindFsmBool("Order");
+                    }
+                    else if (path == "GIFU(750/450psi)/ShitTank" && fsm.FsmName == "Pump")
+                    {
+                        kind = JobSiteState.KindSewageTruck;
+                        primary = fsm.FsmVariables.FindFsmFloat("ShitLevel");
+                        secondary = fsm.FsmVariables.FindFsmFloat("PumpEfficiency");
+                        active = fsm.FsmVariables.FindFsmBool("PumpRunning");
+                        hoseAttached = fsm.FsmVariables.FindFsmBool("HoseAttached");
+                        hoseInWaste = fsm.FsmVariables.FindFsmBool("HoseInShit");
+                        sucking = fsm.FsmVariables.FindFsmBool("Sucking");
                     }
                     else
                     {
@@ -165,6 +187,9 @@ namespace WinterMP.Core.Sync
                         Primary = primary,
                         Secondary = secondary,
                         Active = active,
+                        HoseAttached = hoseAttached,
+                        HoseInWaste = hoseInWaste,
+                        Sucking = sucking,
                     };
                     WinterMPPlugin.Log.LogInfo($"JobSiteSync: registered {kind} site '{path}'.");
                 }
@@ -186,6 +211,18 @@ namespace WinterMP.Core.Sync
                 applied.Add(pair.Key);
             }
             foreach (uint id in applied) _pending.Remove(id);
+        }
+
+        private static byte ReadFlags(Site site)
+        {
+            byte flags = site.Active.Value ? JobSiteState.FlagActive : (byte)0;
+            if (site.HoseAttached != null && site.HoseAttached.Value)
+                flags |= JobSiteState.FlagHoseAttached;
+            if (site.HoseInWaste != null && site.HoseInWaste.Value)
+                flags |= JobSiteState.FlagHoseInWaste;
+            if (site.Sucking != null && site.Sucking.Value)
+                flags |= JobSiteState.FlagSucking;
+            return flags;
         }
 
         private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);

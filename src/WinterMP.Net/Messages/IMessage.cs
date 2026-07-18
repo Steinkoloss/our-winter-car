@@ -65,15 +65,43 @@ namespace WinterMP.Net.Messages
         WorldProgressState = 55,
         /// <summary>Host -> guests: current sewage/firewood site state.</summary>
         JobSiteState = 56,
+        /// <summary>Host -> guests: pending AMIS/Yellow Pages mail-order record.</summary>
+        MailOrderState = 57,
+        /// <summary>Guest -> host: selected AMIS/Yellow Pages order data before payment.</summary>
+        MailOrderIntent = 58,
+        /// <summary>Host -> guests: inspection result checklist and renewal state.</summary>
+        InspectionState = 59,
 
         // 60-79: vehicles — M4
         VehicleState = 60,
         VehicleClimate = 61,
         VehicleCargo = 62,
+        /// <summary>Guest -> host: validated fuel-station transfer into a parked vehicle tank.</summary>
+        VehicleFuelIntent = 63,
 
         // 80-99: economy — M5
         WalletState = 80,
         PurchaseIntent = 81,
+        /// <summary>Host -> guests: validated active police fine/checkpoint record.</summary>
+        PoliceState = 82,
+        /// <summary>Guest -> host: locally observed police checkpoint offence for validation.</summary>
+        PoliceIntent = 83,
+        /// <summary>Host -> guests: home stereo power/channel/knob scalar state.</summary>
+        HomeStereoState = 84,
+        /// <summary>Guest -> host: requested home stereo scalar update.</summary>
+        HomeStereoIntent = 85,
+        /// <summary>Host -> guests: validated rally-stage progress record.</summary>
+        RallyState = 86,
+        /// <summary>Guest -> host: local rally start/checkpoint crossing for validation.</summary>
+        RallyIntent = 87,
+        /// <summary>Host -> guests: validated ice-race lap/checkpoint record.</summary>
+        IceRaceState = 88,
+        /// <summary>Guest -> host: ice-race start/checkpoint/finish marker crossing.</summary>
+        IceRaceIntent = 89,
+        /// <summary>Host -> guests: ice-race event/grid configuration.</summary>
+        IceRaceEventState = 90,
+        /// <summary>Host -> guests: ordered ice-race result-board rows.</summary>
+        IceRaceResultsState = 91,
 
         // 100-119: NPCs — M6
         NpcTransform = 100,
@@ -88,7 +116,7 @@ namespace WinterMP.Net.Messages
 
         // Reserved ranges for future subsystems:
         //   63-79 vehicles (attachment, fuel/damage)
-        //   82-99 economy
+        //   92-99 economy
         //   101-119 NPCs/jobs (NpcTransform = 100)
         //   126-139 snapshot/bulk transfer control
     }

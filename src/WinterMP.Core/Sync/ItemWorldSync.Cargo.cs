@@ -19,6 +19,16 @@ namespace WinterMP.Core.Sync
     /// </summary>
     internal sealed partial class ItemWorldSync
     {
+        /// <summary>Host gate: only the current vehicle transform owner may stream its cargo set.</summary>
+        public bool TryAcceptGuestVehicleCargo(VehicleCargo message, byte playerId)
+        {
+            return message.OwnerPlayerId == playerId
+                && _items.TryGetValue(message.VehicleId, out var vehicle)
+                && vehicle.IsVehicle
+                && vehicle.Body != null
+                && vehicle.RemoteOwner == playerId;
+        }
+
         /// <summary>Local-space smoothing for pinned cargo: snappier than the world-space
         /// item lerp because the vehicle frame already absorbs the big motion — the local
         /// residual is just the item shifting around the cabin.</summary>

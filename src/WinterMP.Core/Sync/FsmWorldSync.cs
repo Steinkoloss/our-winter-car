@@ -35,6 +35,7 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<uint, PendingBoltState> _pendingBoltStates = new Dictionary<uint, PendingBoltState>();
         private readonly Dictionary<uint, PendingPartState> _pendingPartStates = new Dictionary<uint, PendingPartState>();
         private readonly List<PendingPurchaseIntent> _pendingPurchaseIntents = new List<PendingPurchaseIntent>();
+        private readonly Dictionary<byte, ushort> _lastGuestPurchaseSequences = new Dictionary<byte, ushort>();
         private ushort _outPurchaseSequence;
 
 
@@ -118,6 +119,7 @@ namespace WinterMP.Core.Sync
             _pendingBoltStates.Clear();
             _pendingPartStates.Clear();
             _pendingPurchaseIntents.Clear();
+            _lastGuestPurchaseSequences.Clear();
         }
 
         public FsmWorldSync(WorldSyncBridge bridge, VehicleWorldSync vehicles)

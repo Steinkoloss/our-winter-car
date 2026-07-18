@@ -123,6 +123,41 @@ namespace WinterMP.Net.Messages
     }
 
     /// <summary>
+    /// A fuel-station nozzle has increased a non-owned vehicle's local tank. The
+    /// host verifies the player, nozzle and vehicle are co-located before accepting
+    /// the bounded increase and sending a normal <see cref="VehicleState"/> back.
+    /// </summary>
+    public sealed class VehicleFuelIntent : IMessage
+    {
+        public uint VehicleId;
+        public uint NozzleNetId;
+        public byte PlayerId;
+        public ushort Sequence;
+        /// <summary>Requested tank level normalized to the target tank's capacity.</summary>
+        public byte TargetFuelLevel;
+
+        public MessageId Id => MessageId.VehicleFuelIntent;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(VehicleId);
+            writer.WriteUInt32(NozzleNetId);
+            writer.WriteByte(PlayerId);
+            writer.WriteUInt16(Sequence);
+            writer.WriteByte(TargetFuelLevel);
+        }
+
+        public void Read(NetReader reader)
+        {
+            VehicleId = reader.ReadUInt32();
+            NozzleNetId = reader.ReadUInt32();
+            PlayerId = reader.ReadByte();
+            Sequence = reader.ReadUInt16();
+            TargetFuelLevel = reader.ReadByte();
+        }
+    }
+
+    /// <summary>
     /// Live vehicle-local poses of loose items riding a moving vehicle, streamed by
     /// the vehicle's transform owner alongside the vehicle stream. The owner's own
     /// physics simulates the cargo (sliding, rolling, tumbling — the fun part);

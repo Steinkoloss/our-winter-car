@@ -42,11 +42,15 @@ namespace WinterMP.Net.Tests
             {
                 SourceId = 0x12345678,
                 Action = HeatSourceIntent.ActionSaunaThrow,
+                PlayerId = 7,
+                Sequence = 49152,
             };
 
             var decoded = Assert.IsType<HeatSourceIntent>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.SourceId, decoded.SourceId);
             Assert.Equal(original.Action, decoded.Action);
+            Assert.Equal(original.PlayerId, decoded.PlayerId);
+            Assert.Equal(original.Sequence, decoded.Sequence);
         }
     }
 }

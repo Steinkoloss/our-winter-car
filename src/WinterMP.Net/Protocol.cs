@@ -57,7 +57,43 @@ namespace WinterMP.Net
         //      market listing progress for guests and joiners.
         // v34: JobSiteState (56) mirrors all sewage and firewood site progress:
         //      work-order active flag plus the site-specific level/surplus values.
-        public const ushort Version = 34;
+        // v35: JobSiteState kind 3 and its kind-specific flags mirror the GIFU
+        //      sewage-truck pump/tank, including hose and active-pumping state.
+        // v36: MailOrderState (57) mirrors the saved AMIS/Yellow Pages pending-order
+        //      records, including opaque package data required for deliveries/rejoins.
+        // v37: MailOrderIntent (58) carries a guest's exact selected phone-order
+        //      record to the host before host-authoritative package payment/spawn.
+        // v38: InspectionState (59) mirrors host-authoritative inspection pass,
+        //      checklist, stamp and renewal-date state for observers and joiners.
+        // v39: VehicleFuelIntent (63) lets a guest refuel a nearby parked vehicle
+        //      through a host-validated Peräpörtti nozzle/tank reconciliation.
+        // v40: InspectionState gains host-generated standard/museum registration
+        //      plate text and availability flags, closing observer plate divergence.
+        // v41: PoliceIntent/PoliceState (82/83) turn local police-checkpoint
+        //      observations into host-validated shared fine records.
+        // v42: HomeStereoIntent/HomeStereoState (84/85) make the fixed home
+        //      radio/CD player's power, channel, volume and bass host-owned.
+        // v43: RallyIntent/RallyState (86/87) establish host-validated rally
+        //      stage/checkpoint ordering and host-clocked progress records.
+        // v44: IceRaceIntent/IceRaceState (88/89) establish host-validated
+        //      ice-track marker order and host-clocked lap records.
+        // v45: IceRaceEventState (90) mirrors the host ice-race grid/heat
+        //      controller configuration to observers and joiners.
+        // v46: IceRaceResultsState (91) mirrors host-ranked ice-race board rows.
+        // v47: IceRaceEventState gains the host lineup's registration flag and race stage.
+        // v48: PurchaseIntent acceptance requires a fresh authenticated pose near a
+        //      registered entry guard and a monotonic per-guest sequence (replay-safe).
+        // v49: HeatSourceIntent gains authenticated player id + sequence so the host
+        //      can require fresh source proximity and reject replayed heat actions.
+        // v50: exact ice-race and Suvi-Sprint price triggers join the host-authoritative
+        //      PurchaseIntent pipeline; their shared-wallet result is now host-owned.
+        // v51: home, yard, and apartment shower tap/valve controls are catalogued
+        //      reliable FSM transitions, keeping shared water/hygiene presentation aligned.
+        // v52: PassengerState gains a monotonic sequence; host validates guest claims
+        //      against fresh position, registered seat geometry, and canonical occupancy.
+        // v53: PlayerTransform relays reject non-finite/out-of-map positions, invalid
+        //      rotations, and unknown movement bits before proximity checks use them.
+        public const ushort Version = 53;
     }
 
     /// <summary>

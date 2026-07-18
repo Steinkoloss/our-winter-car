@@ -92,5 +92,16 @@ namespace WinterMP.Net.Tests
             writer.WriteUInt16(0xFFF0);
             Assert.Throws<ProtocolException>(() => PacketCodec.Decode(writer.ToArray()));
         }
+
+        [Fact]
+        public void TrailingPayloadBytes_ThrowProtocolException()
+        {
+            var encoded = PacketCodec.Encode(new WalletState { Money = 42f, Sequence = 7 });
+            var padded = new byte[encoded.Length + 1];
+            System.Array.Copy(encoded, padded, encoded.Length);
+            padded[padded.Length - 1] = 0xA5;
+
+            Assert.Throws<ProtocolException>(() => PacketCodec.Decode(padded));
+        }
     }
 }

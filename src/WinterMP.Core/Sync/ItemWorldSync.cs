@@ -42,6 +42,7 @@ namespace WinterMP.Core.Sync
             _hostSpawnManifests.Clear();
             _snapshotSeenIds.Clear();
             _spawnEpochs.Clear();
+            _lastGuestSpawnSequences.Clear();
         }
 
         internal void ReleaseSession()
@@ -96,6 +97,7 @@ namespace WinterMP.Core.Sync
             _hostSpawnManifests.Clear();
             _snapshotSeenIds.Clear();
             _spawnEpochs.Clear();
+            _lastGuestSpawnSequences.Clear();
         }
     }
 }

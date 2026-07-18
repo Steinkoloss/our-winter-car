@@ -42,6 +42,11 @@ namespace WinterMP.Core.Sync
         private const float RebroadcastSeconds = 8f;
         private const float VehicleScanIntervalSeconds = 3f;
         private const float PlayerSearchIntervalSeconds = 2f;
+        /// <summary>Host-side maximum age for a guest pose used to validate a seat claim.</summary>
+        private const float GuestPoseFreshSeconds = 2f;
+        /// <summary>Guest feet are below the seat cushion; this covers a real local entry
+        /// while rejecting map-wide vehicle/seat claims.</summary>
+        private const float GuestSeatClaimRadius = 2.0f;
         /// <summary>Where a seated body sits relative to the cushion anchor — used for the
         /// REMOTE avatar and the exit spot. Small raise so the body rests on the cushion.</summary>
         private const float SeatBodyRaise = 0.1f;
@@ -90,6 +95,7 @@ namespace WinterMP.Core.Sync
 
         private readonly Dictionary<uint, VehicleSeats> _vehicles = new Dictionary<uint, VehicleSeats>();
         private readonly Dictionary<byte, SeatRef> _remoteSeats = new Dictionary<byte, SeatRef>();
+        private readonly Dictionary<byte, ushort> _remoteSeatSequences = new Dictionary<byte, ushort>();
         private readonly List<WorldSyncManager.VehicleInfo> _vehicleScratch = new List<WorldSyncManager.VehicleInfo>();
         private readonly List<byte> _purgeScratch = new List<byte>();
 
@@ -107,6 +113,7 @@ namespace WinterMP.Core.Sync
         private bool _controllerWasEnabled;
         private float _nextKeyAt;
         private float _nextRebroadcastAt;
+        private ushort _seatSequence;
         /// <summary>Passenger's own look yaw, accumulated relative to the vehicle
         /// (not the world), so mouse-look survives the rotation pin below.</summary>
         private float _seatYawOffset;
@@ -426,28 +433,78 @@ namespace WinterMP.Core.Sync
                 : Quaternion.Euler(0f, _player.eulerAngles.y, 0f);
         }
 
-        private static void SendSeatState(SessionManager session, uint vehicleId, byte seat)
+        private void SendSeatState(SessionManager session, uint vehicleId, byte seat)
         {
-            session.SendWorldMessage(new PassengerState
+            ushort sequence = unchecked(++_seatSequence);
+            var message = new PassengerState
             {
                 PlayerId = session.LocalPlayerId,
                 VehicleId = vehicleId,
                 SeatIndex = seat,
-            }, Channel.ReliableOrdered);
-            session.RecordPassengerState(new PassengerState
-            {
-                PlayerId = session.LocalPlayerId,
-                VehicleId = vehicleId,
-                SeatIndex = seat,
-            });
+                Sequence = sequence,
+            };
+            session.SendWorldMessage(message, Channel.ReliableOrdered);
+            session.RecordPassengerState(message);
         }
 
         // ------------------------------------------------------------------ remote occupancy
 
+        /// <summary>
+        /// Validates a guest's requested seat against the host scene. Passenger
+        /// seating is cosmetic locally, but an unchecked request could pin that
+        /// guest's remote avatar into any tracked car for every peer.
+        /// </summary>
+        public bool TryValidateGuestPassengerState(PassengerState message, RemotePlayer player)
+        {
+            if (!message.IsSeated)
+                return message.VehicleId == 0;
+
+            if (message.SeatIndex >= 3 || player.LastTransformTime <= 0f
+                || Time.unscaledTime - player.LastTransformTime > GuestPoseFreshSeconds
+                || !IsFinite(player.Position))
+            {
+                return false;
+            }
+
+            // A just-loaded host may not have completed its periodic scan yet. Resolve
+            // eagerly here; if the exact car is not registered, fail closed and let the
+            // guest's normal seated keepalive retry after the scene becomes ready.
+            ScanVehicles(force: true);
+            if (!_vehicles.TryGetValue(message.VehicleId, out var vehicle) || vehicle.Body == null)
+                return false;
+
+            Vector3 seatPosition = vehicle.Body.transform.TransformPoint(vehicle.SeatLocal[message.SeatIndex]);
+            return (player.Position - seatPosition).sqrMagnitude <= GuestSeatClaimRadius * GuestSeatClaimRadius;
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return !float.IsNaN(value.x) && !float.IsInfinity(value.x)
+                && !float.IsNaN(value.y) && !float.IsInfinity(value.y)
+                && !float.IsNaN(value.z) && !float.IsInfinity(value.z);
+        }
+
         public void OnRemotePassengerState(PassengerState message)
         {
             var session = SessionManager.Instance;
-            if (session == null || message.PlayerId == session.LocalPlayerId) return;
+            if (session == null) return;
+
+            // The host normally omits a guest from relays of that guest's own
+            // valid state. A self-addressed SeatNone is therefore an explicit host
+            // rejection/correction and must free the local player without echoing it.
+            if (message.PlayerId == session.LocalPlayerId)
+            {
+                if (!message.IsSeated && _seated)
+                    ApplyHostSeatCorrection();
+                return;
+            }
+
+            if (_remoteSeatSequences.TryGetValue(message.PlayerId, out ushort previous))
+            {
+                ushort difference = (ushort)(message.Sequence - previous);
+                if (difference == 0 || difference > short.MaxValue) return;
+            }
+            _remoteSeatSequences[message.PlayerId] = message.Sequence;
 
             if (message.IsSeated)
             {
@@ -500,6 +557,16 @@ namespace WinterMP.Core.Sync
                     DestroyAnchor(seatRef);
                 _remoteSeats.Remove(message.PlayerId);
             }
+        }
+
+        private void ApplyHostSeatCorrection()
+        {
+            if (_player != null)
+                _player.parent = _originalParent;
+            LevelPlayer();
+            RestoreController();
+            _seated = false;
+            WinterMPPlugin.Log.LogWarning("Passenger: host rejected the seat claim; returned to on-foot state.");
         }
 
         private bool IsSeatOccupied(uint vehicleId, byte seat)
@@ -572,6 +639,7 @@ namespace WinterMP.Core.Sync
             {
                 DestroyAnchor(_remoteSeats[playerId]);
                 _remoteSeats.Remove(playerId);
+                _remoteSeatSequences.Remove(playerId);
             }
         }
 
@@ -581,13 +649,14 @@ namespace WinterMP.Core.Sync
             foreach (var seatRef in _remoteSeats.Values)
                 DestroyAnchor(seatRef);
             _remoteSeats.Clear();
+            _remoteSeatSequences.Clear();
         }
 
         // ------------------------------------------------------------------ seat discovery
 
-        private void ScanVehicles()
+        private void ScanVehicles(bool force = false)
         {
-            if (Time.unscaledTime < _nextVehicleScanAt) return;
+            if (!force && Time.unscaledTime < _nextVehicleScanAt) return;
             _nextVehicleScanAt = Time.unscaledTime + VehicleScanIntervalSeconds;
 
             var world = WorldSyncManager.Instance;

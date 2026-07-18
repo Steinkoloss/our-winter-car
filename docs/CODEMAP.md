@@ -45,10 +45,19 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 | Curated rules loader | `Catalog/SyncCatalog.cs`, `catalog/sync-catalog.json` |
 | Doors, shops, bolts, parts | Registered via `FsmWorldSync.Registry.cs` from catalog |
 | Items / pickables | `Sync/ItemWorldSync.*` |
+| NPC traffic / ice-race opponents | `Sync/NpcTrafficSync.cs` |
 | Jerrycan / liquid contents | `Sync/FluidContainerSync.cs` |
-| Vehicles | `Sync/VehicleWorldSync.*`, `Sync/ItemWorldSync.Vehicle.cs` |
+| Vehicles / host-validated station refueling | `Sync/VehicleWorldSync.*` (including `.Fuel.cs`), `Sync/ItemWorldSync.Vehicle.cs` |
 | Classifieds / factory / Marketti progress | `Sync/WorldProgressSync.cs` |
-| Sewage / firewood delivery sites | `Sync/JobSiteSync.cs` |
+| AMIS / Yellow Pages pending mail orders | `Sync/MailOrderSync.cs` |
+| Sewage / firewood delivery sites and GIFU tank/pump state | `Sync/JobSiteSync.cs` |
+| Vehicle inspection result / renewal record | `Sync/InspectionSync.cs` |
+| Police checkpoint reports / validated fine record | `Sync/PoliceSync.cs`, `Sync/FsmWorldSync.Local.cs` (guarded fine payment) |
+| Home stereo scalar controls | `Sync/HomeStereoSync.cs` |
+| Rally stage authority / timing records | `Sync/RallySync.cs` |
+| Ice-race marker/lap authority | `Sync/IceRaceSync.cs` |
+| Ice-race registration/event/grid configuration | `Sync/IceRaceEventSync.cs` |
+| Ice-race result-board rows | `Sync/IceRaceResultsSync.cs` |
 | Time / weather | `Sync/TimeWeatherSync.cs` |
 | Shared wallet | `Sync/WalletSync.cs` |
 | Scene paths / net IDs | `Sync/ScenePath.cs` |

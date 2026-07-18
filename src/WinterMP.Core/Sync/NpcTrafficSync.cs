@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using HutongGames.PlayMaker;
 using UnityEngine;
 using WinterMP.Core.Catalog;
 using WinterMP.Core.Session;
@@ -11,7 +12,8 @@ namespace WinterMP.Core.Sync
 {
     /// <summary>
     /// Host-authoritative transform streaming for NPC/traffic rigidbodies (TRAFFIC/,
-    /// NPC_CARS/, HUMANS/). Guests pin bodies kinematic and ease toward host poses.
+    /// NPC_CARS/, HUMANS/, and ice-race opponents). Guests pin bodies kinematic and
+    /// ease toward host poses.
     /// </summary>
     internal sealed class NpcTrafficSync
     {
@@ -74,13 +76,17 @@ namespace WinterMP.Core.Sync
                     if (!body.gameObject.activeInHierarchy) continue;
 
                     string path = ScenePath.Of(body.transform);
-                    if (!IsNpcTrafficPath(path)) continue;
-                    if (SyncCatalog.IsVehicleRoot(body) || SyncCatalog.IsPickableRigidbody(body)) continue;
+                    bool isIceRaceOpponent = IsIceRaceOpponentPath(path);
+                    if (!IsNpcTrafficPath(path) && !isIceRaceOpponent) continue;
+                    if ((SyncCatalog.IsVehicleRoot(body) || SyncCatalog.IsPickableRigidbody(body))
+                        && !isIceRaceOpponent) continue;
 
                     newcomers.Add(new SyncedNpc
                     {
                         Body = body,
                         Path = path,
+                        IsIceRaceOpponent = isIceRaceOpponent,
+                        GuestAiFsms = isIceRaceOpponent ? FindIceRaceAiFsms(body) : null,
                         LastPosition = body.transform.position,
                     });
                 }
@@ -233,10 +239,12 @@ namespace WinterMP.Core.Sync
                 npc.GuestRemoteActive = false;
                 npc.LastRemoteAt = -999f;
                 npc.LastPosition = position;
+                RestoreGuestAi(npc);
             }
             else
             {
                 body.isKinematic = true;
+                FreezeGuestAi(npc);
                 if (!npc.GuestRemoteActive)
                 {
                     body.transform.position = position;
@@ -313,6 +321,7 @@ namespace WinterMP.Core.Sync
                 {
                     if (npc.KinematicSaved)
                         body.isKinematic = npc.OriginalKinematic;
+                    RestoreGuestAi(npc);
                     npc.GuestRemoteActive = false;
                     continue;
                 }
@@ -413,9 +422,66 @@ namespace WinterMP.Core.Sync
                 if (npc.Body == null || !npc.KinematicSaved) continue;
                 npc.Body.isKinematic = npc.OriginalKinematic;
                 npc.KinematicSaved = false;
+                RestoreGuestAi(npc);
                 npc.GuestRemoteActive = false;
                 npc.HostStreaming = false;
             }
+        }
+
+        private static PlayMakerFSM[]? FindIceRaceAiFsms(Rigidbody body)
+        {
+            try
+            {
+                var all = body.GetComponentsInChildren<PlayMakerFSM>();
+                var matches = new List<PlayMakerFSM>();
+                foreach (var fsm in all)
+                {
+                    if (fsm == null || !IsIceRaceAiFsm(fsm.FsmName)) continue;
+                    matches.Add(fsm);
+                }
+                return matches.Count > 0 ? matches.ToArray() : null;
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug("WorldSync: ice-race AI scan failed: " + e.Message);
+                return null;
+            }
+        }
+
+        private static void FreezeGuestAi(SyncedNpc npc)
+        {
+            if (!npc.IsIceRaceOpponent || npc.GuestAiFrozen || npc.GuestAiFsms == null) return;
+            npc.GuestAiWasEnabled = new bool[npc.GuestAiFsms.Length];
+            for (int i = 0; i < npc.GuestAiFsms.Length; i++)
+            {
+                var fsm = npc.GuestAiFsms[i];
+                try
+                {
+                    if (fsm == null) continue;
+                    npc.GuestAiWasEnabled[i] = fsm.enabled;
+                    if (fsm.enabled) fsm.enabled = false;
+                }
+                catch { }
+            }
+            npc.GuestAiFrozen = true;
+        }
+
+        private static void RestoreGuestAi(SyncedNpc npc)
+        {
+            if (!npc.GuestAiFrozen || npc.GuestAiFsms == null || npc.GuestAiWasEnabled == null)
+            {
+                npc.GuestAiFrozen = false;
+                npc.GuestAiWasEnabled = null;
+                return;
+            }
+            for (int i = 0; i < npc.GuestAiFsms.Length; i++)
+            {
+                var fsm = npc.GuestAiFsms[i];
+                try { if (fsm != null) fsm.enabled = npc.GuestAiWasEnabled[i]; }
+                catch { }
+            }
+            npc.GuestAiFrozen = false;
+            npc.GuestAiWasEnabled = null;
         }
 
         // ---------------------------------------------------------------- scripted movers
@@ -611,6 +677,22 @@ namespace WinterMP.Core.Sync
             return path.StartsWith("TRAFFIC/", StringComparison.Ordinal)
                 || path.StartsWith("NPC_CARS/", StringComparison.Ordinal)
                 || path.StartsWith("HUMANS/", StringComparison.Ordinal);
+        }
+
+        private static bool IsIceRaceOpponentPath(string path)
+        {
+            if (!path.StartsWith("RACES/ICERACE/Cars", StringComparison.Ordinal)) return false;
+            const string marker = "/Disable/";
+            int idStart = path.IndexOf(marker, StringComparison.Ordinal);
+            if (idStart < 0) return false;
+            idStart += marker.Length;
+            return idStart < path.Length && path.IndexOf('/', idStart) < 0;
+        }
+
+        private static bool IsIceRaceAiFsm(string name)
+        {
+            return name == "Navigation" || name == "Raycast" || name == "Passing" || name == "Brakezones"
+                || name == "Throttle" || name == "Steering" || name == "Shifting";
         }
 
         private static int CompareByInitialPosition(SyncedNpc a, SyncedNpc b)

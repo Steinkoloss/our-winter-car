@@ -52,7 +52,7 @@ namespace WinterMP.Core.Session
 
         public static void RememberNeeds(ulong steamId, NeedsSnapshot needs)
         {
-            if (steamId == 0 || !needs.Valid) return;
+            if (steamId == 0 || !needs.Valid || !HasFiniteNeeds(needs)) return;
 
             EnsureLoaded();
             if (!Profiles.TryGetValue(steamId, out var profile))
@@ -142,6 +142,8 @@ namespace WinterMP.Core.Session
                             Drunk = parts.Length >= 15 ? ParseFloat(parts[14]) : 0f,
                             Valid = true,
                         };
+                        if (!HasFiniteNeeds(profile.Needs))
+                            profile.Needs.Valid = false;
                     }
 
                     Profiles[steamId] = profile;
@@ -200,6 +202,18 @@ namespace WinterMP.Core.Session
         {
             float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value);
             return value;
+        }
+
+        private static bool HasFiniteNeeds(NeedsSnapshot needs)
+        {
+            return IsFinite(needs.Hunger) && IsFinite(needs.Fatigue) && IsFinite(needs.Thirst)
+                && IsFinite(needs.Urine) && IsFinite(needs.BodyTemp) && IsFinite(needs.Stress)
+                && IsFinite(needs.Drunk);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
     }
 }

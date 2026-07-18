@@ -12,8 +12,8 @@ using WinterMP.Net;
 namespace WinterMP.Tools
 {
     /// <summary>
-    /// M0 catalog tooling. Dumps every PlayMakerFSM (states, events, transitions,
-    /// variables) plus all rigidbodies to JSON under &lt;game&gt;\WinterMP\dumps\.
+    /// M0 catalog tooling. Dumps every PlayMakerFSM (states, transitions, action
+    /// types, events, variables) plus all rigidbodies to JSON under &lt;game&gt;\WinterMP\dumps\.
     ///
     /// Triggers: automatically ~20s after each level finishes loading (once per level),
     /// or manually with F9. Dumps are diffed across game updates and feed the sync
@@ -123,6 +123,7 @@ namespace WinterMP.Tools
             json.Key("trigger"); json.Value(trigger);
             json.Key("dumpedAtUtc"); json.Value(DateTime.UtcNow.ToString("o"));
             json.Key("toolsVersion"); json.Value(MyPluginInfo.PLUGIN_VERSION);
+            json.Key("schemaVersion"); json.Value(2L);
             json.EndObject();
 
             DumpFsms(json);
@@ -204,6 +205,19 @@ namespace WinterMP.Tools
                             }
                         }
                         json.EndArray();
+
+                        // Action type names are deliberately enough to identify what a
+                        // state does (payment, save, spawn, random roll) without dumping
+                        // arbitrary object references or save data from each action.
+                        json.Key("actionTypes");
+                        json.BeginArray();
+                        var actions = ReflectionUtil.GetMember(state, "Actions") as IEnumerable;
+                        if (actions != null)
+                        {
+                            foreach (var action in actions)
+                                json.Value(ActionTypeName(action));
+                        }
+                        json.EndArray();
                         json.EndObject();
                     }
                 }
@@ -241,6 +255,19 @@ namespace WinterMP.Tools
 
             json.EndArray();
             Log.LogInfo($"Dumped {dumped} FSMs.");
+        }
+
+        private static string? ActionTypeName(object? action)
+        {
+            if (action == null) return null;
+            try
+            {
+                return action.GetType().FullName ?? action.GetType().Name;
+            }
+            catch
+            {
+                return "unknown";
+            }
         }
 
         private static void DumpRigidbodies(JsonWriter json)
