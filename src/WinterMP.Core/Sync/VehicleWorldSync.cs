@@ -10,10 +10,6 @@ namespace WinterMP.Core.Sync
     {
         private const float PendingTtlSeconds = 120f;
         private const float SnapshotPoseTtlSeconds = 300f;
-        private const int DoorSnapshotChunk = 60;
-        private const int BoltSnapshotChunk = 80;
-        private const int PartSnapshotChunk = 80;
-        private const int ItemSnapshotChunk = 40;
         private static readonly string[] AllowedRawEvents = { "TIGHTEN", "UNTIGHTEN" };
 
         private readonly WorldSyncBridge _bridge;

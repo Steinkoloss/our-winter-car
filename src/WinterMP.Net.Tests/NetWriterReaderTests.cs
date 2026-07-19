@@ -1,3 +1,4 @@
+using System;
 using WinterMP.Net;
 using Xunit;
 
@@ -112,6 +113,28 @@ namespace WinterMP.Net.Tests
 
             var reader = new NetReader(writer.ToArray());
             Assert.Throws<ProtocolException>(() => reader.ReadBytes());
+        }
+
+        [Fact]
+        public void InvalidExplicitReaderLength_ThrowsProtocolException()
+        {
+            Assert.Throws<ProtocolException>(() => new NetReader(new byte[4], -1));
+            Assert.Throws<ProtocolException>(() => new NetReader(new byte[4], 5));
+        }
+
+        [Fact]
+        public void NullReaderBuffer_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => new NetReader(null!));
+            Assert.Throws<ArgumentNullException>(() => new NetReader(null!, 0));
+        }
+
+        [Fact]
+        public void CollectionCount16_RejectsValuesOutsideWireRange()
+        {
+            var writer = new NetWriter();
+            Assert.Throws<ProtocolException>(() => writer.WriteCount16(-1));
+            Assert.Throws<ProtocolException>(() => writer.WriteCount16(ushort.MaxValue + 1));
         }
     }
 }

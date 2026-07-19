@@ -56,6 +56,15 @@ namespace WinterMP.Net
             _buffer[_position++] = (byte)(value >> 8);
         }
 
+        /// <summary>Writes a collection count carried by a ushort wire field without silent truncation.</summary>
+        public void WriteCount16(int count)
+        {
+            if (count < 0 || count > ushort.MaxValue)
+                throw new ProtocolException($"Collection count {count} exceeds the ushort wire limit.");
+
+            WriteUInt16((ushort)count);
+        }
+
         public void WriteUInt32(uint value)
         {
             Ensure(4);

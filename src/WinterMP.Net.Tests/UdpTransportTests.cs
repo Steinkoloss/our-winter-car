@@ -99,5 +99,30 @@ namespace WinterMP.Net.Tests
 
             Assert.Single(connects);
         }
+
+        [Fact]
+        public void InvalidOutboundChannel_IsNotDelivered()
+        {
+            int port = RandomPort();
+            using var host = UdpTransport.CreateHost(port);
+            using var client = UdpTransport.CreateClient(new IPEndPoint(IPAddress.Loopback, port));
+
+            PeerId? hostPeer = null;
+            client.PeerConnected += peer => hostPeer = peer;
+            PumpUntil(() => hostPeer != null, host, client);
+
+            bool received = false;
+            host.PacketReceived += (_, _, _) => received = true;
+            client.Send(hostPeer!.Value, new byte[] { 1 }, (Channel)255);
+
+            for (int i = 0; i < 10; i++)
+            {
+                host.Update();
+                client.Update();
+                Thread.Sleep(5);
+            }
+
+            Assert.False(received);
+        }
     }
 }

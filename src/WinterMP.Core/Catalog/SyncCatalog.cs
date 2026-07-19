@@ -122,7 +122,21 @@ namespace WinterMP.Core.Catalog
         /// unlike doors this is a one-shot action, so it never joins the snapshot/checksum.</summary>
         public static string[]? TryMatchSpawnContainer(PlayMakerFSM fsm) => TryMatch(_spawnContainers, fsm);
 
-        public static string[]? TryMatchControl(PlayMakerFSM fsm) => TryMatch(_controls, fsm);
+        public static CatalogControlMatch? TryMatchControl(PlayMakerFSM fsm)
+        {
+            if (!Loaded || _controls.Count == 0) return null;
+
+            string scenePath = ScenePath.Of(fsm.transform);
+            string objectName = fsm.gameObject.name;
+            string fsmName = fsm.FsmName;
+            foreach (var rule in _controls)
+            {
+                if (!rule.Matches(scenePath, objectName, fsmName, fsm)) continue;
+                return new CatalogControlMatch(rule.States, rule.ScalarFloatName, rule.ScalarCommitState);
+            }
+
+            return null;
+        }
 
         public static string[]? TryMatchSwitch(PlayMakerFSM fsm) => TryMatch(_switchRules, fsm);
 
@@ -242,6 +256,8 @@ namespace WinterMP.Core.Catalog
                     rule.ObjectNameContains,
                     rule.FsmName,
                     rule.States.ToArray(),
+                    rule.ScalarFloatName,
+                    rule.ScalarCommitState,
                     rule.RequireStates.ToArray(),
                     rule.ExcludePathPrefixes.ToArray()));
             }
@@ -333,6 +349,8 @@ namespace WinterMP.Core.Catalog
             private readonly string[] _excludePathPrefixes;
 
             internal readonly string[] States;
+            internal readonly string? ScalarFloatName;
+            internal readonly string? ScalarCommitState;
 
             internal CatalogRule(
                 string pathPrefix,
@@ -341,6 +359,8 @@ namespace WinterMP.Core.Catalog
                 string? objectNameContains,
                 string fsmName,
                 string[] states,
+                string? scalarFloatName,
+                string? scalarCommitState,
                 string[] requireStates,
                 string[] excludePathPrefixes)
             {
@@ -350,6 +370,8 @@ namespace WinterMP.Core.Catalog
                 _objectNameContains = objectNameContains;
                 _fsmName = fsmName;
                 States = states;
+                ScalarFloatName = scalarFloatName;
+                ScalarCommitState = scalarCommitState;
                 _requireStates = requireStates;
                 _excludePathPrefixes = excludePathPrefixes;
             }
@@ -554,6 +576,21 @@ namespace WinterMP.Core.Catalog
 
                 return true;
             }
+        }
+    }
+
+    /// <summary>Matched control states plus optional scalar commit metadata from the sync catalog.</summary>
+    public sealed class CatalogControlMatch
+    {
+        public readonly string[] States;
+        public readonly string? ScalarFloatName;
+        public readonly string? ScalarCommitState;
+
+        internal CatalogControlMatch(string[] states, string? scalarFloatName, string? scalarCommitState)
+        {
+            States = states;
+            ScalarFloatName = scalarFloatName;
+            ScalarCommitState = scalarCommitState;
         }
     }
 }

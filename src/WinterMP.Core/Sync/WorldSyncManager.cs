@@ -23,7 +23,7 @@ namespace WinterMP.Core.Sync
         private const float ChecksumIntervalSeconds = 20f;
         private const float ResyncCooldownSeconds = 15f;
         private const float ObjectRequestCooldownSeconds = 5f;
-        private const int DespawnSnapshotChunk = 80;
+        private const int DespawnSnapshotChunk = WorldItemDespawnSnapshot.MaxItems;
         private const int MaxSyncErrors = 8;
         private const float SyncErrorBackoffSeconds = 1f;
 
@@ -395,8 +395,8 @@ namespace WinterMP.Core.Sync
                                     if (states != null && _fsm.RegisterControl(fsm, states)) newControls++;
                                     else
                                     {
-                                        states = SyncCatalog.TryMatchControl(fsm);
-                                        if (states != null && _fsm.RegisterControl(fsm, states)) newControls++;
+                                        var control = SyncCatalog.TryMatchControl(fsm);
+                                        if (control != null && _fsm.RegisterControl(fsm, control)) newControls++;
                                         else if (FsmWorldSync.ClassifyBuy(fsm, out var useBuyProfile) && _fsm.RegisterBuy(fsm, useBuyProfile))
                                             newBuys++;
                                     }
@@ -427,8 +427,8 @@ namespace WinterMP.Core.Sync
                                 newBuys++;
                             else
                             {
-                                string[]? states = SyncCatalog.TryMatchControl(fsm);
-                                if (states != null && _fsm.RegisterControl(fsm, states)) newControls++;
+                                var control = SyncCatalog.TryMatchControl(fsm);
+                                if (control != null && _fsm.RegisterControl(fsm, control)) newControls++;
                             }
                         }
                         else
@@ -437,8 +437,8 @@ namespace WinterMP.Core.Sync
                             if (states != null && _fsm.RegisterStarter(fsm, states)) newStarters++;
                             else
                             {
-                                states = SyncCatalog.TryMatchControl(fsm);
-                                if (states != null && _fsm.RegisterControl(fsm, states)) newControls++;
+                                var control = SyncCatalog.TryMatchControl(fsm);
+                                if (control != null && _fsm.RegisterControl(fsm, control)) newControls++;
                             }
                         }
                     }
@@ -552,6 +552,8 @@ namespace WinterMP.Core.Sync
             {
                 foreach (var chunk in _fsm.BuildDoorSnapshotChunks())
                     yield return chunk;
+                foreach (var thermostat in _fsm.BuildRadiatorThermostatStates())
+                    yield return thermostat;
             }
 
             if ((flags & WorldResyncRequest.FlagParts) != 0)
@@ -620,6 +622,12 @@ namespace WinterMP.Core.Sync
                 yield break;
             }
 
+            if (_fsm.TryBuildRadiatorThermostatState(netId, out var thermostat))
+            {
+                yield return thermostat;
+                yield break;
+            }
+
             string? fsmState = _fsm.TryGetFsmSnapshotState(netId);
             if (fsmState != null)
             {
@@ -645,6 +653,9 @@ namespace WinterMP.Core.Sync
 
             foreach (var chunk in _fsm.BuildDoorSnapshotChunks())
                 yield return chunk;
+
+            foreach (var thermostat in _fsm.BuildRadiatorThermostatStates())
+                yield return thermostat;
 
             foreach (var chunk in _items.BuildItemSnapshotChunks())
                 yield return chunk;
@@ -751,10 +762,13 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteStateEnter(FsmStateEnter message) { EnsureSyncReady(); _fsm.OnRemoteStateEnter(message); }
         public void OnRemoteRawEvent(FsmRawEvent message) { EnsureSyncReady(); _fsm.OnRemoteRawEvent(message); }
-        public bool OnHostGuestStateEnter(FsmStateEnter message, byte playerId)
+        public bool OnHostGuestStateEnter(
+            FsmStateEnter message,
+            byte playerId,
+            out RadiatorThermostatState? thermostatState)
         {
             EnsureSyncReady();
-            return _fsm.TryAcceptGuestStateEnter(message, playerId);
+            return _fsm.TryAcceptGuestStateEnter(message, playerId, out thermostatState);
         }
         public bool OnHostGuestRawEvent(FsmRawEvent message, byte playerId)
         {
@@ -773,6 +787,11 @@ namespace WinterMP.Core.Sync
         }
         public void OnRemoteBoltState(BoltState message) { EnsureSyncReady(); _fsm.OnRemoteBoltState(message); }
         public void OnRemotePartState(PartState message) { EnsureSyncReady(); _fsm.OnRemotePartState(message); }
+        public void OnRemoteRadiatorThermostatState(RadiatorThermostatState message)
+        {
+            EnsureSyncReady();
+            _fsm.OnRemoteRadiatorThermostatState(message);
+        }
         public void OnRemoteDoorSnapshot(WorldDoorSnapshot message) { EnsureSyncReady(); _fsm.OnRemoteDoorSnapshot(message); }
         public void OnRemoteBoltSnapshot(WorldBoltSnapshot message) { EnsureSyncReady(); _fsm.OnRemoteBoltSnapshot(message); }
         public void OnRemotePartSnapshot(WorldPartSnapshot message) { EnsureSyncReady(); _fsm.OnRemotePartSnapshot(message); }

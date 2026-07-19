@@ -294,6 +294,24 @@
       "fsmName": "Switch",
       "states": ["ON", "OFF"],
       "requireStates": ["Wait player", "Wait button", "Position", "ON", "OFF", "Set"]
+    },
+    {
+      "pathPrefix": "HOMENEW/Functions/ElectricThings/RadiatorsApartment/",
+      "pathContains": "/Thermostat",
+      "fsmName": "Knob",
+      "states": ["Increase", "Decrease"],
+      "scalarFloat": "Rotation",
+      "scalarCommitState": "Rotate knob",
+      "requireStates": ["Mouse off 2", "Get scroll", "Increase", "Decrease", "Rotate knob", "Wait", "Set"]
+    },
+    {
+      "pathPrefix": "YARD/Building/Dynamics/HouseElectricity/Radiators",
+      "pathContains": "/Thermostat",
+      "fsmName": "Knob",
+      "states": ["Increase", "Decrease"],
+      "scalarFloat": "Rotation",
+      "scalarCommitState": "Rotate knob",
+      "requireStates": ["Mouse off 2", "Get scroll", "Increase", "Decrease", "Rotate knob", "Wait", "Set"]
     }
   ],
   "switchRules": [

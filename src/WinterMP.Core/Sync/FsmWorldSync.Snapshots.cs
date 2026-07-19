@@ -41,6 +41,9 @@ namespace WinterMP.Core.Sync
             foreach (var pair in _controls)
             {
                 var control = pair.Value;
+                // Scalar controls have a dedicated snapshot. Replaying their last
+                // +/- state would apply a delta to a joining guest's unrelated value.
+                if (control.ScalarFloat != null) continue;
                 if (control.LastSyncedState == null) continue;
 
                 doors.Entries.Add(new WorldDoorSnapshot.Entry { NetId = pair.Key, StateName = control.LastSyncedState });
@@ -92,6 +95,33 @@ namespace WinterMP.Core.Sync
 
             if (doors.Entries.Count > 0)
                 yield return doors;
+        }
+
+        internal IEnumerable<RadiatorThermostatState> BuildRadiatorThermostatStates()
+        {
+            var ids = new List<uint>(_controls.Keys);
+            ids.Sort();
+            foreach (uint id in ids)
+            {
+                if (TryBuildRadiatorThermostatState(id, out var state))
+                    yield return state;
+            }
+        }
+
+        internal bool TryBuildRadiatorThermostatState(uint netId, out RadiatorThermostatState state)
+        {
+            state = new RadiatorThermostatState();
+            if (!_controls.TryGetValue(netId, out var control)
+                || control.ScalarFloat == null
+                || string.IsNullOrEmpty(control.ScalarCommitState))
+                return false;
+
+            float rotation = control.ScalarFloat.Value;
+            if (!IsFinite(rotation)) return false;
+
+            state.NetId = netId;
+            state.Rotation = rotation;
+            return true;
         }
 
         internal IEnumerable<WorldBoltSnapshot> BuildBoltSnapshotChunks()
@@ -174,6 +204,71 @@ namespace WinterMP.Core.Sync
             }
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: door snapshot — {message.Entries.Count} entries, {applied} applied/queued.");
+        }
+
+        public void OnRemoteRadiatorThermostatState(RadiatorThermostatState message)
+        {
+            if (!IsFinite(message.Rotation))
+            {
+                WinterMPPlugin.Log.LogWarning($"WorldSync: dropped non-finite thermostat state {message.NetId:X8}.");
+                return;
+            }
+
+            if (!ApplyRadiatorThermostatState(message.NetId, message.Rotation))
+                QueuePendingRadiatorThermostatState(message.NetId, message.Rotation);
+        }
+
+        private bool ApplyRadiatorThermostatState(uint netId, float rotation)
+        {
+            string commitState = string.Empty;
+            if (!_controls.TryGetValue(netId, out var control)
+                || control.Fsm == null
+                || control.ScalarFloat == null
+                || !control.Fsm.gameObject.activeInHierarchy
+                || !control.Fsm.enabled)
+                return false;
+
+            commitState = control.ScalarCommitState ?? string.Empty;
+            if (commitState.Length == 0) return false;
+
+            if (Mathf.Abs(control.ScalarFloat.Value - rotation) <= 0.0001f)
+                return true;
+
+            try
+            {
+                control.ScalarFloat.Value = rotation;
+                _bridge.ApplyingRemote = true;
+                try
+                {
+                    FsmHook.FireRemoteEntry(control.Fsm, commitState);
+                }
+                finally
+                {
+                    _bridge.ApplyingRemote = false;
+                }
+
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"WorldSync: thermostat apply failed for {netId:X8}: {e.Message}");
+                return false;
+            }
+        }
+
+        private void QueuePendingRadiatorThermostatState(uint netId, float rotation)
+        {
+            _pendingRadiatorThermostatStates[netId] = new PendingRadiatorThermostatState
+            {
+                Rotation = rotation,
+                ExpiresAt = Time.unscaledTime + SnapshotPoseTtlSeconds,
+            };
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         public void OnRemoteBoltSnapshot(WorldBoltSnapshot message)

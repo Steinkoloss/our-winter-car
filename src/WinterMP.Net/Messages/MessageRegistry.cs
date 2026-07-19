@@ -64,6 +64,7 @@ namespace WinterMP.Net.Messages
                 { MessageId.IceRaceIntent, () => new IceRaceIntent() },
                 { MessageId.IceRaceEventState, () => new IceRaceEventState() },
                 { MessageId.IceRaceResultsState, () => new IceRaceResultsState() },
+                { MessageId.RadiatorThermostatState, () => new RadiatorThermostatState() },
                 { MessageId.WorldSnapshotRequest, () => new WorldSnapshotRequest() },
                 { MessageId.WorldDoorSnapshot, () => new WorldDoorSnapshot() },
                 { MessageId.WorldItemSnapshot, () => new WorldItemSnapshot() },

@@ -61,6 +61,8 @@ namespace WinterMP.Core.UI
                 BodyTemp = offer.BodyTemp,
                 Stress = offer.Stress,
                 Drunk = offer.Drunk,
+                Dirtiness = offer.Dirtiness,
+                HasDirtiness = offer.HasSavedDirtiness,
                 Valid = true,
             });
         }

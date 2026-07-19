@@ -12,10 +12,9 @@ namespace WinterMP.Core.Sync
     {
         private const float PendingTtlSeconds = 120f;
         private const float SnapshotPoseTtlSeconds = 300f;
-        private const int DoorSnapshotChunk = 60;
-        private const int BoltSnapshotChunk = 80;
-        private const int PartSnapshotChunk = 80;
-        private const int ItemSnapshotChunk = 40;
+        private const int DoorSnapshotChunk = WorldDoorSnapshot.MaxEntries;
+        private const int BoltSnapshotChunk = WorldBoltSnapshot.MaxEntries;
+        private const int PartSnapshotChunk = WorldPartSnapshot.MaxEntries;
         private static readonly string[] AllowedRawEvents = { "TIGHTEN", "UNTIGHTEN" };
 
         private readonly WorldSyncBridge _bridge;
@@ -34,6 +33,7 @@ namespace WinterMP.Core.Sync
         private readonly List<PendingFsmApply> _pending = new List<PendingFsmApply>();
         private readonly Dictionary<uint, PendingBoltState> _pendingBoltStates = new Dictionary<uint, PendingBoltState>();
         private readonly Dictionary<uint, PendingPartState> _pendingPartStates = new Dictionary<uint, PendingPartState>();
+        private readonly Dictionary<uint, PendingRadiatorThermostatState> _pendingRadiatorThermostatStates = new Dictionary<uint, PendingRadiatorThermostatState>();
         private readonly List<PendingPurchaseIntent> _pendingPurchaseIntents = new List<PendingPurchaseIntent>();
         private readonly Dictionary<byte, ushort> _lastGuestPurchaseSequences = new Dictionary<byte, ushort>();
         private ushort _outPurchaseSequence;
@@ -118,6 +118,7 @@ namespace WinterMP.Core.Sync
             _pending.Clear();
             _pendingBoltStates.Clear();
             _pendingPartStates.Clear();
+            _pendingRadiatorThermostatStates.Clear();
             _pendingPurchaseIntents.Clear();
             _lastGuestPurchaseSequences.Clear();
         }

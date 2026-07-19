@@ -1,5 +1,6 @@
 #if STEAMWORKS
 using System;
+using System.Collections.Generic;
 using Steamworks;
 using WinterMP.Net.Transport;
 
@@ -16,16 +17,33 @@ namespace WinterMP.Core.Steam
         private const string LobbyKeyModVersion = "wmp_version";
         private const int DefaultMaxPlayers = 8;
 
-        private static Callback<LobbyCreated_t>? _lobbyCreated;
-        private static Callback<LobbyEnter_t>? _lobbyEntered;
         private static Callback<GameLobbyJoinRequested_t>? _joinRequested;
         private static Callback<LobbyChatUpdate_t>? _lobbyChatUpdate;
 
         private static Action<ITransport>? _onReady;
         private static Action<string>? _onFailure;
         private static CSteamID _currentLobby;
-        private static bool _isOwner;
         private static SteamP2PTransport? _activeTransport;
+        private static LobbyAttempt? _activeAttempt;
+        private static readonly List<LobbyAttempt> RetiredAttempts = new List<LobbyAttempt>();
+
+        /// <summary>
+        /// Steam delivers lobby completion callbacks by API-call handle. Keep a
+        /// cancelled attempt alive until that handle resolves so its late success
+        /// can leave only its own lobby, never drive a newer session's handlers.
+        /// </summary>
+        private sealed class LobbyAttempt
+        {
+            public readonly ulong RequestedLobbyId;
+            public bool Cancelled;
+            public CallResult<LobbyCreated_t>? CreatedResult;
+            public CallResult<LobbyEnter_t>? EnteredResult;
+
+            public LobbyAttempt(ulong requestedLobbyId)
+            {
+                RequestedLobbyId = requestedLobbyId;
+            }
+        }
 
         /// <summary>
         /// Register overlay / friends-list join handlers as soon as Steam is live.
@@ -47,11 +65,25 @@ namespace WinterMP.Core.Steam
 
             _onReady = onReady;
             _onFailure = onFailure;
-            _isOwner = true;
+            var attempt = BeginAttempt(requestedLobbyId: 0);
             EnsureCallbacksRegistered();
 
             WinterMPPlugin.Log.LogInfo("Creating friends-only Steam lobby...");
-            SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, DefaultMaxPlayers);
+            try
+            {
+                var result = CallResult<LobbyCreated_t>.Create(
+                    (data, ioFailure) => OnLobbyCreated(attempt, data, ioFailure));
+                attempt.CreatedResult = result;
+                SteamAPICall_t call = SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, DefaultMaxPlayers);
+                if (call == SteamAPICall_t.Invalid)
+                    throw new InvalidOperationException("Steam rejected the lobby creation request.");
+                result.Set(call);
+            }
+            catch
+            {
+                CompleteAttempt(attempt);
+                throw;
+            }
         }
 
         public static void JoinLobby(ulong lobbyId, Action<ITransport> onReady, Action<string> onFailure)
@@ -64,11 +96,25 @@ namespace WinterMP.Core.Steam
 
             _onReady = onReady;
             _onFailure = onFailure;
-            _isOwner = false;
+            var attempt = BeginAttempt(requestedLobbyId: lobbyId);
             EnsureCallbacksRegistered();
 
             WinterMPPlugin.Log.LogInfo($"Joining Steam lobby {lobbyId}...");
-            SteamMatchmaking.JoinLobby(new CSteamID(lobbyId));
+            try
+            {
+                var result = CallResult<LobbyEnter_t>.Create(
+                    (data, ioFailure) => OnLobbyEntered(attempt, data, ioFailure));
+                attempt.EnteredResult = result;
+                SteamAPICall_t call = SteamMatchmaking.JoinLobby(new CSteamID(lobbyId));
+                if (call == SteamAPICall_t.Invalid)
+                    throw new InvalidOperationException("Steam rejected the lobby join request.");
+                result.Set(call);
+            }
+            catch
+            {
+                CompleteAttempt(attempt);
+                throw;
+            }
         }
 
         public static bool IsLobbyMember(CSteamID steamId)
@@ -96,8 +142,6 @@ namespace WinterMP.Core.Steam
         {
             try
             {
-                if (_lobbyCreated == null) _lobbyCreated = Callback<LobbyCreated_t>.Create(OnLobbyCreated);
-                if (_lobbyEntered == null) _lobbyEntered = Callback<LobbyEnter_t>.Create(OnLobbyEntered);
                 if (_joinRequested == null) _joinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnJoinRequested);
                 if (_lobbyChatUpdate == null) _lobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
             }
@@ -107,22 +151,36 @@ namespace WinterMP.Core.Steam
             }
         }
 
-        private static void OnLobbyCreated(LobbyCreated_t data)
+        private static void OnLobbyCreated(LobbyAttempt attempt, LobbyCreated_t data, bool ioFailure)
         {
-            if (data.m_eResult != EResult.k_EResultOK)
+            bool isCurrent = IsCurrentAttempt(attempt);
+            try
             {
-                Fail($"Lobby creation failed: {data.m_eResult}");
+                HandleLobbyCreated(attempt, data, ioFailure, isCurrent);
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError($"Steam lobby creation callback failed: {e}");
+                CompleteAttempt(attempt);
+                if (isCurrent)
+                    Fail("Steam lobby creation callback failed: " + e.Message);
+            }
+        }
+
+        private static void HandleLobbyCreated(LobbyAttempt attempt, LobbyCreated_t data, bool ioFailure, bool isCurrent)
+        {
+            if (!isCurrent)
+            {
+                if (!ioFailure && data.m_eResult == EResult.k_EResultOK)
+                    LeaveStaleLobby(data.m_ulSteamIDLobby);
+                CompleteAttempt(attempt);
                 return;
             }
 
-            // A host attempt superseded by a join (RequestJoinFromSteam → StartJoin set
-            // _isOwner=false) must not build a host transport or drive the now-join callbacks.
-            // Release the orphaned lobby rather than leaking it on Steam's servers.
-            if (!_isOwner)
+            CompleteAttempt(attempt);
+            if (ioFailure || data.m_eResult != EResult.k_EResultOK)
             {
-                WinterMPPlugin.Log.LogInfo($"Discarding superseded host lobby {data.m_ulSteamIDLobby}.");
-                try { SteamMatchmaking.LeaveLobby(new CSteamID(data.m_ulSteamIDLobby)); }
-                catch { /* best effort */ }
+                Fail(ioFailure ? "Lobby creation request failed in Steam." : $"Lobby creation failed: {data.m_eResult}");
                 return;
             }
 
@@ -155,13 +213,49 @@ namespace WinterMP.Core.Steam
             }
         }
 
-        private static void OnLobbyEntered(LobbyEnter_t data)
+        private static void OnLobbyEntered(LobbyAttempt attempt, LobbyEnter_t data, bool ioFailure)
         {
-            if (_isOwner) return; // the host also receives LobbyEnter for its own lobby
-
-            if (data.m_EChatRoomEnterResponse != (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+            bool isCurrent = IsCurrentAttempt(attempt);
+            try
             {
-                Fail($"Could not enter lobby (response {data.m_EChatRoomEnterResponse}).");
+                HandleLobbyEntered(attempt, data, ioFailure, isCurrent);
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError($"Steam lobby enter callback failed: {e}");
+                CompleteAttempt(attempt);
+                if (isCurrent)
+                    Fail("Steam lobby enter callback failed: " + e.Message);
+            }
+        }
+
+        private static void HandleLobbyEntered(LobbyAttempt attempt, LobbyEnter_t data, bool ioFailure, bool isCurrent)
+        {
+            if (!isCurrent)
+            {
+                WinterMPPlugin.Log.LogInfo($"Discarding stale Steam lobby entry {data.m_ulSteamIDLobby}.");
+                if (!ioFailure && data.m_EChatRoomEnterResponse == (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+                    LeaveStaleLobby(data.m_ulSteamIDLobby);
+                CompleteAttempt(attempt);
+                return;
+            }
+
+            if (data.m_ulSteamIDLobby != attempt.RequestedLobbyId)
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"Steam returned lobby {data.m_ulSteamIDLobby} for join attempt {attempt.RequestedLobbyId}.");
+                if (!ioFailure && data.m_EChatRoomEnterResponse == (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+                    LeaveStaleLobby(data.m_ulSteamIDLobby);
+                CompleteAttempt(attempt);
+                Fail("Steam entered an unexpected lobby.");
+                return;
+            }
+
+            CompleteAttempt(attempt);
+            if (ioFailure || data.m_EChatRoomEnterResponse != (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+            {
+                Fail(ioFailure ? "Lobby join request failed in Steam."
+                    : $"Could not enter lobby (response {data.m_EChatRoomEnterResponse}).");
                 return;
             }
 
@@ -200,26 +294,44 @@ namespace WinterMP.Core.Steam
         /// <summary>Overlay invite or friends-list join while the game is already running.</summary>
         private static void OnJoinRequested(GameLobbyJoinRequested_t data)
         {
-            WinterMPPlugin.Log.LogInfo($"Steam join request for lobby {data.m_steamIDLobby.m_SteamID}.");
-            var session = Session.SessionManager.Instance;
-            if (session != null)
-                session.RequestJoinFromSteam(data.m_steamIDLobby.m_SteamID);
+            try
+            {
+                WinterMPPlugin.Log.LogInfo($"Steam join request for lobby {data.m_steamIDLobby.m_SteamID}.");
+                var session = Session.SessionManager.Instance;
+                if (session != null)
+                    session.RequestJoinFromSteam(data.m_steamIDLobby.m_SteamID);
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError($"Steam join request callback failed: {e}");
+            }
         }
 
         private static void OnLobbyChatUpdate(LobbyChatUpdate_t data)
         {
-            const uint leftOrDropped =
-                (uint)EChatMemberStateChange.k_EChatMemberStateChangeLeft
-                | (uint)EChatMemberStateChange.k_EChatMemberStateChangeDisconnected
-                | (uint)EChatMemberStateChange.k_EChatMemberStateChangeKicked
-                | (uint)EChatMemberStateChange.k_EChatMemberStateChangeBanned;
+            try
+            {
+                if (!_currentLobby.IsValid() || data.m_ulSteamIDLobby != _currentLobby.m_SteamID)
+                    return;
 
-            if ((data.m_rgfChatMemberStateChange & leftOrDropped) != 0)
-                _activeTransport?.NotifyPeerLeft(data.m_ulSteamIDUserChanged, "Left the Steam lobby.");
+                const uint leftOrDropped =
+                    (uint)EChatMemberStateChange.k_EChatMemberStateChangeLeft
+                    | (uint)EChatMemberStateChange.k_EChatMemberStateChangeDisconnected
+                    | (uint)EChatMemberStateChange.k_EChatMemberStateChangeKicked
+                    | (uint)EChatMemberStateChange.k_EChatMemberStateChangeBanned;
+
+                if ((data.m_rgfChatMemberStateChange & leftOrDropped) != 0)
+                    _activeTransport?.NotifyPeerLeft(data.m_ulSteamIDUserChanged, "Left the Steam lobby.");
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError($"Steam lobby chat callback failed: {e}");
+            }
         }
 
         public static void LeaveLobby()
         {
+            CancelActiveAttempt();
             _activeTransport = null;
             // Drop result handlers so a late Steam callback from this (now torn-down) attempt
             // cannot drive a newer session's _onReady/_onFailure.
@@ -253,11 +365,56 @@ namespace WinterMP.Core.Steam
         private static void Fail(string error)
         {
             WinterMPPlugin.Log.LogError($"Steam lobby: {error}");
+            CancelActiveAttempt();
             // Capture-then-clear so a stale callback from a superseded attempt can't refire a handler.
             var failure = _onFailure;
             _onReady = null;
             _onFailure = null;
             failure?.Invoke(error);
+        }
+
+        private static LobbyAttempt BeginAttempt(ulong requestedLobbyId)
+        {
+            CancelActiveAttempt();
+            var attempt = new LobbyAttempt(requestedLobbyId);
+            _activeAttempt = attempt;
+            return attempt;
+        }
+
+        private static bool IsCurrentAttempt(LobbyAttempt attempt)
+        {
+            return ReferenceEquals(_activeAttempt, attempt) && !attempt.Cancelled;
+        }
+
+        private static void CancelActiveAttempt()
+        {
+            if (_activeAttempt == null) return;
+
+            _activeAttempt.Cancelled = true;
+            RetiredAttempts.Add(_activeAttempt);
+            _activeAttempt = null;
+        }
+
+        private static void CompleteAttempt(LobbyAttempt attempt)
+        {
+            if (ReferenceEquals(_activeAttempt, attempt))
+                _activeAttempt = null;
+            RetiredAttempts.Remove(attempt);
+        }
+
+        private static void LeaveStaleLobby(ulong lobbyId)
+        {
+            if (lobbyId == 0 || (_currentLobby.IsValid() && _currentLobby.m_SteamID == lobbyId))
+                return;
+
+            try
+            {
+                SteamMatchmaking.LeaveLobby(new CSteamID(lobbyId));
+            }
+            catch
+            {
+                // best effort: a stale Steam callback must never perturb the active attempt
+            }
         }
     }
 }

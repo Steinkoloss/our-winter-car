@@ -94,6 +94,7 @@ namespace WinterMP.Net.Transport
         public void Send(PeerId peer, byte[] payload, int length, Channel channel)
         {
             if (_disposed) return;
+            if (!SessionMessagePolicy.IsKnownChannel(channel)) return;
             if (!_peerEndpoints.TryGetValue(peer, out var endpoint)) return;
 
             var datagram = new byte[length + 2];
@@ -207,10 +208,13 @@ namespace WinterMP.Net.Transport
                 case TypeData:
                     if (_peerEndpoints.ContainsKey(peer) && datagram.Length >= 2)
                     {
+                        var channel = (Channel)datagram[1];
+                        if (!SessionMessagePolicy.IsKnownChannel(channel)) return;
+
                         _lastReceivedAt[peer] = _clock.Elapsed.TotalSeconds;
                         var payload = new byte[datagram.Length - 2];
                         Buffer.BlockCopy(datagram, 2, payload, 0, payload.Length);
-                        PacketReceived?.Invoke(peer, payload, (Channel)datagram[1]);
+                        PacketReceived?.Invoke(peer, payload, channel);
                     }
                     break;
 

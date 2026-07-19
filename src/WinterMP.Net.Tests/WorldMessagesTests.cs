@@ -16,6 +16,15 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
+        public void RadiatorThermostatState_RoundTrips()
+        {
+            var original = new RadiatorThermostatState { NetId = 0x87654321, Rotation = 42.5f };
+            var decoded = Assert.IsType<RadiatorThermostatState>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.Equal(original.NetId, decoded.NetId);
+            Assert.Equal(original.Rotation, decoded.Rotation);
+        }
+
+        [Fact]
         public void FsmRawEvent_RoundTrips()
         {
             var original = new FsmRawEvent { NetId = 0xDEADBEEF, EventName = "TIGHTEN" };
@@ -142,6 +151,19 @@ namespace WinterMP.Net.Tests
             var decoded = Assert.IsType<VehicleCargo>(PacketCodec.Decode(PacketCodec.Encode(
                 new VehicleCargo { VehicleId = 1, Entries = entries })));
             Assert.Equal(VehicleCargo.MaxEntries, decoded.Entries.Length);
+        }
+
+        [Fact]
+        public void VehicleCargo_RejectsInboundCountAboveHardLimit()
+        {
+            var writer = new NetWriter();
+            writer.WriteUInt16((ushort)MessageId.VehicleCargo);
+            writer.WriteUInt32(1);
+            writer.WriteByte(2);
+            writer.WriteUInt16(3);
+            writer.WriteByte((byte)(VehicleCargo.MaxEntries + 1));
+
+            Assert.Throws<ProtocolException>(() => PacketCodec.Decode(writer.ToArray()));
         }
 
         [Fact]
@@ -511,7 +533,8 @@ namespace WinterMP.Net.Tests
                 HostRotation = NetQuaternion.Identity,
                 LastPosition = new NetVector3(10f, 0.1f, -8f),
                 LastRotation = new NetQuaternion(0f, 0.707f, 0f, 0.707f),
-                Flags = GuestSpawn.FlagHasLastPosition | GuestSpawn.FlagHasSavedNeeds,
+                Flags = GuestSpawn.FlagHasLastPosition | GuestSpawn.FlagHasSavedNeeds
+                    | GuestSpawn.FlagHasSavedDirtiness,
                 Hunger = 12.5f,
                 Fatigue = 88f,
                 Thirst = 40f,
@@ -519,17 +542,20 @@ namespace WinterMP.Net.Tests
                 BodyTemp = 36.6f,
                 Stress = 42f,
                 Drunk = 3.7f,
+                Dirtiness = 71.5f,
             };
             var decoded = Assert.IsType<GuestSpawn>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.HostPosition.X, decoded.HostPosition.X, 3);
             Assert.Equal(original.LastPosition.Z, decoded.LastPosition.Z, 3);
             Assert.True(decoded.HasLastPosition);
             Assert.True(decoded.HasSavedNeeds);
+            Assert.True(decoded.HasSavedDirtiness);
             Assert.Equal(original.Hunger, decoded.Hunger, 3);
             Assert.Equal(original.Urine, decoded.Urine, 3);
             Assert.Equal(original.BodyTemp, decoded.BodyTemp, 3);
             Assert.Equal(original.Stress, decoded.Stress, 3);
             Assert.Equal(original.Drunk, decoded.Drunk, 3);
+            Assert.Equal(original.Dirtiness, decoded.Dirtiness, 3);
         }
 
         [Fact]
@@ -546,6 +572,7 @@ namespace WinterMP.Net.Tests
                 Stress = 60f,
                 Drunk = 4.2f,
                 Sequence = 7,
+                Dirtiness = 81.25f,
             };
             var decoded = Assert.IsType<PlayerNeedsReport>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.PlayerId, decoded.PlayerId);
@@ -554,6 +581,39 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.BodyTemp, decoded.BodyTemp, 3);
             Assert.Equal(original.Stress, decoded.Stress, 3);
             Assert.Equal(original.Drunk, decoded.Drunk, 3);
+            Assert.Equal(original.Dirtiness, decoded.Dirtiness, 3);
+        }
+
+        [Fact]
+        public void PlayerNeedsReport_AppendsDirtinessAfterSequence()
+        {
+            var original = new PlayerNeedsReport
+            {
+                PlayerId = 4,
+                Hunger = 1f,
+                Fatigue = 2f,
+                Thirst = 3f,
+                Urine = 4f,
+                BodyTemp = 5f,
+                Stress = 6f,
+                Drunk = 7f,
+                Sequence = 0xBEEF,
+                Dirtiness = 8f,
+            };
+
+            var reader = new NetReader(PacketCodec.Encode(original));
+            Assert.Equal((ushort)MessageId.PlayerNeedsReport, reader.ReadUInt16());
+            Assert.Equal(original.PlayerId, reader.ReadByte());
+            Assert.Equal(original.Hunger, reader.ReadSingle());
+            Assert.Equal(original.Fatigue, reader.ReadSingle());
+            Assert.Equal(original.Thirst, reader.ReadSingle());
+            Assert.Equal(original.Urine, reader.ReadSingle());
+            Assert.Equal(original.BodyTemp, reader.ReadSingle());
+            Assert.Equal(original.Stress, reader.ReadSingle());
+            Assert.Equal(original.Drunk, reader.ReadSingle());
+            Assert.Equal(original.Sequence, reader.ReadUInt16());
+            Assert.Equal(original.Dirtiness, reader.ReadSingle());
+            Assert.Equal(0, reader.Remaining);
         }
 
         [Fact]
@@ -702,6 +762,16 @@ namespace WinterMP.Net.Tests
             var decoded = Assert.IsType<WorldItemDespawnSnapshot>(
                 PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.ItemIds, decoded.ItemIds);
+        }
+
+        [Fact]
+        public void WorldItemDespawnSnapshot_RejectsCountAboveChunkLimit()
+        {
+            var snapshot = new WorldItemDespawnSnapshot();
+            for (int i = 0; i <= WorldItemDespawnSnapshot.MaxItems; i++)
+                snapshot.ItemIds.Add((uint)i);
+
+            Assert.Throws<ProtocolException>(() => PacketCodec.Encode(snapshot));
         }
 
         [Fact]

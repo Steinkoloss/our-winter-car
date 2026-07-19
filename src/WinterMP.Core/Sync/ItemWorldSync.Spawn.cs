@@ -34,7 +34,7 @@ namespace WinterMP.Core.Sync
         /// <summary>Guest: give up waiting for the host's manifest after an offer.</summary>
         private const float SpawnOfferManifestSeconds = 6f;
 
-        private const int GuestSpawnMaxItems = 32;
+        private const int GuestSpawnMaxItems = SpawnIntent.MaxItems;
         private const int GuestSpawnMaxTemplateNameLength = 128;
         private const float GuestSpawnPoseMaxAgeSeconds = 2f;
         private const float GuestSpawnMaxDistance = 12f;
@@ -513,6 +513,8 @@ namespace WinterMP.Core.Sync
             var bodies = Resources.FindObjectsOfTypeAll(typeof(Rigidbody));
             foreach (var obj in bodies)
             {
+                if (pending.Captured.Count >= ItemSpawn.MaxItems) break;
+
                 var body = obj as Rigidbody;
                 // Already-tracked bodies are existing save items, not fresh clones —
                 // the tracked-skip is what keeps us from grabbing the player's held

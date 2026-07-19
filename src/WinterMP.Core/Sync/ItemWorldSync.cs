@@ -6,7 +6,6 @@ namespace WinterMP.Core.Sync
     internal sealed partial class ItemWorldSync
     {
         private const float SnapshotPoseTtlSeconds = 300f;
-        private const int ItemSnapshotChunk = 40;
 
         private readonly WorldSyncBridge _bridge;
         private VehicleWorldSync _vehicles = null!;

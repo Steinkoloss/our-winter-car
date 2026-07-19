@@ -5,6 +5,7 @@ namespace WinterMP.Net.Messages
     /// Host stores these in the guest profile sidecar for reconnect.
     /// Wire v28 appends BodyTemp (PLAYER/BodyTemp.Temperature) as the 5th need.
     /// Wire v30 appends Stress (global) and Drunk ("Drunk Mode" FSM DrunkCurrent).
+    /// Wire v55 appends Dirtiness (global PlayerDirtiness) after Sequence.
     /// </summary>
     public sealed class PlayerNeedsReport : IMessage
     {
@@ -17,6 +18,7 @@ namespace WinterMP.Net.Messages
         public float Stress;
         public float Drunk;
         public ushort Sequence;
+        public float Dirtiness;
 
         public MessageId Id => MessageId.PlayerNeedsReport;
 
@@ -31,6 +33,7 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(Stress);
             writer.WriteSingle(Drunk);
             writer.WriteUInt16(Sequence);
+            writer.WriteSingle(Dirtiness);
         }
 
         public void Read(NetReader reader)
@@ -44,6 +47,7 @@ namespace WinterMP.Net.Messages
             Stress = reader.ReadSingle();
             Drunk = reader.ReadSingle();
             Sequence = reader.ReadUInt16();
+            Dirtiness = reader.ReadSingle();
         }
     }
 

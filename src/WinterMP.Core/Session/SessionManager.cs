@@ -26,6 +26,9 @@ namespace WinterMP.Core.Session
     public sealed class SessionManager : MonoBehaviour
     {
         private const float PingIntervalSeconds = 2f;
+        private const float SnapshotRequestCooldownSeconds = 10f;
+        private const float ResyncRequestCooldownSeconds = 15f;
+        private const float ObjectStateRequestCooldownSeconds = 0.25f;
 
         public static SessionManager? Instance { get; private set; }
 
@@ -47,6 +50,10 @@ namespace WinterMP.Core.Session
         private float _steamOpStartedAt = -1f;
         private uint _pingNonce;
         private readonly Dictionary<uint, float> _pendingPings = new Dictionary<uint, float>();
+        private readonly Dictionary<PeerId, float> _nextSnapshotRequestAt = new Dictionary<PeerId, float>();
+        private readonly Dictionary<PeerId, float> _nextResyncRequestAt = new Dictionary<PeerId, float>();
+        private readonly Dictionary<PeerId, float> _nextObjectStateRequestAt = new Dictionary<PeerId, float>();
+        private bool _failedSessionCleanupPending;
 
         private readonly Dictionary<byte, PassengerState> _passengerOccupancy = new Dictionary<byte, PassengerState>();
 
@@ -81,6 +88,7 @@ namespace WinterMP.Core.Session
         private LaunchMode _pendingMode = LaunchMode.None;
         private ulong _pendingLobbyId;
         private bool _steamCallbacksRegistered;
+        private bool _steamLobbyAttemptActive;
         private bool _bypassHostPlayerGate;
         private bool _steamMainMenuNotified;
         private bool _joinBrowseActive;
@@ -316,12 +324,13 @@ namespace WinterMP.Core.Session
                 RefreshPlayerNameFromSteam();
                 Steam.SteamBootstrap.SelfPump = true;
                 Steam.SteamLobbyManager.LeaveLobby();
+                _steamLobbyAttemptActive = true;
                 SetState(SessionState.Hosting, "Creating Steam lobby...");
                 Steam.SteamLobbyManager.HostLobby(OnSteamTransportReady, OnSteamFailure);
             }
             catch (Exception e)
             {
-                SetState(SessionState.Failed, $"Steam hosting failed: {e.Message}");
+                FailSession($"Steam hosting failed: {e.Message}");
                 WinterMPPlugin.Log.LogError(e);
             }
 #else
@@ -344,7 +353,17 @@ namespace WinterMP.Core.Session
             Steam.SteamLobbyManager.EnsureCallbacksRegistered();
 
             if (State == SessionState.Failed)
+            {
+                if (_failedSessionCleanupPending)
+                {
+                    _pendingMode = LaunchMode.Join;
+                    _pendingLobbyId = lobbyId;
+                    _joinBrowseActive = false;
+                    return;
+                }
+
                 SetState(SessionState.Idle, "Idle");
+            }
 
             if (State != SessionState.Idle)
             {
@@ -386,17 +405,18 @@ namespace WinterMP.Core.Session
                 RefreshPlayerNameFromSteam();
                 Steam.SteamBootstrap.SelfPump = true;
                 Steam.SteamLobbyManager.LeaveLobby();
+                _steamLobbyAttemptActive = true;
                 SetState(SessionState.Connecting, $"Joining lobby {lobbyId}...");
                 Steam.SteamLobbyManager.JoinLobby(lobbyId, OnSteamTransportReady, OnSteamFailure);
             }
             catch (Exception e)
             {
-                SetState(SessionState.Failed, $"Steam join failed: {e.Message}");
+                FailSession($"Steam join failed: {e.Message}");
                 WinterMPPlugin.Log.LogError(e);
             }
 #else
             WinterMPPlugin.Log.LogWarning($"Cannot join lobby {lobbyId}: Steam transport not compiled in.");
-            SetState(SessionState.Failed, "Steam transport not available in this build.");
+            FailSession("Steam transport not available in this build.");
 #endif
         }
 
@@ -420,7 +440,7 @@ namespace WinterMP.Core.Session
             }
             catch (Exception e)
             {
-                SetState(SessionState.Failed, $"Could not host on UDP port {port}: {e.Message}");
+                FailSession($"Could not host on UDP port {port}: {e.Message}");
                 WinterMPPlugin.Log.LogError(e);
             }
         }
@@ -443,7 +463,7 @@ namespace WinterMP.Core.Session
             }
             catch (Exception e)
             {
-                SetState(SessionState.Failed, $"Could not join {address}:{port}: {e.Message}");
+                FailSession($"Could not join {address}:{port}: {e.Message}");
                 WinterMPPlugin.Log.LogError(e);
             }
         }
@@ -472,21 +492,72 @@ namespace WinterMP.Core.Session
                     SendTo(peer, bye, Channel.ReliableOrdered);
             }
 
+            _failedSessionCleanupPending = false;
+            DisposeSessionTransport();
+            ResetSessionRuntimeState();
+            SetState(SessionState.Idle, "Idle");
+        }
+
+        private void DisposeSessionTransport()
+        {
             _devClient?.Dispose();
             _devClient = null;
             _transport?.Dispose();
             _transport = null;
+#if STEAMWORKS
+            // Lobby creation/join can fail before SteamP2PTransport is constructed.
+            // Releasing here covers that path as well as normal transport teardown.
+            if (_steamLobbyAttemptActive)
+                Steam.SteamLobbyManager.LeaveLobby();
+#endif
+        }
+
+        /// <summary>Clears state tied to a transport without replacing the current user-facing session state.</summary>
+        private void ResetSessionRuntimeState()
+        {
             _hostPeer = null;
             _playersByPeer.Clear();
             _pendingPings.Clear();
+            _nextSnapshotRequestAt.Clear();
+            _nextResyncRequestAt.Clear();
+            _nextObjectStateRequestAt.Clear();
+            _passengerOccupancy.Clear();
+            _guestSlotsBySteam.Clear();
+            _nextPlayerId = 1;
+            LocalPlayerId = 0;
+            _nextPingAt = 0f;
+            _pingNonce = 0;
             _steamOpStartedAt = -1f;
+            _steamLobbyAttemptActive = false;
             _bypassHostPlayerGate = false;
             IsHost = false;
+            PermanentDeathEnabled = false;
             _joinBrowseActive = false;
-            _guestSlotsBySteam.Clear();
             ConnectionQuality.Instance.Reset();
             NetTrafficMeter.Instance.Reset();
-            SetState(SessionState.Idle, "Idle");
+        }
+
+        /// <summary>
+        /// Transport callbacks may report a host loss while their own update loop is
+        /// enumerating peers. Dispose only after that callback pump has returned, but
+        /// retain the failure text so users can see why the session ended.
+        /// </summary>
+        private void FlushFailedSessionCleanup()
+        {
+            if (!_failedSessionCleanupPending) return;
+
+            _failedSessionCleanupPending = false;
+            DisposeSessionTransport();
+            ResetSessionRuntimeState();
+
+            if (_pendingMode != LaunchMode.None)
+                SetState(SessionState.Idle, PendingLaunchStatus(_pendingMode));
+        }
+
+        private void FailSession(string status)
+        {
+            SetState(SessionState.Failed, status);
+            _failedSessionCleanupPending = true;
         }
 
         private void PollTransportQuality()
@@ -530,7 +601,7 @@ namespace WinterMP.Core.Session
 
         private void OnSteamFailure(string error)
         {
-            SetState(SessionState.Failed, error);
+            FailSession(error);
             WinterMPPlugin.Log.LogError($"Steam session failure: {error}");
         }
 #endif
@@ -553,11 +624,13 @@ namespace WinterMP.Core.Session
                     "No Steam callbacks within 5s — the game does not seem to pump them; enabling self-pump.");
             }
 #endif
+            FlushFailedSessionCleanup();
             RunPendingLaunchMode();
             RecoverFromFailed();
 
             _transport?.Update();
             _devClient?.Update();
+            FlushFailedSessionCleanup();
 
             ConnectionQuality.Instance.TickWindow(Time.unscaledTime);
             NetTrafficMeter.Instance.Tick(Time.unscaledTime, _playersByPeer.Count);
@@ -622,6 +695,13 @@ namespace WinterMP.Core.Session
 
                 if (!IsHost)
                 {
+                    if (State != SessionState.Connecting)
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Ignored unexpected client transport connection from {peer} while {State}.");
+                        return;
+                    }
+
                     _hostPeer = peer;
                     SyncCatalog.EnsureLoaded();
 
@@ -649,6 +729,17 @@ namespace WinterMP.Core.Session
         {
             try
             {
+                if (!IsHost && _hostPeer.HasValue && _hostPeer.Value != peer)
+                {
+                    WinterMPPlugin.Log.LogDebug($"Ignored unexpected client transport disconnect from {peer}.");
+                    return;
+                }
+                if (!IsHost && !_hostPeer.HasValue && State != SessionState.Connecting)
+                {
+                    WinterMPPlugin.Log.LogDebug($"Ignored client transport disconnect from {peer} while {State}.");
+                    return;
+                }
+
                 if (_playersByPeer.TryGetValue(peer, out var player))
                 {
                     if (IsHost && player.SteamId != 0 && player.LastTransformTime > 0f)
@@ -672,13 +763,17 @@ namespace WinterMP.Core.Session
                         Broadcast(new PlayerDespawn { PlayerId = player.PlayerId, Reason = reason }, Channel.ReliableOrdered);
                 }
 
+                _nextSnapshotRequestAt.Remove(peer);
+                _nextResyncRequestAt.Remove(peer);
+                _nextObjectStateRequestAt.Remove(peer);
+
                 // Only set the failure once: an in-band DisconnectMessage delivers the precise host
                 // reason first, then the transport-level disconnect fires again — don't clobber it
                 // with the generic "Lost connection to host."
                 if (!IsHost && State != SessionState.Failed)
                 {
                     string guestMessage = FormatGuestDisconnectReason(reason);
-                    SetState(SessionState.Failed, guestMessage);
+                    FailSession(guestMessage);
                 }
             }
             catch (Exception e)
@@ -723,6 +818,25 @@ namespace WinterMP.Core.Session
 
         private void OnPacketReceived(PeerId peer, byte[] payload, Channel channel)
         {
+            if (payload == null)
+            {
+                WinterMPPlugin.Log.LogWarning($"Dropped null packet from {peer}.");
+                return;
+            }
+
+            if (State != SessionState.Hosting && State != SessionState.Connecting && State != SessionState.Connected)
+            {
+                WinterMPPlugin.Log.LogDebug($"Dropped packet from {peer} while {State}.");
+                return;
+            }
+
+            if (!SessionMessagePolicy.IsKnownChannel(channel))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"Dropped packet from {peer} on invalid channel {(byte)channel}.");
+                return;
+            }
+
             NetTrafficMeter.Instance.RecordReceived(payload.Length);
 
             IMessage message;
@@ -733,6 +847,24 @@ namespace WinterMP.Core.Session
             catch (ProtocolException e)
             {
                 WinterMPPlugin.Log.LogWarning($"Dropped malformed packet from {peer}: {e.Message}");
+                return;
+            }
+
+            bool senderIsAuthenticated = _playersByPeer.ContainsKey(peer);
+            bool senderIsSelectedHost = _hostPeer.HasValue && _hostPeer.Value == peer;
+            if (!SessionMessagePolicy.IsSenderAllowed(
+                    message.Id, IsHost, senderIsAuthenticated, senderIsSelectedHost,
+                    receiverHandshakeComplete: State == SessionState.Connected))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"Dropped {message.Id} from unauthorised peer {peer}.");
+                return;
+            }
+
+            if (!SessionMessagePolicy.IsChannelAllowed(message.Id, channel))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"Dropped {message.Id} from {peer} on unexpected channel {(byte)channel}.");
                 return;
             }
 
@@ -757,8 +889,20 @@ namespace WinterMP.Core.Session
                     HandleHandshakeRequest(peer, request);
                     break;
 
-                case HandshakeResponse response when !IsHost:
+                case HandshakeResponse response when !IsHost && State == SessionState.Connecting:
                     HandleHandshakeResponse(peer, response);
+                    break;
+
+                case HandshakeResponse when !IsHost:
+                    WinterMPPlugin.Log.LogWarning($"Dropped unexpected handshake response from {peer} while {State}.");
+                    break;
+
+                case ChatMessage chat when IsHost:
+                    if (TryGetPlayerId(peer, out byte chatPlayerId))
+                    {
+                        chat.SenderPlayerId = chatPlayerId;
+                        HandleChat(peer, chat);
+                    }
                     break;
 
                 case ChatMessage chat:
@@ -918,10 +1062,20 @@ namespace WinterMP.Core.Session
                     break;
 
                 case FsmStateEnter stateEnter when IsHost:
+                {
+                    RadiatorThermostatState? thermostatState = null;
+                    var world = Sync.WorldSyncManager.Instance;
                     if (TryGetPlayerId(peer, out byte fsmPlayerId)
-                        && Sync.WorldSyncManager.Instance?.OnHostGuestStateEnter(stateEnter, fsmPlayerId) == true)
-                        Broadcast(stateEnter, Channel.ReliableOrdered, except: peer);
+                        && world != null
+                        && world.OnHostGuestStateEnter(stateEnter, fsmPlayerId, out thermostatState))
+                    {
+                        if (thermostatState != null)
+                            Broadcast(thermostatState, Channel.ReliableOrdered);
+                        else
+                            Broadcast(stateEnter, Channel.ReliableOrdered, except: peer);
+                    }
                     break;
+                }
 
                 case FsmStateEnter stateEnter:
                     Sync.WorldSyncManager.Instance?.OnRemoteStateEnter(stateEnter);
@@ -935,6 +1089,10 @@ namespace WinterMP.Core.Session
 
                 case FsmRawEvent rawEvent:
                     Sync.WorldSyncManager.Instance?.OnRemoteRawEvent(rawEvent);
+                    break;
+
+                case RadiatorThermostatState thermostatState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteRadiatorThermostatState(thermostatState);
                     break;
 
                 case BoltState boltState when IsHost:
@@ -1271,6 +1429,14 @@ namespace WinterMP.Core.Session
 
         private void HandleHandshakeRequest(PeerId peer, HandshakeRequest request)
         {
+            if (_playersByPeer.TryGetValue(peer, out var existing))
+            {
+                SendAcceptedHandshake(peer, existing.PlayerId);
+                WinterMPPlugin.Log.LogDebug(
+                    $"Re-acknowledged duplicate handshake from {existing.Name} ({peer}) as player {existing.PlayerId}.");
+                return;
+            }
+
             SyncCatalog.EnsureLoaded();
 
             string? refusal = null;
@@ -1300,22 +1466,16 @@ namespace WinterMP.Core.Session
                 ReturningGuest = GuestProfileStore.TryGet(peer.Value, out _, out _),
             };
 
-            SendTo(peer, new HandshakeResponse
-            {
-                Accepted = true,
-                PlayerId = player.PlayerId,
-                HostPlayerName = LocalPlayerName,
-                SessionFlags = BuildSessionFlags(),
-            }, Channel.ReliableOrdered);
+            SendAcceptedHandshake(peer, player.PlayerId);
 
             // Introduce existing players to the newcomer...
-            foreach (var existing in _playersByPeer.Values)
+            foreach (var otherPlayer in _playersByPeer.Values)
             {
                 SendTo(peer, new PlayerSpawn
                 {
-                    PlayerId = existing.PlayerId,
-                    SteamId = existing.SteamId,
-                    Name = existing.Name,
+                    PlayerId = otherPlayer.PlayerId,
+                    SteamId = otherPlayer.SteamId,
+                    Name = otherPlayer.Name,
                 }, Channel.ReliableOrdered);
             }
 
@@ -1341,10 +1501,22 @@ namespace WinterMP.Core.Session
             // at this point it is typically still in the main menu.
         }
 
+        private void SendAcceptedHandshake(PeerId peer, byte playerId)
+        {
+            SendTo(peer, new HandshakeResponse
+            {
+                Accepted = true,
+                PlayerId = playerId,
+                HostPlayerName = LocalPlayerName,
+                SessionFlags = BuildSessionFlags(),
+            }, Channel.ReliableOrdered);
+        }
+
         private void HandleSnapshotRequest(PeerId peer, WorldSnapshotRequest request)
         {
             var world = Sync.WorldSyncManager.Instance;
             if (world == null) return;
+            if (!TryBeginHostRequest(_nextSnapshotRequestAt, peer, SnapshotRequestCooldownSeconds, "snapshot")) return;
 
             if (request.IdHash != world.IdHash)
                 WinterMPPlugin.Log.LogWarning(
@@ -1453,7 +1625,10 @@ namespace WinterMP.Core.Session
                 offer.BodyTemp = needs.BodyTemp;
                 offer.Stress = needs.Stress;
                 offer.Drunk = needs.Drunk;
+                offer.Dirtiness = needs.Dirtiness;
                 offer.Flags |= GuestSpawn.FlagHasSavedNeeds;
+                if (needs.HasDirtiness)
+                    offer.Flags |= GuestSpawn.FlagHasSavedDirtiness;
             }
 
             return offer;
@@ -1484,6 +1659,8 @@ namespace WinterMP.Core.Session
                     BodyTemp = report.BodyTemp,
                     Stress = report.Stress,
                     Drunk = report.Drunk,
+                    Dirtiness = report.Dirtiness,
+                    HasDirtiness = true,
                     Valid = true,
                 });
                 return true;
@@ -1495,7 +1672,7 @@ namespace WinterMP.Core.Session
         {
             return IsFinite(report.Hunger) && IsFinite(report.Fatigue) && IsFinite(report.Thirst)
                 && IsFinite(report.Urine) && IsFinite(report.BodyTemp) && IsFinite(report.Stress)
-                && IsFinite(report.Drunk);
+                && IsFinite(report.Drunk) && IsFinite(report.Dirtiness);
         }
 
         private static bool IsFinite(float value)
@@ -1522,6 +1699,13 @@ namespace WinterMP.Core.Session
         {
             var world = Sync.WorldSyncManager.Instance;
             if (world == null) return;
+            if (!SessionMessagePolicy.IsValidResyncFlags(request.Flags))
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"Dropped invalid soft-resync flags 0x{request.Flags:X2} from {peer}.");
+                return;
+            }
+            if (!TryBeginHostRequest(_nextResyncRequestAt, peer, ResyncRequestCooldownSeconds, "soft resync")) return;
 
             int messages = 0;
             foreach (var chunk in world.BuildResyncMessages(request.Flags))
@@ -1534,10 +1718,26 @@ namespace WinterMP.Core.Session
                 $"Soft resync to {peer} for checksum seq {request.ChecksumSequence} flags 0x{request.Flags:X2} ({messages} messages).");
         }
 
+        private static bool TryBeginHostRequest(Dictionary<PeerId, float> nextAllowedAt, PeerId peer,
+            float cooldownSeconds, string requestName)
+        {
+            float now = Time.unscaledTime;
+            if (nextAllowedAt.TryGetValue(peer, out float nextAt) && now < nextAt)
+            {
+                WinterMPPlugin.Log.LogDebug(
+                    $"Dropped rate-limited {requestName} request from {peer} ({nextAt - now:0.0}s remaining).");
+                return false;
+            }
+
+            nextAllowedAt[peer] = now + cooldownSeconds;
+            return true;
+        }
+
         private void HandleObjectStateRequest(PeerId peer, WorldObjectStateRequest request)
         {
             var world = Sync.WorldSyncManager.Instance;
             if (world == null) return;
+            if (!TryBeginHostRequest(_nextObjectStateRequestAt, peer, ObjectStateRequestCooldownSeconds, "object state")) return;
 
             int messages = 0;
             foreach (var message in world.BuildObjectStateMessages(request.NetId))
@@ -1563,9 +1763,8 @@ namespace WinterMP.Core.Session
             {
                 string reason = response.Reason ?? "unknown reason";
                 AddChatLine($"* Join refused: {reason}");
-                SetState(SessionState.Failed, $"Join refused: {reason}");
+                FailSession($"Join refused: {reason}");
                 WinterMPPlugin.Log.LogWarning($"Join refused by host: {reason}");
-                Shutdown("Refused by host.");
                 return;
             }
 

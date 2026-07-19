@@ -29,6 +29,33 @@ namespace WinterMP.Net.Messages
     }
 
     /// <summary>
+    /// The authoritative scalar setting of one fixed radiator thermostat. FSM state
+    /// alone is insufficient here: an Increase/Decrease transition carries a delta,
+    /// while a joining guest needs the resulting Rotation value.
+    /// </summary>
+    public sealed class RadiatorThermostatState : IMessage
+    {
+        /// <summary>Stable id of the thermostat Knob FSM.</summary>
+        public uint NetId;
+        /// <summary>Its game-owned <c>Rotation</c> float after the host applies a turn.</summary>
+        public float Rotation;
+
+        public MessageId Id => MessageId.RadiatorThermostatState;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(NetId);
+            writer.WriteSingle(Rotation);
+        }
+
+        public void Read(NetReader reader)
+        {
+            NetId = reader.ReadUInt32();
+            Rotation = reader.ReadSingle();
+        }
+    }
+
+    /// <summary>
     /// A raw PlayMaker event to deliver to a cataloged FSM on the receiver
     /// (e.g. TIGHTEN/UNTIGHTEN on a bolt's Screw FSM). Receivers whitelist the
     /// event names they are willing to replay.
@@ -215,6 +242,9 @@ namespace WinterMP.Net.Messages
             OwnerPlayerId = reader.ReadByte();
             Sequence = reader.ReadUInt16();
             int count = reader.ReadByte();
+            if (count > MaxEntries)
+                throw new ProtocolException($"Vehicle cargo count {count} exceeds the {MaxEntries} entry limit.");
+
             Entries = count == 0 ? NoEntries : new Entry[count];
             for (int i = 0; i < count; i++)
             {
@@ -324,7 +354,7 @@ namespace WinterMP.Net.Messages
         public byte HeaterDirection;
         /// <summary>Interior window fog / condensation, 0 = clear, 255 = fully fogged.</summary>
         public byte Fog;
-        /// <summary>Cabin air temperature, 0-255 maps to 0-40 °C.</summary>
+        /// <summary>Cabin air temperature, 0-255 maps to -40 to +40 °C.</summary>
         public byte CabinTemp;
         /// <summary>Exterior window ice (Freezing.CutoffWindshield), 0 = clear, 255 = fully iced.
         /// Wire v28: split out from <see cref="Frost"/> so parked cars stop force-frosting the
@@ -458,6 +488,9 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class ItemSpawn : IMessage
     {
+        /// <summary>A grocery-bag spill cannot legitimately contain an unbounded number of clones.</summary>
+        public const int MaxItems = SpawnIntent.MaxItems;
+
         /// <summary>
         /// Wire v31: join-snapshot replay of an earlier spill. The receiver must NOT
         /// fire its own container to materialize these (that would spend an unrelated,
@@ -499,11 +532,14 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
+            if (Items.Count > MaxItems)
+                throw new ProtocolException($"Item spawn manifest has {Items.Count} entries; limit is {MaxItems}.");
+
             writer.WriteUInt32(ContainerNetId);
             writer.WriteUInt16(Epoch);
             writer.WriteByte(OwnerPlayerId);
             writer.WriteString(StateName);
-            writer.WriteUInt16((ushort)Items.Count);
+            writer.WriteCount16(Items.Count);
             foreach (var entry in Items)
             {
                 writer.WriteUInt32(entry.NetId);
@@ -522,6 +558,9 @@ namespace WinterMP.Net.Messages
             OwnerPlayerId = reader.ReadByte();
             StateName = reader.ReadString();
             int count = reader.ReadUInt16();
+            if (count > MaxItems)
+                throw new ProtocolException($"Item spawn manifest has {count} entries; limit is {MaxItems}.");
+
             Items = new List<ItemSpawn.Entry>(count);
             for (int i = 0; i < count; i++)
             {
@@ -552,6 +591,9 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class SpawnIntent : IMessage
     {
+        /// <summary>Maximum clone descriptors a guest may offer from one grocery-bag spill.</summary>
+        public const int MaxItems = 32;
+
         public struct Entry
         {
             /// <summary>Spilled clone name (e.g. "sausages(itemx)") — the host's template key.</summary>
@@ -571,11 +613,14 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
+            if (Items.Count > MaxItems)
+                throw new ProtocolException($"Spawn intent has {Items.Count} entries; limit is {MaxItems}.");
+
             writer.WriteByte(PlayerId);
             writer.WriteUInt32(ContainerNetId);
             writer.WriteString(StateName);
             writer.WriteUInt16(Sequence);
-            writer.WriteUInt16((ushort)Items.Count);
+            writer.WriteCount16(Items.Count);
             foreach (var entry in Items)
             {
                 writer.WriteString(entry.TemplateName);
@@ -591,6 +636,9 @@ namespace WinterMP.Net.Messages
             StateName = reader.ReadString();
             Sequence = reader.ReadUInt16();
             int count = reader.ReadUInt16();
+            if (count > MaxItems)
+                throw new ProtocolException($"Spawn intent has {count} entries; limit is {MaxItems}.");
+
             Items = new List<Entry>(count);
             for (int i = 0; i < count; i++)
             {
@@ -707,6 +755,7 @@ namespace WinterMP.Net.Messages
         public const byte FlagBolts = 1 << 3;
         public const byte FlagItems = 1 << 4;
         public const byte FlagVehicles = 1 << 5;
+        public const byte AllFlags = FlagWallet | FlagFsmStates | FlagParts | FlagBolts | FlagItems | FlagVehicles;
 
         public byte Flags;
         public ushort ChecksumSequence;

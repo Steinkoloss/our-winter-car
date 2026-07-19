@@ -276,6 +276,20 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterControl(PlayMakerFSM fsm, string[] syncedStates)
         {
+            return RegisterControl(fsm, syncedStates, null, null);
+        }
+
+        internal bool RegisterControl(PlayMakerFSM fsm, CatalogControlMatch match)
+        {
+            return RegisterControl(fsm, match.States, match.ScalarFloatName, match.ScalarCommitState);
+        }
+
+        private bool RegisterControl(
+            PlayMakerFSM fsm,
+            string[] syncedStates,
+            string? scalarFloatName,
+            string? scalarCommitState)
+        {
             string path = ScenePath.Of(fsm.transform);
             uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
             if (_controls.ContainsKey(id) || _starters.ContainsKey(id) || _ignitions.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
@@ -285,6 +299,30 @@ namespace WinterMP.Core.Sync
                 return false;
             }
 
+            HutongGames.PlayMaker.FsmFloat? scalarFloat = null;
+            string commitState = scalarCommitState ?? string.Empty;
+            if (scalarFloatName != null)
+            {
+                if (commitState.Length == 0 || !FsmHook.HasState(fsm, commitState))
+                {
+                    WinterMPPlugin.Log.LogWarning(
+                        $"WorldSync: scalar control '{path}' has invalid commit-state metadata.");
+                    return false;
+                }
+
+                scalarFloat = fsm.FsmVariables.FindFsmFloat(scalarFloatName);
+                if (scalarFloat == null)
+                {
+                    WinterMPPlugin.Log.LogWarning(
+                        $"WorldSync: scalar control '{path}' has no float '{scalarFloatName}'.");
+                    return false;
+                }
+
+                if (!FsmHook.EnsureRemoteEntry(fsm, commitState)) return false;
+                string capturedCommit = commitState;
+                if (!FsmHook.OnStateEnter(fsm, capturedCommit, () => OnScalarControlCommitted(id))) return false;
+            }
+
             foreach (string state in syncedStates)
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
@@ -292,8 +330,23 @@ namespace WinterMP.Core.Sync
                 if (!FsmHook.OnStateEnter(fsm, state, () => OnControlStateEntered(id, captured))) return false;
             }
 
-            _controls[id] = new SyncedControl { Fsm = fsm, Path = path, SyncedStates = syncedStates };
+            _controls[id] = new SyncedControl
+            {
+                Fsm = fsm,
+                Path = path,
+                SyncedStates = syncedStates,
+                ScalarFloat = scalarFloat,
+                ScalarCommitState = scalarFloat != null ? commitState : null,
+            };
             _bridge.HookedFsms[fsm] = true;
+
+            if (_pendingRadiatorThermostatStates.TryGetValue(id, out var pending))
+            {
+                _pendingRadiatorThermostatStates.Remove(id);
+                if (Time.unscaledTime < pending.ExpiresAt)
+                    ApplyRadiatorThermostatState(id, pending.Rotation);
+            }
+
             WinterMPPlugin.Log.LogInfo($"WorldSync: control registered: '{path}'.");
             return true;
         }

@@ -93,7 +93,13 @@ namespace WinterMP.Net
         //      against fresh position, registered seat geometry, and canonical occupancy.
         // v53: PlayerTransform relays reject non-finite/out-of-map positions, invalid
         //      rotations, and unknown movement bits before proximity checks use them.
-        public const ushort Version = 53;
+        // v54: Session admission rejects packets from untrusted peers, guest world
+        //      traffic before handshake completion, and off-contract channels;
+        //      bounded snapshot/spawn collections and host request limits contain
+        //      malformed or abusive packets before they reach game state.
+        // v55: PlayerDirtiness is appended to per-guest needs reports and rejoin
+        //      profiles, preserving the locally simulated hygiene result.
+        public const ushort Version = 55;
     }
 
     /// <summary>
@@ -108,7 +114,7 @@ namespace WinterMP.Net
         /// <summary>Transform streams. Best effort; receivers drop stale packets via sequence numbers.</summary>
         UnreliableSequenced = 1,
 
-        /// <summary>Join snapshots, save data, large transfers. Guaranteed, may be chunked.</summary>
+        /// <summary>Reserved for future reliable, chunked bulk transfers.</summary>
         ReliableBulk = 2,
     }
 }

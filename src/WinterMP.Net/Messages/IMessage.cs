@@ -102,6 +102,8 @@ namespace WinterMP.Net.Messages
         IceRaceEventState = 90,
         /// <summary>Host -> guests: ordered ice-race result-board rows.</summary>
         IceRaceResultsState = 91,
+        /// <summary>Host -> guests: exact fixed-radiator thermostat rotation.</summary>
+        RadiatorThermostatState = 92,
 
         // 100-119: NPCs — M6
         NpcTransform = 100,
@@ -116,7 +118,7 @@ namespace WinterMP.Net.Messages
 
         // Reserved ranges for future subsystems:
         //   63-79 vehicles (attachment, fuel/damage)
-        //   92-99 economy
+        //   93-99 economy/appliances
         //   101-119 NPCs/jobs (NpcTransform = 100)
         //   126-139 snapshot/bulk transfer control
     }

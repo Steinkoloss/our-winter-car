@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
@@ -22,8 +23,12 @@ namespace WinterMP.Core.Sync
         /// peer before reaching here. Only catalogued interactable FSMs near that
         /// peer's fresh pose may be applied or relayed.
         /// </summary>
-        public bool TryAcceptGuestStateEnter(FsmStateEnter message, byte playerId)
+        public bool TryAcceptGuestStateEnter(
+            FsmStateEnter message,
+            byte playerId,
+            out RadiatorThermostatState? thermostatState)
         {
+            thermostatState = null;
             if (!TryGetGuestInteractable(message.NetId, message.StateName, out var fsm, out var path))
             {
                 WinterMPPlugin.Log.LogWarning(
@@ -37,7 +42,28 @@ namespace WinterMP.Core.Sync
                 return false;
             }
 
+            SyncedControl? scalarControl = null;
+            if (_controls.TryGetValue(message.NetId, out var control) && control.ScalarFloat != null)
+            {
+                if (!fsm.gameObject.activeInHierarchy || !fsm.enabled)
+                {
+                    WinterMPPlugin.Log.LogWarning(
+                        $"WorldSync: dropped inactive guest thermostat state {message.NetId:X8} '{message.StateName}'.");
+                    return false;
+                }
+
+                scalarControl = control;
+            }
+
             OnRemoteStateEnter(message);
+            if (scalarControl != null)
+            {
+                if (TryBuildRadiatorThermostatState(message.NetId, out var scalarState))
+                    thermostatState = scalarState;
+                else
+                    WinterMPPlugin.Log.LogWarning(
+                        $"WorldSync: guest thermostat state {message.NetId:X8} applied without a readable scalar value.");
+            }
             return true;
         }
 
@@ -431,6 +457,26 @@ namespace WinterMP.Core.Sync
                     }
 
                     _pending.RemoveAt(i);
+                }
+            }
+
+            if (_pendingRadiatorThermostatStates.Count > 0)
+            {
+                var thermostatIds = new List<uint>(_pendingRadiatorThermostatStates.Keys);
+                foreach (uint id in thermostatIds)
+                {
+                    if (!_pendingRadiatorThermostatStates.TryGetValue(id, out var pending)) continue;
+                    if (ApplyRadiatorThermostatState(id, pending.Rotation))
+                    {
+                        _pendingRadiatorThermostatStates.Remove(id);
+                        continue;
+                    }
+
+                    if (Time.unscaledTime < pending.ExpiresAt) continue;
+                    _pendingRadiatorThermostatStates.Remove(id);
+                    WinterMPPlugin.Log.LogWarning($"WorldSync: dropping expired thermostat state for {id:X8}.");
+                    if (session != null && !session.IsHost)
+                        _bridge.RequestObjectState(id);
                 }
             }
 

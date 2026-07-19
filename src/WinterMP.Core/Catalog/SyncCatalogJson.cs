@@ -261,6 +261,8 @@ namespace WinterMP.Core.Catalog
                 ObjectName = GetOptionalString(obj, "objectName"),
                 ObjectNameContains = GetOptionalString(obj, "objectNameContains"),
                 FsmName = GetString(obj, "fsmName"),
+                ScalarFloatName = GetOptionalString(obj, "scalarFloat"),
+                ScalarCommitState = GetOptionalString(obj, "scalarCommitState"),
             };
 
             AppendStrings(obj, "states", rule.States);
@@ -551,6 +553,8 @@ namespace WinterMP.Core.Catalog
         public string? ObjectName;
         public string? ObjectNameContains;
         public string FsmName = string.Empty;
+        public string? ScalarFloatName;
+        public string? ScalarCommitState;
         public readonly List<string> States = new List<string>();
         public readonly List<string> RequireStates = new List<string>();
         public readonly List<string> ExcludePathPrefixes = new List<string>();

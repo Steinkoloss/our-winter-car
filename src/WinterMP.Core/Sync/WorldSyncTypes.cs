@@ -386,11 +386,19 @@ namespace WinterMP.Core.Sync
 }
 
     internal sealed class SyncedControl
-{
+    {
     public PlayMakerFSM Fsm = null!;
     public string Path = string.Empty;
     public string[] SyncedStates = null!;
     public string? LastSyncedState;
+    public HutongGames.PlayMaker.FsmFloat? ScalarFloat;
+    public string? ScalarCommitState;
+}
+
+    internal struct PendingRadiatorThermostatState
+{
+    public float Rotation;
+    public float ExpiresAt;
 }
 
     internal sealed class SyncedStarter

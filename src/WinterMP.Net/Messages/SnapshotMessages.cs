@@ -31,6 +31,9 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class WorldDoorSnapshot : IMessage
     {
+        /// <summary>Matches the sender's chunk size so malformed packets cannot allocate arbitrary lists.</summary>
+        public const int MaxEntries = 60;
+
         public struct Entry
         {
             public uint NetId;
@@ -43,7 +46,10 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
-            writer.WriteUInt16((ushort)Entries.Count);
+            if (Entries.Count > MaxEntries)
+                throw new ProtocolException($"World door snapshot has {Entries.Count} entries; limit is {MaxEntries}.");
+
+            writer.WriteCount16(Entries.Count);
             foreach (var entry in Entries)
             {
                 writer.WriteUInt32(entry.NetId);
@@ -54,6 +60,9 @@ namespace WinterMP.Net.Messages
         public void Read(NetReader reader)
         {
             int count = reader.ReadUInt16();
+            if (count > MaxEntries)
+                throw new ProtocolException($"World door snapshot has {count} entries; limit is {MaxEntries}.");
+
             Entries = new List<Entry>(count);
             for (int i = 0; i < count; i++)
             {
@@ -74,6 +83,9 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class WorldItemSnapshot : IMessage
     {
+        /// <summary>Matches the sender's chunk size so malformed packets cannot allocate arbitrary lists.</summary>
+        public const int MaxEntries = 40;
+
         public struct Entry
         {
             public uint ItemId;
@@ -87,7 +99,10 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
-            writer.WriteUInt16((ushort)Entries.Count);
+            if (Entries.Count > MaxEntries)
+                throw new ProtocolException($"World item snapshot has {Entries.Count} entries; limit is {MaxEntries}.");
+
+            writer.WriteCount16(Entries.Count);
             foreach (var entry in Entries)
             {
                 writer.WriteUInt32(entry.ItemId);
@@ -99,6 +114,9 @@ namespace WinterMP.Net.Messages
         public void Read(NetReader reader)
         {
             int count = reader.ReadUInt16();
+            if (count > MaxEntries)
+                throw new ProtocolException($"World item snapshot has {count} entries; limit is {MaxEntries}.");
+
             Entries = new List<Entry>(count);
             for (int i = 0; i < count; i++)
             {
@@ -119,6 +137,9 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class WorldBoltSnapshot : IMessage
     {
+        /// <summary>Matches the sender's chunk size so malformed packets cannot allocate arbitrary lists.</summary>
+        public const int MaxEntries = 80;
+
         public struct Entry
         {
             public uint NetId;
@@ -132,7 +153,10 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
-            writer.WriteUInt16((ushort)Entries.Count);
+            if (Entries.Count > MaxEntries)
+                throw new ProtocolException($"World bolt snapshot has {Entries.Count} entries; limit is {MaxEntries}.");
+
+            writer.WriteCount16(Entries.Count);
             foreach (var entry in Entries)
             {
                 writer.WriteUInt32(entry.NetId);
@@ -144,6 +168,9 @@ namespace WinterMP.Net.Messages
         public void Read(NetReader reader)
         {
             int count = reader.ReadUInt16();
+            if (count > MaxEntries)
+                throw new ProtocolException($"World bolt snapshot has {count} entries; limit is {MaxEntries}.");
+
             Entries = new List<Entry>(count);
             for (int i = 0; i < count; i++)
             {
@@ -164,6 +191,9 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class WorldPartSnapshot : IMessage
     {
+        /// <summary>Matches the sender's chunk size so malformed packets cannot allocate arbitrary lists.</summary>
+        public const int MaxEntries = 80;
+
         public struct Entry
         {
             public uint NetId;
@@ -178,7 +208,10 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
-            writer.WriteUInt16((ushort)Entries.Count);
+            if (Entries.Count > MaxEntries)
+                throw new ProtocolException($"World part snapshot has {Entries.Count} entries; limit is {MaxEntries}.");
+
+            writer.WriteCount16(Entries.Count);
             foreach (var entry in Entries)
             {
                 writer.WriteUInt32(entry.NetId);
@@ -191,6 +224,9 @@ namespace WinterMP.Net.Messages
         public void Read(NetReader reader)
         {
             int count = reader.ReadUInt16();
+            if (count > MaxEntries)
+                throw new ProtocolException($"World part snapshot has {count} entries; limit is {MaxEntries}.");
+
             Entries = new List<Entry>(count);
             for (int i = 0; i < count; i++)
             {
@@ -211,13 +247,19 @@ namespace WinterMP.Net.Messages
     /// </summary>
     public sealed class WorldItemDespawnSnapshot : IMessage
     {
+        /// <summary>Matches the sender's chunk size so malformed packets cannot allocate arbitrary lists.</summary>
+        public const int MaxItems = 80;
+
         public List<uint> ItemIds = new List<uint>();
 
         public MessageId Id => MessageId.WorldItemDespawnSnapshot;
 
         public void Write(NetWriter writer)
         {
-            writer.WriteUInt16((ushort)ItemIds.Count);
+            if (ItemIds.Count > MaxItems)
+                throw new ProtocolException($"World item-despawn snapshot has {ItemIds.Count} ids; limit is {MaxItems}.");
+
+            writer.WriteCount16(ItemIds.Count);
             foreach (uint itemId in ItemIds)
                 writer.WriteUInt32(itemId);
         }
@@ -225,6 +267,9 @@ namespace WinterMP.Net.Messages
         public void Read(NetReader reader)
         {
             int count = reader.ReadUInt16();
+            if (count > MaxItems)
+                throw new ProtocolException($"World item-despawn snapshot has {count} ids; limit is {MaxItems}.");
+
             ItemIds = new List<uint>(count);
             for (int i = 0; i < count; i++)
                 ItemIds.Add(reader.ReadUInt32());

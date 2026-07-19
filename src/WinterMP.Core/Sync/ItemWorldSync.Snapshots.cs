@@ -20,7 +20,7 @@ namespace WinterMP.Core.Sync
                     Position = item.Body.transform.position.ToNet(),
                     Rotation = item.Body.transform.rotation.ToNet(),
                 });
-                if (items.Entries.Count >= ItemSnapshotChunk)
+                if (items.Entries.Count >= WorldItemSnapshot.MaxEntries)
                 {
                     yield return items;
                     items = new WorldItemSnapshot();

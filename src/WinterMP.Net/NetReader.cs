@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 
 namespace WinterMP.Net
@@ -9,12 +10,22 @@ namespace WinterMP.Net
         private readonly int _length;
         private int _position;
 
-        public NetReader(byte[] buffer) : this(buffer, buffer.Length)
+        public NetReader(byte[] buffer) : this(buffer, GetBufferLength(buffer))
         {
+        }
+
+        private static int GetBufferLength(byte[] buffer)
+        {
+            if (buffer == null) throw new ArgumentNullException("buffer");
+            return buffer.Length;
         }
 
         public NetReader(byte[] buffer, int length)
         {
+            if (buffer == null) throw new ArgumentNullException("buffer");
+            if (length < 0 || length > buffer.Length)
+                throw new ProtocolException($"Invalid buffer length {length} for {buffer.Length} byte(s).");
+
             _buffer = buffer;
             _length = length;
         }

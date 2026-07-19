@@ -5,6 +5,7 @@ using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Sync;
+using UnityEngine;
 
 namespace WinterMP.Core.Sync
 {
@@ -52,6 +53,15 @@ namespace WinterMP.Core.Sync
             foreach (uint id in ids)
             {
                 if (!entries.TryGetValue(id, out var entry)) continue;
+                if (entry is SyncedControl control && control.ScalarFloat != null)
+                {
+                    float rotation = control.ScalarFloat.Value;
+                    if (float.IsNaN(rotation) || float.IsInfinity(rotation)) continue;
+                    crc = StableHash.Combine(crc, id);
+                    crc = StableHash.Combine(crc, unchecked((uint)Mathf.RoundToInt(rotation * 1000f)));
+                    continue;
+                }
+
                 string? state = entry switch
                 {
                     SyncedDoor d => d.LastSyncedState,
@@ -74,7 +84,10 @@ namespace WinterMP.Core.Sync
             if (_ignitions.TryGetValue(netId, out var ignition))
                 return ignition.LastSyncedState ?? TryReadActiveSyncedState(ignition.Fsm, ignition.SyncedStates);
             if (_controls.TryGetValue(netId, out var control))
+            {
+                if (control.ScalarFloat != null) return null;
                 return control.LastSyncedState ?? TryReadActiveSyncedState(control.Fsm, control.SyncedStates);
+            }
             if (_starters.TryGetValue(netId, out var starter))
                 return starter.LastSyncedState ?? TryReadActiveSyncedState(starter.Fsm, starter.SyncedStates);
             if (_buys.TryGetValue(netId, out var buy))

@@ -392,14 +392,37 @@ namespace WinterMP.Core.Sync
         {
             if (_bridge.ApplyingRemote) return;
 
-            if (_controls.TryGetValue(netId, out var control))
-                control.LastSyncedState = stateName;
+            if (!_controls.TryGetValue(netId, out var control)) return;
+            control.LastSyncedState = stateName;
 
             var session = SessionManager.Instance;
             if (session == null || session.PlayerCount == 0) return;
 
+            if (control.ScalarFloat != null)
+            {
+                // The host publishes the settled scalar when the commit state is entered.
+                // A guest sends only its +/- intent so it cannot invent a thermostat value.
+                if (session.IsHost) return;
+                WinterMPPlugin.Log.LogInfo($"WorldSync: thermostat {netId:X8} -> '{stateName}' (guest intent).");
+                session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
+                return;
+            }
+
             WinterMPPlugin.Log.LogInfo($"WorldSync: control {netId:X8} -> '{stateName}' (local).");
             session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
+        }
+
+        private void OnScalarControlCommitted(uint netId)
+        {
+            if (_bridge.ApplyingRemote) return;
+            if (!_controls.TryGetValue(netId, out var control) || control.ScalarFloat == null) return;
+
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost || session.PlayerCount == 0) return;
+            if (!TryBuildRadiatorThermostatState(netId, out var state)) return;
+
+            WinterMPPlugin.Log.LogInfo($"WorldSync: thermostat {netId:X8} -> {state.Rotation:0.###} (host).");
+            session.SendWorldMessage(state, Channel.ReliableOrdered);
         }
 
         private void OnStarterStateEntered(uint netId, string stateName)
