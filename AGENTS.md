@@ -37,7 +37,9 @@ the source of truth for the wire format.
 | `src/WinterMP.Net.Tests` | xUnit tests for the protocol layer. Runs in CI. | yes |
 | `src/WinterMP.Core` | The BepInEx 5 plugin: Steam, session, world-sync subsystems. `net35`. | **no** (needs game DLLs) |
 | `src/WinterMP.Tools` | Dev plugin: F9 dumps the FSM/object catalog. `net35`. | **no** |
-| `src/WinterMP.Launcher` | .NET 8 WPF desktop app: install/repair, save backups, host/join. | yes |
+| `src/WinterMP.FastBoot` | Dev plugin: save-safe fast boot (ES2 load skip + menu accelerator). `net35`. | **no** |
+| `src/WinterMP.Launcher` | .NET 8 Avalonia desktop app (Windows + Linux): install/repair, save backups, host/join. | yes |
+| `src/WinterMP.Launcher.Tests` | xUnit tests for launcher policies (FastBoot safe profile). Runs in CI. | yes |
 | `catalog/` | Generated per-game-build sync catalogs (FSM descriptors). | — |
 | `protocol/PROTOCOL.md` | Wire protocol spec — keep in lockstep with code. | — |
 | `docs/BUILDING.md` | Build, deploy, dev-loop instructions. | — |
@@ -115,8 +117,9 @@ This codebase grows by accretion. Fight entropy actively:
   **partial classes** by responsibility, following the existing convention:
   `FsmWorldSync.cs` + `FsmWorldSync.Remote.cs` + `FsmWorldSync.Snapshots.cs` …,
   `VehicleWorldSync.cs` + `VehicleWorldSync.Engine.cs` + `.Climate.cs`,
-  `WorldSyncManager.cs` + `.ItemSync.cs` + `.FsmSync.cs`. One concern per
-  partial; name the file `Type.Concern.cs`.
+  `ItemWorldSync.cs` + `ItemWorldSync.Spawn.cs` + `.Cargo.cs`,
+  `SessionManager.cs` + `SessionManager.Messages.cs` + `.Handlers.cs`. One
+  concern per partial; name the file `Type.Concern.cs`.
 - **Prefer editing existing files over adding new ones.** Match the folder it
   belongs to (`Sync/`, `Steam/`, `Session/`, `Catalog/`, `Diagnostics/`, `UI/`,
   `Util/`).
@@ -167,7 +170,8 @@ re-test. Don't hand-hardcode against one build — keep it data-driven.
 ## 9. Shipping (delegated to a rule)
 
 Releases follow `.cursor/rules/github-releases.mdc`: version bumps across
-`WinterMP.Core.csproj`, `WinterMP.Launcher.csproj`, `wintermp-compat.json`, and
+`WinterMP.Core.csproj`, `WinterMP.Launcher.csproj`,
+`src/WinterMP.Launcher/Assets/wintermp-compat.json`, and
 `installer/WinterMP.iss`, then `tools/build-installer.ps1`, then a tagged GitHub
 release. **Only do this when the user actually asks to commit/push/ship.** Don't
 self-trigger releases, and never commit unless asked.
@@ -198,20 +202,21 @@ The cloud VM is **Linux** with the **.NET 8 SDK** preinstalled (system-wide at
 on startup. What this means for what you can actually run here:
 
 - **Buildable/testable on this VM:** `WinterMP.Net` (the protocol library;
-  `net35;netstandard2.0`) and `WinterMP.Net.Tests`. This is the same loop CI runs
-  and the only end-to-end loop available without the game.
-- **NOT buildable here:** `WinterMP.Launcher` is WPF (`net8.0-windows`) — it
-  *restores* on Linux but cannot *build/run*. `WinterMP.Core`, `WinterMP.Tools`,
-  and `WinterMP.FastBoot` reference the game's own Unity/PlayMaker DLLs (set via
+  `net35;netstandard2.0`), `WinterMP.Net.Tests`, and the Avalonia launcher
+  (`WinterMP.Launcher`, `net8.0`) with `WinterMP.Launcher.Tests`. That is the
+  same set CI builds and tests.
+- **NOT buildable here:** `WinterMP.Core`, `WinterMP.Tools`, and
+  `WinterMP.FastBoot` reference the game's own Unity/PlayMaker DLLs (set via
   `Directory.Build.props.user` / `MwcGamePath`) and need a real My Winter Car
-  install on Windows. Don't fake a green build for these; make protocol/logic
-  changes in `WinterMP.Net` and lean on its tests (see §3, §5).
+  install. Don't fake a green build for these; make protocol/logic changes in
+  `WinterMP.Net` and lean on its tests (see §3, §5).
 
 - **Gotcha — no working solution file for the CLI:** the repo ships `WinterMP.slnx`
   (no `.sln`), and SDK 8.0.128 does **not** understand `.slnx`. So bare
   `dotnet build` / `dotnet test` at the repo root (and `dotnet build WinterMP.slnx`)
   fail. Always target a project path. Canonical commands here:
   - Tests (CI loop): `dotnet test src/WinterMP.Net.Tests`
+  - Launcher tests: `dotnet test src/WinterMP.Launcher.Tests`
   - Build protocol lib: `dotnet build src/WinterMP.Net/WinterMP.Net.csproj`
 - There is no separate lint step; the build is the check (nullable refs are on,
   see §4.2). Treat a clean `dotnet build` of `WinterMP.Net` plus green tests as the

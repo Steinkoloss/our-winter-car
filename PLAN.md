@@ -349,13 +349,24 @@ consistent across peers.
 
 ## 5. Milestones
 
-**Status (2026-06).** The original M0–M6 are substantially landed at **protocol
+**Status (2026-07-19).** The original M0–M6 are substantially landed at **protocol
 v25** (shipped through v0.1.24): transport/Steam/launcher, players + avatars +
 needs, generic FSM world sync, items/cargo/parts/bolts, vehicles (Sorbet + Corris
 incl. climate), shared wallet + shops + orders, time/weather, NPC traffic,
 sleep/death/permadeath, join snapshot + checksums/soft-resync. Launcher
-install/update/backup/diagnostics (the original M8) is largely done. What remains
-is the gameplay **long tail** + a dedicated **stability pass**, re-scoped below.
+install/update/backup/diagnostics (the original M8) is largely done — now
+cross-platform Avalonia (Windows installer + Linux AppImage). Since then the
+**feature work for M7–M10 has landed on main at protocol v55** (unreleased):
+winter survival (BodyTemp/clothing/heat sources/stress/drunk/dirtiness), the
+host-authoritative bag-spawn manifest rework, jobs & economy (classifieds, mail
+orders, sewage/firewood/factory job sites, guarded refueling), hazards (police
+fines, moose streaming, inspection/registration), racing (rally + ice-race
+lifecycle incl. event grid and results), radiator thermostats, and session
+admission hardening. The wire/unit gate is green (149 protocol tests incl. a
+reflection round-trip over every registered message), but **no M7+ exit
+criterion is met yet** — all of it awaits real 2-player/soak verification,
+which is the current bottleneck. Beyond that verification pass, what remains is
+the gameplay **long tail** + M11 polish, re-scoped below.
 
 **Target: v1.0 = pragmatic-complete co-op.** Full parity (computer toy, exhaustive
 FSM coverage, full race-grid fidelity) is an explicit *post-1.0* backlog, not a
@@ -364,11 +375,11 @@ v1.0 blocker. Stability is the top priority — M7 gates everything after it.
 | # | Milestone | Contents | Exit criteria |
 |---|---|---|---|
 | **M0–M6** | ✅ Foundation | Tooling, transport, players, world FSM sync, vehicles, building & economy, NPCs, sleep/death — see §4.4 | Shipped: protocol v25 / v0.1.24 |
-| **M7** | **Stability & winter-survival parity** *(gate)* | Land the security/correctness backlog (`.car-sync-*` findings); **`BodyTemp` as the 5th synced need** + clothing (warmth + visual); **home heating & cooking** as host-owned progression (§4.8); bandwidth budget (< 64 kB/s/client steady); reconnection hardening; multi-hour soak | 4-player multi-hour winter session: zero hard desyncs **and** zero hypothermia/heat divergence across 10 soak runs |
-| **M8** | Jobs & economy depth | **Classifieds ordering** (listings + periodic refresh host-authoritative; phone-dial intents; mailed delivery); **jobs** (firewood delivery + tractor wood-splitter PTO, sewage, factory punch-clock); fuel/jerrycan; flea market | Two players run a full work loop — order parts by phone, earn from a job — money **and** listings always consistent |
-| **M9** | World hazards | Police (speeding/DUI → fines to shared wallet, arrest/impound); moose/animal collisions + host AI; vehicle inspection/registration | A guest can be ticketed, hit a moose, and pass inspection — all consistent across peers |
-| **M10** | Co-op racing | Suvi-Sprint rally + Ice Track Rally: enroll/grid/start/lap-timing/finish/payout; opponent streaming; frozen-lake ice track | Two players race the ice rally together with consistent standings + payout |
-| **M11** | Beta & polish | Positional voice chat; home appliances (TV/radio/fuses); hygiene/dirt/wash; docs; public beta; Nexus release | Non-technical user: download → playing with a friend in < 5 min |
+| **M7** | **Stability & winter-survival parity** *(gate)* — 🚧 *landed on main (→v55), verification pending* | Land the security/correctness backlog (`.car-sync-*` findings); **`BodyTemp` as the 5th synced need** + clothing (warmth + visual); **home heating & cooking** as host-owned progression (§4.8); bandwidth budget (< 64 kB/s/client steady); reconnection hardening; multi-hour soak | 4-player multi-hour winter session: zero hard desyncs **and** zero hypothermia/heat divergence across 10 soak runs |
+| **M8** | Jobs & economy depth — 🚧 *landed on main (→v55), verification pending* | **Classifieds ordering** (listings + periodic refresh host-authoritative; phone-dial intents; mailed delivery); **jobs** (firewood delivery + tractor wood-splitter PTO, sewage, factory punch-clock); fuel/jerrycan; flea market | Two players run a full work loop — order parts by phone, earn from a job — money **and** listings always consistent |
+| **M9** | World hazards — 🚧 *police/moose/inspection landed, verification pending* | Police (speeding/DUI → fines to shared wallet, arrest/impound); moose/animal collisions + host AI; vehicle inspection/registration | A guest can be ticketed, hit a moose, and pass inspection — all consistent across peers |
+| **M10** | Co-op racing — 🚧 *rally + ice-race lifecycle landed, verification pending* | Suvi-Sprint rally + Ice Track Rally: enroll/grid/start/lap-timing/finish/payout; opponent streaming; frozen-lake ice track | Two players race the ice rally together with consistent standings + payout |
+| **M11** | Beta & polish — ⬜ *(home stereo + dirtiness already landed)* | Positional voice chat; home appliances (TV/radio/fuses); hygiene/dirt/wash; docs; public beta; Nexus release | Non-technical user: download → playing with a friend in < 5 min |
 | — | Parity backlog *(post-1.0)* | Computer toy (MSC-import), full race-grid fidelity, exhaustive long-tail FSM curation | As demanded, per game build |
 
 Ship order: **M7 is the gate** — stability and survival-parity before new content.
@@ -399,7 +410,7 @@ survive winter); **M9–M10** add the headline winter content; **M11** ships it.
 | Mod loader | BepInEx 5 x64 | MWC community standard, Mono, Harmony built in |
 | Patching | HarmonyX | PlayMaker interception, vanilla flow hooks |
 | In-game Steam | Steamworks.NET | Works inside Unity Mono profile, raw API access for Sockets/Lobbies/Rich Presence |
-| Launcher | .NET 8 + WPF (Windows-only, like the game) | Fast to build, easy installer story |
+| Launcher | .NET 8 + Avalonia (cross-platform; Windows installer + Linux AppImage) | Fast to build, easy installer story, runs where the players are |
 | Launcher Steam | Facepunch.Steamworks | Pleasant API, fine on .NET 8 |
 | Serialization | Hand-rolled binary writers per message (codegen from `protocol/`) | Tiny, allocation-free, version-tagged; MSCMP validated the codegen approach |
 | Compression | LZ4 for snapshots | Fast, good-enough ratio |

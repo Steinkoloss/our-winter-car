@@ -9,7 +9,7 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 |-----------|----------------|
 | BepInEx plugin | `src/WinterMP.Core/WinterMPPlugin.cs` — creates persistent `WinterMP` GameObject and subsystems |
 | FastBoot (save gate) | `src/WinterMP.FastBoot/SessionGate.cs` |
-| Launcher | `src/WinterMP.Launcher/MainWindow.xaml.cs` |
+| Launcher | `src/WinterMP.Launcher/MainWindow.axaml.cs` (Avalonia) |
 | Protocol (engine-independent) | `src/WinterMP.Net/` — **unit-tested, builds without the game** |
 
 ## Session & transport
@@ -18,8 +18,11 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 |---------|--------|
 | Host/join, handshake, chat, relay | `Session/SessionManager.cs` |
 | Remote player bookkeeping | `Session/RemotePlayer.cs`, `Session/DevLoopbackClient.cs` |
-| Launch modes / CLI | `LaunchOptions.cs` |
+| Launch modes / CLI | `LaunchOptions.cs`, `Session/SessionLaunchPolicy.cs` |
 | Guest sidecar (pose + needs) | `Session/GuestProfileStore.cs` |
+| Session admission / channel contract | `WinterMP.Net/SessionMessagePolicy.cs` — enforced in `Session/SessionManager.cs` + `Steam/SteamLobbyManager.cs` |
+| Bandwidth meter (TAB overlay + 10 s log) | `Session/NetTrafficMeter.cs` |
+| Transport quality / ownership-transfer pausing | `Session/ConnectionQuality.cs` |
 | Host main-menu gate | `Session/HostLaunchPolicy.cs`, `UI/MainMenuHostGate.cs` |
 | Steam lobby / P2P | `Steam/SteamBootstrap.cs`, `SteamLobbyManager.cs`, `SteamP2PTransport.cs` |
 | Loopback / UDP dev transport | `Session/SessionManager.cs` (`StartDevLoopback`, `StartHostLocal`) |
@@ -28,25 +31,28 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 
 | Concern | Files |
 |---------|--------|
-| Pose stream in/out | `Sync/PlayerSyncManager.cs` |
+| Pose stream in/out | `Sync/PlayerSyncManager.cs`, `Sync/PlayerPoseReader.cs` |
 | Remote bodies | `Sync/RemoteAvatar.cs`, `Sync/NpcCharacterFactory.cs`, `Sync/RemoteCharacterAnimator.cs` |
 | Move-state bitfield | `Sync/PlayerMoveStateReader.cs`, `Sync/PlayerMoveState.cs` |
 | Guest spawn picker | `UI/GuestSpawnPrompt.cs`, `Sync/GuestSpawnRelocator.cs` |
-| Guest needs → host sidecar | `Sync/PlayerNeedsSync.cs` |
+| Needs report (hunger/fatigue/thirst/urine/bodytemp/stress/drunk/dirtiness) → host sidecar | `Sync/PlayerNeedsSync.cs` |
+| Clothing stage/type + remote shirt tint | `Sync/ClothingSync.cs` |
 | Vehicle seats | `Sync/PassengerController.cs` |
 
 ## World sync (M3–M5)
 
 | Concern | Files |
 |---------|--------|
-| Orchestrator | `Sync/WorldSyncManager.cs` (+ partials under same prefix) |
-| Generic FSM sync engine | `Sync/FsmWorldSync.cs`, `.Registry.cs`, `.Local.cs`, `.Remote.cs`, `.Snapshots.cs` |
+| Orchestrator | `Sync/WorldSyncManager.cs` (+ partials), `Sync/WorldSyncBridge.cs`, `Sync/WorldSyncTypes.cs` |
+| Generic FSM sync engine | `Sync/FsmWorldSync.cs`, `.Registry.cs`, `.Local.cs`, `.Remote.cs`, `.Snapshots.cs`, `.Checksum.cs` (+ `.Tests.cs` in-game self-test) |
 | FSM hook helpers | `Sync/FsmHook.cs` |
 | Curated rules loader | `Catalog/SyncCatalog.cs`, `catalog/sync-catalog.json` |
 | Doors, shops, bolts, parts | Registered via `FsmWorldSync.Registry.cs` from catalog |
 | Items / pickables | `Sync/ItemWorldSync.*` |
 | NPC traffic / ice-race opponents | `Sync/NpcTrafficSync.cs` |
 | Jerrycan / liquid contents | `Sync/FluidContainerSync.cs` |
+| Home heating / sauna / fireplaces (lit, fuel, heat, sauna temp + intents) | `Sync/HeatSourceSync.cs` |
+| Fixed radiator thermostats (absolute rotation, id 92) | `Sync/FsmWorldSync.*` radiator paths + catalog knob rules |
 | Vehicles / host-validated station refueling | `Sync/VehicleWorldSync.*` (including `.Fuel.cs`), `Sync/ItemWorldSync.Vehicle.cs` |
 | Classifieds / factory / Marketti progress | `Sync/WorldProgressSync.cs` |
 | AMIS / Yellow Pages pending mail orders | `Sync/MailOrderSync.cs` |
