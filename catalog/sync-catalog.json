@@ -360,6 +360,41 @@
   ],
   "buys": [
     {
+      "pathContains": "ElectricityBill",
+      "fsmName": "Button",
+      "requireStates": ["Check money", "Date", "No money"],
+      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
+      "resultStates": ["Date", "Close"]
+    },
+    {
+      "pathContains": "PhoneBill",
+      "fsmName": "Button",
+      "requireStates": ["Check money", "Date", "No money"],
+      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
+      "resultStates": ["Date", "Close"]
+    },
+    {
+      "pathContains": "LottoTicket/Pay",
+      "fsmName": "Button",
+      "requireStates": ["Check money", "Date 2", "No money"],
+      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
+      "resultStates": ["Date 2", "Close"]
+    },
+    {
+      "pathContains": "MegavetoTicket/Pay",
+      "fsmName": "Button",
+      "requireStates": ["Check money", "Date", "No money"],
+      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
+      "resultStates": ["Date", "Close"]
+    },
+    {
+      "pathContains": "PartsSalesman",
+      "fsmName": "Buy",
+      "requireStates": ["Wait button 2", "Purchase", "Money"],
+      "entryGuards": [{ "state": "Purchase", "event": "USE" }],
+      "resultStates": ["Purchase", "Money"]
+    },
+    {
       "fsmName": "Use",
       "requireStates": ["Check car", "Check money", "Pay"],
       "entryGuards": [{ "state": "Check car", "event": "USE" }],

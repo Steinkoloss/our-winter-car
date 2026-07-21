@@ -55,7 +55,8 @@ namespace WinterMP.Core.Sync
         public IceRaceResultsState? BuildSnapshot()
         {
             Scan(force: true);
-            return BuildState(changedOnly: false);
+            // Targeted join send — must not advance the periodic change baseline.
+            return BuildState(changedOnly: false, advanceBaseline: false);
         }
 
         public void Apply(IceRaceResultsState message)
@@ -125,7 +126,7 @@ namespace WinterMP.Core.Sync
             return true;
         }
 
-        private IceRaceResultsState? BuildState(bool changedOnly)
+        private IceRaceResultsState? BuildState(bool changedOnly, bool advanceBaseline = true)
         {
             if (!Ready()) return null;
             var state = new IceRaceResultsState
@@ -141,7 +142,8 @@ namespace WinterMP.Core.Sync
                 _outSequence--;
                 return null;
             }
-            _last = state;
+            if (advanceBaseline)
+                _last = state;
             return state;
         }
 

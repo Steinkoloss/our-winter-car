@@ -272,6 +272,10 @@ namespace WinterMP.Core.Sync
             Add("COTTAGE/Stuff/Fireplace", Kind.Fireplace);
             Add("YARD/Building/LIVINGROOM/Fireplace", Kind.Fireplace);
             Add("COTTAGE/Stuff/Grill/Fireplace", Kind.Fireplace);
+            // Home electric sauna (COVERAGE-ROADMAP 6.2): its Simulation::Time exposes the same
+            // SaunaHeat/StoveHeat vars, so it heats identically via the existing sauna path.
+            // Its Power/Fuse follow the home electricity, so the 1.3 blackout cuts it too.
+            Add("YARD/Building/SAUNA/Sauna", Kind.Sauna);
         }
 
         private void Add(string containerPath, Kind kind)

@@ -152,6 +152,17 @@ namespace WinterMP.Core.Sync
             _active = message.IsActive ? message : null;
             if (message.IsActive && IsValidFine(message.Fine))
                 WriteFine(message.Fine);
+
+            // Host ack of our own report: only now advance the send-dedup baseline.
+            // Latching at send time meant a transiently rejected intent (stale pose,
+            // vehicle momentarily out of range) was silently lost forever.
+            var session = SessionManager.Instance;
+            if (message.IsActive && session != null && message.PlayerId == session.LocalPlayerId)
+            {
+                _lastReportedCheckpoint = message.CheckpointId;
+                _lastReportedFlags = message.OffenceFlags;
+                _lastReportedFine = message.Fine;
+            }
         }
 
         private void SendObservedIntent(SessionManager session)
@@ -164,9 +175,9 @@ namespace WinterMP.Core.Sync
             if (!changed) return;
 
             _nextIntentAt = Time.unscaledTime + IntentIntervalSeconds;
-            _lastReportedCheckpoint = checkpoint.Id;
-            _lastReportedFlags = flags;
-            _lastReportedFine = fine;
+            // Deliberately NOT latching _lastReported* here — the baseline advances when
+            // the host's accepting PoliceState echoes back (see Apply), so a transiently
+            // rejected report re-sends each interval instead of vanishing.
             session.SendWorldMessage(new PoliceIntent
             {
                 PlayerId = session.LocalPlayerId,
@@ -179,8 +190,17 @@ namespace WinterMP.Core.Sync
 
         private void ObserveHostFine(SessionManager session)
         {
-            if (_finePrice == null || !TryReadFine(out float fine)
-                || !TryFindActiveCheckpoint(out var checkpoint, out byte flags))
+            if (_finePrice == null) return;
+            if (!TryReadFine(out float fine))
+            {
+                // Price cleared = fine paid/reset (the game's Pay flow wipes it). Retire
+                // the shared record so late joiners don't inherit a phantom fine. NOTE:
+                // "no active checkpoint" below is NOT retirement — checkpoint crime flags
+                // reset when the stop ends while the fine is still owed.
+                RetireHostFine(session);
+                return;
+            }
+            if (!TryFindActiveCheckpoint(out var checkpoint, out byte flags))
                 return;
 
             bool changed = _active == null
@@ -201,6 +221,24 @@ namespace WinterMP.Core.Sync
             };
             if (session.PlayerCount > 0)
                 session.SendWorldMessage(_active, Channel.ReliableOrdered);
+        }
+
+        private void RetireHostFine(SessionManager session)
+        {
+            if (_active == null || !_active.IsActive) return;
+            var retired = new PoliceState
+            {
+                PlayerId = _active.PlayerId,
+                OffenceFlags = _active.OffenceFlags,
+                Flags = 0,
+                Sequence = ++_outStateSequence,
+                CheckpointId = _active.CheckpointId,
+                Fine = 0f,
+            };
+            _active = null;
+            if (session.PlayerCount > 0)
+                session.SendWorldMessage(retired, Channel.ReliableOrdered);
+            WinterMPPlugin.Log.LogInfo("PoliceSync: fine paid/reset — retired shared record.");
         }
 
         private void Scan(bool force = false)

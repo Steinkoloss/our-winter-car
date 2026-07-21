@@ -376,6 +376,40 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteVehicleState(vehicleState);
                     break;
 
+                case VehicleDamage vehicleDamage when IsHost:
+                    if (!IsPeerPlayer(peer, vehicleDamage.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped VehicleDamage claiming player {vehicleDamage.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleDamage(vehicleDamage, vehicleDamage.OwnerPlayerId) == true)
+                        Broadcast(vehicleDamage, Channel.ReliableOrdered, except: peer);
+                    else
+                        WinterMPPlugin.Log.LogWarning($"Dropped unauthorized VehicleDamage {vehicleDamage.VehicleId:X8}.");
+                    break;
+
+                case VehicleDamage vehicleDamage:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVehicleDamage(vehicleDamage);
+                    break;
+
+                case VehicleCondition vehicleCondition when IsHost:
+                    if (!IsPeerPlayer(peer, vehicleCondition.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped VehicleCondition claiming player {vehicleCondition.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleCondition(vehicleCondition, vehicleCondition.OwnerPlayerId) == true)
+                        Broadcast(vehicleCondition, Channel.ReliableOrdered, except: peer);
+                    else
+                        WinterMPPlugin.Log.LogWarning($"Dropped unauthorized VehicleCondition {vehicleCondition.VehicleId:X8}.");
+                    break;
+
+                case VehicleCondition vehicleCondition:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVehicleCondition(vehicleCondition);
+                    break;
+
                 case VehicleClimate vehicleClimate when IsHost:
                     if (!IsPeerPlayer(peer, vehicleClimate.OwnerPlayerId))
                     {
@@ -471,6 +505,28 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnHostHeatSourceIntent(heatIntent);
                     break;
 
+                case GamblingState gamblingState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteGamblingState(gamblingState);
+                    break;
+
+                case UtilityBillState utilityBillState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteUtilityBillState(utilityBillState);
+                    break;
+
+                case LotteryDrawState lotteryDrawState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteLotteryDrawState(lotteryDrawState);
+                    break;
+
+                case GamblingIntent gamblingIntent when IsHost:
+                    if (!IsPeerPlayer(peer, gamblingIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped GamblingIntent claiming player {gamblingIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostGamblingIntent(gamblingIntent);
+                    break;
+
                 case FluidContainerState fluidState when IsHost:
                     if (!IsPeerPlayer(peer, fluidState.OwnerPlayerId))
                     {
@@ -494,6 +550,23 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteFluidContainerState(fluidState);
                     break;
 
+                case BrewState brewState when IsHost:
+                    if (!IsPeerPlayer(peer, brewState.OwnerPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped BrewState claiming player {brewState.OwnerPlayerId} from {peer}.");
+                        break;
+                    }
+                    if (Sync.WorldSyncManager.Instance?.OnHostGuestBrewState(brewState, brewState.OwnerPlayerId) == true)
+                        Broadcast(brewState, Channel.ReliableOrdered, except: peer);
+                    else
+                        WinterMPPlugin.Log.LogWarning($"Dropped unauthorized BrewState {brewState.ItemId:X8} from player {brewState.OwnerPlayerId}.");
+                    break;
+
+                case BrewState brewState:
+                    Sync.WorldSyncManager.Instance?.OnRemoteBrewState(brewState);
+                    break;
+
                 case WorldProgressState progressState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteWorldProgressState(progressState);
                     break;
@@ -514,6 +587,92 @@ namespace WinterMP.Core.Session
                         break;
                     }
                     Sync.WorldSyncManager.Instance?.OnHostMailOrderIntent(mailOrderIntent);
+                    break;
+
+                case FleetariOrderState fleetariOrderState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteFleetariOrderState(fleetariOrderState);
+                    break;
+
+                case FleetariOrderIntent fleetariOrderIntent when IsHost:
+                    if (!IsPeerPlayer(peer, fleetariOrderIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped FleetariOrderIntent claiming player {fleetariOrderIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostFleetariOrderIntent(fleetariOrderIntent);
+                    break;
+
+                case FleaSaleState fleaSaleState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteFleaSaleState(fleaSaleState);
+                    break;
+
+                case TaxiJobState taxiJobState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteTaxiJobState(taxiJobState);
+                    break;
+
+                case WelfareState welfareState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteWelfareState(welfareState);
+                    break;
+
+                case HitchhikerState hitchhikerState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteHitchhikerState(hitchhikerState);
+                    break;
+
+                case WantedState wantedState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteWantedState(wantedState);
+                    break;
+
+                case JailState jailState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteJailState(jailState);
+                    break;
+
+                case PursuitState pursuitState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemotePursuitState(pursuitState);
+                    break;
+
+                case RallyResultsState rallyResultsState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteRallyResultsState(rallyResultsState);
+                    break;
+
+                case JokkisRaceState jokkisRaceState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteJokkisRaceState(jokkisRaceState);
+                    break;
+
+                case ApplianceState applianceState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteApplianceState(applianceState);
+                    break;
+
+                case PhoneCallEvent phoneCallEvent when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemotePhoneCallEvent(phoneCallEvent);
+                    break;
+
+                case PissAreaState pissAreaState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemotePissAreaState(pissAreaState);
+                    break;
+
+                case CarRadioState carRadioState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteCarRadioState(carRadioState);
+                    break;
+
+                case CrimeReport crimeReport when IsHost:
+                    if (!IsPeerPlayer(peer, crimeReport.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped CrimeReport claiming player {crimeReport.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostCrimeReport(crimeReport);
+                    break;
+
+                case FleaSaleIntent fleaSaleIntent when IsHost:
+                    if (!IsPeerPlayer(peer, fleaSaleIntent.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped FleaSaleIntent claiming player {fleaSaleIntent.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostFleaSaleIntent(fleaSaleIntent);
                     break;
 
                 case InspectionState inspectionState when !IsHost:

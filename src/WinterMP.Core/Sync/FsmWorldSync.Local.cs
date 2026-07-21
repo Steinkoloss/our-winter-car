@@ -108,6 +108,13 @@ namespace WinterMP.Core.Sync
                 mailOrderIntent.PlayerId = session.LocalPlayerId;
                 session.SendWorldMessage(mailOrderIntent, Channel.ReliableOrdered);
             }
+            if ((triggerEvent == "PAYMENT" || triggerEvent == "PAY")
+                && WorldSyncManager.Instance != null
+                && WorldSyncManager.Instance.TryBuildFleetariIntent(buy.Path, buy.Fsm, out var fleetariIntent))
+            {
+                fleetariIntent.PlayerId = session.LocalPlayerId;
+                session.SendWorldMessage(fleetariIntent, Channel.ReliableOrdered);
+            }
             session.SendWorldMessage(new PurchaseIntent
             {
                 PlayerId = session.LocalPlayerId,

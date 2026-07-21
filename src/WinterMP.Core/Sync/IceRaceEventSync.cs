@@ -26,7 +26,11 @@ namespace WinterMP.Core.Sync
         private FsmInt? _raceDistanceFinals;
         private FsmInt? _raceDistanceQuals;
         private FsmInt? _starterCars;
-        private FsmFloat? _time;
+        // The event Data FSM declares "Time" as an IntVariable (there is no float of that
+        // name), so it must be bound as FsmInt — binding it as FsmFloat left _time null,
+        // which made Ready() always false and this whole subsystem silently inert. The wire
+        // field stays a float and carries the integer value losslessly.
+        private FsmInt? _time;
         private FsmBool? _onTrack;
         private FsmString? _carId;
         private FsmString? _reference;
@@ -82,7 +86,8 @@ namespace WinterMP.Core.Sync
         public IceRaceEventState? BuildSnapshot()
         {
             Scan(force: true);
-            return BuildState(changedOnly: false);
+            // Targeted join send — must not advance the periodic change baseline.
+            return BuildState(changedOnly: false, advanceBaseline: false);
         }
 
         public void Apply(IceRaceEventState message)
@@ -107,7 +112,7 @@ namespace WinterMP.Core.Sync
             Set(_raceDistanceFinals, message.RaceDistanceFinals);
             Set(_raceDistanceQuals, message.RaceDistanceQuals);
             Set(_starterCars, message.StarterCars);
-            Set(_time, message.Time);
+            Set(_time, Mathf.RoundToInt(message.Time));
             Set(_onTrack, (message.Flags & IceRaceEventState.FlagOnTrack) != 0);
             Set(_carId, message.CarId);
             Set(_reference, message.Reference);
@@ -139,7 +144,7 @@ namespace WinterMP.Core.Sync
                         _raceDistanceFinals = fsm.FsmVariables.FindFsmInt("RaceDistanceFinals");
                         _raceDistanceQuals = fsm.FsmVariables.FindFsmInt("RaceDistanceQuals");
                         _starterCars = fsm.FsmVariables.FindFsmInt("StarterCars");
-                        _time = fsm.FsmVariables.FindFsmFloat("Time");
+                        _time = fsm.FsmVariables.FindFsmInt("Time");
                         _onTrack = fsm.FsmVariables.FindFsmBool("OnTrack");
                         _carId = fsm.FsmVariables.FindFsmString("CarID");
                         _reference = fsm.FsmVariables.FindFsmString("Reference");
@@ -180,7 +185,7 @@ namespace WinterMP.Core.Sync
                 && _playerRegistered != null;
         }
 
-        private IceRaceEventState? BuildState(bool changedOnly)
+        private IceRaceEventState? BuildState(bool changedOnly, bool advanceBaseline = true)
         {
             if (!Ready()) return null;
             byte flags = 0;
@@ -209,7 +214,8 @@ namespace WinterMP.Core.Sync
                 _outSequence--;
                 return null;
             }
-            _last = state;
+            if (advanceBaseline)
+                _last = state;
             return state;
         }
 

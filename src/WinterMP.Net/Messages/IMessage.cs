@@ -78,6 +78,12 @@ namespace WinterMP.Net.Messages
         VehicleCargo = 62,
         /// <summary>Guest -> host: validated fuel-station transfer into a parked vehicle tank.</summary>
         VehicleFuelIntent = 63,
+        /// <summary>Host -> guests: in-car radio power/channel/volume (CORRIS/SORBET).</summary>
+        CarRadioState = 66,
+        /// <summary>Owner -> host -> peers: accumulated engine part-breakage mask of one vehicle.</summary>
+        VehicleDamage = 64,
+        /// <summary>Owner -> host -> peers: drivetrain wear + per-wheel tire condition of one vehicle.</summary>
+        VehicleCondition = 65,
 
         // 80-99: economy — M5
         WalletState = 80,
@@ -104,9 +110,39 @@ namespace WinterMP.Net.Messages
         IceRaceResultsState = 91,
         /// <summary>Host -> guests: exact fixed-radiator thermostat rotation.</summary>
         RadiatorThermostatState = 92,
+        /// <summary>Host -> guests: shared gambling device (slot machine / Ventti) reels/hand + credit + payout.</summary>
+        GamblingState = 93,
+        /// <summary>Guest -> host: an anyone-triggers action on a shared gambling device.</summary>
+        GamblingIntent = 94,
+        /// <summary>Host -> guests: utility meter (electricity/phone) unpaid total + power/line state.</summary>
+        UtilityBillState = 95,
+        /// <summary>Host -> guests: shared kitchen-appliance (oven/stove) cooking + fire + fuse state.</summary>
+        ApplianceState = 99,
+        /// <summary>Host -> guests: national lottery draw (round + winning numbers + pot).</summary>
+        LotteryDrawState = 96,
+        /// <summary>Host -> guests: shared repair-shop (Fleetari) order record + service results.</summary>
+        FleetariOrderState = 97,
+        /// <summary>Guest -> host: configured Fleetari order captured before payment.</summary>
+        FleetariOrderIntent = 98,
 
         // 100-119: NPCs — M6
         NpcTransform = 100,
+        /// <summary>Host -> guests: shared flea-market sale-table proceeds + rent.</summary>
+        FleaSaleState = 101,
+        /// <summary>Guest -> host: flea sale-table action (rent / collect).</summary>
+        FleaSaleIntent = 102,
+        /// <summary>Host -> guests: shared taxi-job lifecycle + earnings.</summary>
+        TaxiJobState = 103,
+        /// <summary>Owner -> host -> peers: kilju bucket fermentation state (tracked item).</summary>
+        BrewState = 105,
+        /// <summary>Host -> guests: shared Kela welfare / unemployment claim state.</summary>
+        WelfareState = 107,
+        /// <summary>Host -> guests: shared hitchhiker variant + stage + payout.</summary>
+        HitchhikerState = 106,
+        /// <summary>Host -> guests: an incoming phone call (topic + call id).</summary>
+        PhoneCallEvent = 108,
+        /// <summary>Host -> guests: yard piss-stain scales (persistent world marks).</summary>
+        PissAreaState = 109,
 
         // 120-139: snapshots/bulk — M3 join snapshot
         WorldSnapshotRequest = 120,
@@ -116,11 +152,27 @@ namespace WinterMP.Net.Messages
         WorldPartSnapshot = 124,
         WorldItemDespawnSnapshot = 125,
 
+        // 140-149: crime & consequence (the 93-99 economy range filled, so crime extends here)
+        /// <summary>Host -> guests: shared wanted level (crime counters + sentence).</summary>
+        WantedState = 140,
+        /// <summary>Guest -> host: a locally-observed crime to add to the host's wanted counters.</summary>
+        CrimeReport = 141,
+        /// <summary>Host -> guests: shared jail-sentence countdown.</summary>
+        JailState = 142,
+        /// <summary>Host -> guests: police pursuit chase-active + siren flags.</summary>
+        PursuitState = 143,
+        // 150-159: racing completeness
+        /// <summary>Host -> guests: rally results ledger + enroll + penalties.</summary>
+        RallyResultsState = 150,
+        /// <summary>Host -> guests: JOKKIS banger-race lap/time/checkpoint state.</summary>
+        JokkisRaceState = 151,
+
         // Reserved ranges for future subsystems:
         //   63-79 vehicles (attachment, fuel/damage)
-        //   93-99 economy/appliances
+        //   93-99 economy/appliances (FULL)
         //   101-119 NPCs/jobs (NpcTransform = 100)
         //   126-139 snapshot/bulk transfer control
+        //   140-159 crime & consequence + racing completeness
     }
 
     public interface IMessage

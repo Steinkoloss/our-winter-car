@@ -91,7 +91,10 @@ namespace WinterMP.Core.Sync
             var local = ReadState(0);
             if (!HasChanged(local)) return;
             _nextSendAt = Time.unscaledTime + SendIntervalSeconds;
-            Remember(local);
+            // Deliberately NOT Remember(local) here: the baseline advances only when the
+            // host's accepting HomeStereoState echoes back (Apply -> Remember). If the host
+            // rejects the intent (e.g. stale pose), the change stays "pending" and this
+            // path resends each interval instead of silently losing the guest's setting.
             session.SendWorldMessage(new HomeStereoIntent
             {
                 PlayerId = session.LocalPlayerId,
@@ -105,7 +108,10 @@ namespace WinterMP.Core.Sync
         public HomeStereoState? BuildSnapshot()
         {
             Scan(force: true);
-            return IsReady() ? BuildState(changedOnly: false) : null;
+            // Join snapshot goes only to the joiner — must NOT advance the periodic
+            // broadcaster's change baseline (that would strand connected guests on a
+            // not-yet-broadcast host change).
+            return IsReady() ? BuildState(changedOnly: false, advanceBaseline: false) : null;
         }
 
         public bool TryAcceptIntent(HomeStereoIntent message, out HomeStereoState state)
@@ -206,7 +212,7 @@ namespace WinterMP.Core.Sync
                 && _volume != null && _bass != null && _radioOn != null && _channel != null;
         }
 
-        private HomeStereoState? BuildState(bool changedOnly)
+        private HomeStereoState? BuildState(bool changedOnly, bool advanceBaseline = true)
         {
             var state = ReadState(++_outSequence);
             if (changedOnly && !HasChanged(state))
@@ -214,7 +220,8 @@ namespace WinterMP.Core.Sync
                 _outSequence--;
                 return null;
             }
-            Remember(state);
+            if (advanceBaseline)
+                Remember(state);
             return state;
         }
 

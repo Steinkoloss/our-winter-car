@@ -112,6 +112,7 @@ namespace WinterMP.Core.Sync
                 SpeedTenthsKmh = (ushort)Mathf.Clamp(speedKmh * 10f, 0f, ushort.MaxValue),
                 FuelLevel = ReadFuelLevelByte(item),
                 CoolantTemp = ReadCoolantTempByte(item),
+                Gear = ReadGearByte(item),
             }, Channel.UnreliableSequenced);
         }
 
@@ -180,6 +181,13 @@ namespace WinterMP.Core.Sync
             item.RemoteCoolantTemp = message.CoolantTemp;
             item.RemoteEngineUntil = Time.unscaledTime + EngineAudioHoldSeconds;
 
+            // Selected gear indicator for observers (not for a car we drive ourselves).
+            if (!item.LocallyOwned && item.GearVar != null)
+            {
+                try { item.GearVar.Value = message.Gear - 1; }
+                catch { /* best-effort */ }
+            }
+
             bool blinkersChanged = message.BlinkerLeft != item.RemoteBlinkerLeft
                 || message.BlinkerRight != item.RemoteBlinkerRight;
             bool hazardChanged = message.HazardOn != item.RemoteHazard;
@@ -188,7 +196,14 @@ namespace WinterMP.Core.Sync
             item.RemoteHazard = message.HazardOn;
             item.RemoteDashDirty = true;
 
-            ApplyRemoteFuel(item, message.FuelLevel);
+            // Only accept a remote peer's fuel for a car we do NOT own locally. When we own
+            // the car (host driving its own car, or a guest driving a delegated car) a nearby
+            // observer's VehicleState — which the host accepts because the car has NoOwner and
+            // the observer is in range — would otherwise stomp our authoritative, live-simulated
+            // tank with a stale, 255-step-quantized echo. The intended case (a delegated driver's
+            // refuel) still applies because the car is not LocallyOwned on the receiving host.
+            if (!item.LocallyOwned)
+                ApplyRemoteFuel(item, message.FuelLevel);
 
             if (!item.LocallyOwned && electricsChanged)
                 ApplyRemoteElectricity(item, electricsOn);
@@ -394,6 +409,14 @@ namespace WinterMP.Core.Sync
             catch { return false; }
         }
 
+        // Selected gear encoded as gear+1 (0 = reverse, 1 = neutral, 2.. = forward); neutral when unknown.
+        private static byte ReadGearByte(SyncedItem item)
+        {
+            if (item.GearVar == null) return 1;
+            try { return (byte)Mathf.Clamp(item.GearVar.Value + 1, 0, 255); }
+            catch { return 1; }
+        }
+
         private static byte ReadFuelLevelByte(SyncedItem item)
         {
             if (item.GaugeFuelLevelVar != null)
@@ -491,6 +514,17 @@ namespace WinterMP.Core.Sync
                 {
                     item.ElectricityPowerFsm = fsm;
                 }
+
+                if (item.PartBreakagesFsm == null
+                    && fsm.FsmName == "Damages"
+                    && fsm.gameObject.name == "PartBreakages")
+                {
+                    item.PartBreakagesFsm = fsm;
+                    item.PartBreakageChanceVar = fsm.FsmVariables.FindFsmFloat("Chance");
+                }
+
+                if (item.GearVar == null && fsm.FsmName == "Gears" && fsm.gameObject.name == "Drivetrain")
+                    item.GearVar = fsm.FsmVariables.FindFsmInt("Gear");
 
                 if (item.EngineRevsVar == null)
                 {

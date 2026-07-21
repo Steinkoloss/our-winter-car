@@ -25,6 +25,9 @@ namespace WinterMP.Core.Session
             public float Dirtiness;
             /// <summary>False for legacy sidecars that predate the v55 dirtiness field.</summary>
             public bool HasDirtiness;
+            public float PlayerAlco;
+            /// <summary>False for legacy sidecars that predate the v78 PlayerAlco field.</summary>
+            public bool HasAlco;
             public bool Valid;
         }
 
@@ -134,6 +137,8 @@ namespace WinterMP.Core.Session
                     {
                         float dirtiness = 0f;
                         bool hasDirtiness = parts.Length >= 16 && TryParseFiniteFloat(parts[15], out dirtiness);
+                        float playerAlco = 0f;
+                        bool hasAlco = parts.Length >= 17 && TryParseFiniteFloat(parts[16], out playerAlco);
                         profile.Needs = new NeedsSnapshot
                         {
                             Hunger = ParseFloat(parts[8]),
@@ -148,6 +153,8 @@ namespace WinterMP.Core.Session
                             Drunk = parts.Length >= 15 ? ParseFloat(parts[14]) : 0f,
                             Dirtiness = dirtiness,
                             HasDirtiness = hasDirtiness,
+                            PlayerAlco = playerAlco,
+                            HasAlco = hasAlco,
                             Valid = true,
                         };
                         if (!HasFiniteNeeds(profile.Needs))
@@ -170,13 +177,24 @@ namespace WinterMP.Core.Session
                 var lines = new List<string>
                 {
                     "# wintermp-guests.json — guest spawn poses + needs (host only; do not edit while hosting)",
-                    "# steamId,x,y,z,qx,qy,qz,qw,hunger,fatigue,thirst,urine,bodytemp,stress,drunk,dirtiness",
+                    "# steamId,x,y,z,qx,qy,qz,qw,hunger,fatigue,thirst,urine,bodytemp,stress,drunk,dirtiness,playeralco",
                 };
 
                 foreach (var pair in Profiles)
                 {
                     var p = pair.Value;
-                    if (p.Needs.Valid && p.Needs.HasDirtiness)
+                    if (p.Needs.Valid && p.Needs.HasDirtiness && p.Needs.HasAlco)
+                    {
+                        lines.Add(string.Format(
+                            CultureInfo.InvariantCulture,
+                            "{0},{1:0.####},{2:0.####},{3:0.####},{4:0.####},{5:0.####},{6:0.####},{7:0.####},{8:0.####},{9:0.####},{10:0.####},{11:0.####},{12:0.####},{13:0.####},{14:0.####},{15:0.####},{16:0.####}",
+                            pair.Key,
+                            p.Position.X, p.Position.Y, p.Position.Z,
+                            p.Rotation.X, p.Rotation.Y, p.Rotation.Z, p.Rotation.W,
+                            p.Needs.Hunger, p.Needs.Fatigue, p.Needs.Thirst, p.Needs.Urine,
+                            p.Needs.BodyTemp, p.Needs.Stress, p.Needs.Drunk, p.Needs.Dirtiness, p.Needs.PlayerAlco));
+                    }
+                    else if (p.Needs.Valid && p.Needs.HasDirtiness)
                     {
                         lines.Add(string.Format(
                             CultureInfo.InvariantCulture,
@@ -233,7 +251,8 @@ namespace WinterMP.Core.Session
         {
             return IsFinite(needs.Hunger) && IsFinite(needs.Fatigue) && IsFinite(needs.Thirst)
                 && IsFinite(needs.Urine) && IsFinite(needs.BodyTemp) && IsFinite(needs.Stress)
-                && IsFinite(needs.Drunk) && (!needs.HasDirtiness || IsFinite(needs.Dirtiness));
+                && IsFinite(needs.Drunk) && (!needs.HasDirtiness || IsFinite(needs.Dirtiness))
+                && (!needs.HasAlco || IsFinite(needs.PlayerAlco));
         }
 
         private static bool IsFinite(float value)

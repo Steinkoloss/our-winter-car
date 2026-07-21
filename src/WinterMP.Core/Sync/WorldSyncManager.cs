@@ -36,6 +36,7 @@ namespace WinterMP.Core.Sync
         private readonly ClothingSync _clothing = new ClothingSync();
         private readonly HeatSourceSync _heat = new HeatSourceSync();
         private FluidContainerSync _fluids = null!;
+        private KiljuSync _kilju = null!;
         private readonly WorldProgressSync _progress = new WorldProgressSync();
         private readonly JobSiteSync _jobSites = new JobSiteSync();
         private readonly MailOrderSync _mailOrders = new MailOrderSync();
@@ -46,6 +47,24 @@ namespace WinterMP.Core.Sync
         private IceRaceSync _iceRace = null!;
         private readonly IceRaceEventSync _iceRaceEvent = new IceRaceEventSync();
         private readonly IceRaceResultsSync _iceRaceResults = new IceRaceResultsSync();
+        private readonly GamblingSync _gambling = new GamblingSync();
+        private readonly VenttiSync _ventti = new VenttiSync();
+        private readonly UtilityBillSync _utilityBills = new UtilityBillSync();
+        private readonly LotterySync _lottery = new LotterySync();
+        private readonly RepairShopSync _repairShop = new RepairShopSync();
+        private readonly FleaSaleSync _fleaSale = new FleaSaleSync();
+        private readonly TaxiJobSync _taxiJob = new TaxiJobSync();
+        private readonly WelfareSync _welfare = new WelfareSync();
+        private readonly HitchhikerSync _hitchhiker = new HitchhikerSync();
+        private readonly WantedSync _wanted = new WantedSync();
+        private readonly JailSync _jail = new JailSync();
+        private readonly PursuitSync _pursuit = new PursuitSync();
+        private readonly RallyResultsSync _rallyResults = new RallyResultsSync();
+        private readonly JokkisRaceSync _jokkis = new JokkisRaceSync();
+        private readonly ApplianceSync _appliances = new ApplianceSync();
+        private readonly PhoneSync _phone = new PhoneSync();
+        private readonly PissAreaSync _pissAreas = new PissAreaSync();
+        private readonly CarRadioSync _carRadio = new CarRadioSync();
 
         private bool _syncReady;
 
@@ -116,6 +135,7 @@ namespace WinterMP.Core.Sync
             _items = new ItemWorldSync(_bridge);
             _vehicles = new VehicleWorldSync(_bridge, _items);
             _fluids = new FluidContainerSync(_items);
+            _kilju = new KiljuSync(_items);
             _police = new PoliceSync(_items);
             _rally = new RallySync(_items);
             _iceRace = new IceRaceSync(_items);
@@ -124,6 +144,7 @@ namespace WinterMP.Core.Sync
             _bridge.BindItems(_items);
             _bridge.BindWallet(_wallet);
             _fsm = new FsmWorldSync(_bridge, _vehicles);
+            _jail.BindWanted(_wanted);
             _syncReady = true;
         }
 
@@ -257,11 +278,14 @@ namespace WinterMP.Core.Sync
             _items.UpdateItems(session);
             _npcTraffic.Update(session!);
             _vehicles.UpdateVehicleStates(session!);
+            _vehicles.UpdateVehicleDamage(session!);
+            _vehicles.UpdateVehicleCondition(session!);
             _vehicles.UpdateFuelTransfers(session!);
             _vehicles.UpdateVehicleClimate(session!);
             _clothing.Update(session!);
             _heat.Update(session!);
             _fluids.Update(session!);
+            _kilju.Update(session!);
             _progress.Update(session!);
             _jobSites.Update(session!);
             _mailOrders.Update(session!);
@@ -272,6 +296,24 @@ namespace WinterMP.Core.Sync
             _iceRace.Update(session!);
             _iceRaceEvent.Update(session!);
             _iceRaceResults.Update(session!);
+            _gambling.Update(session!);
+            _ventti.Update(session!);
+            _utilityBills.Update(session!);
+            _lottery.Update(session!);
+            _repairShop.Update(session!);
+            _fleaSale.Update(session!);
+            _taxiJob.Update(session!);
+            _welfare.Update(session!);
+            _hitchhiker.Update(session!);
+            _wanted.Update(session!);
+            _jail.Update(session!);
+            _pursuit.Update(session!);
+            _rallyResults.Update(session!);
+            _jokkis.Update(session!);
+            _appliances.Update(session!);
+            _phone.Update(session!);
+            _pissAreas.Update(session!);
+            _carRadio.Update(session!);
 
             if (_selfTest)
                 _fsm.RunDoorTest();
@@ -331,6 +373,24 @@ namespace WinterMP.Core.Sync
             _iceRace.Clear();
             _iceRaceEvent.Clear();
             _iceRaceResults.Clear();
+            _gambling.Clear();
+            _ventti.Clear();
+            _utilityBills.Clear();
+            _lottery.Clear();
+            _repairShop.Clear();
+            _fleaSale.Clear();
+            _taxiJob.Clear();
+            _welfare.Clear();
+            _hitchhiker.Clear();
+            _wanted.Clear();
+            _jail.Clear();
+            _pursuit.Clear();
+            _rallyResults.Clear();
+            _jokkis.Clear();
+            _appliances.Clear();
+            _phone.Clear();
+            _pissAreas.Clear();
+            _carRadio.Clear();
             _snapshotRequested = false;
             _outChecksumSequence = 0;
             _nextChecksumAt = 0f;
@@ -553,12 +613,17 @@ namespace WinterMP.Core.Sync
         public bool OnHostGuestPurchaseIntent(PurchaseIntent intent, byte playerId)
         {
             EnsureSyncReady();
-            if (!_mailOrders.ApplyIntentForPurchase(intent)) return false;
-            // Mail-order data may start inactive on a host that did not make the
-            // guest's phone call. ApplyIntentForPurchase activates only the matching
-            // selected record; scan it before validating the resulting buy target.
+            // Resolve + activate the guest's selected mail-order FSM (if any) so it is
+            // scannable, but do NOT yet write its values. Mail-order data may start
+            // inactive on a host that did not make the guest's phone call.
+            if (!_mailOrders.PrepareIntentForPurchase(intent)) return false;
+            if (!_repairShop.PrepareIntentForPurchase(intent)) return false;
             ScanWorld();
+            // Validate proximity/sequence BEFORE mutating authoritative host state, so a
+            // rejected payment never leaves the host order carrying the guest's descriptor.
             if (!_fsm.TryAcceptGuestPurchaseIntent(intent, playerId)) return false;
+            _mailOrders.CommitIntentForPurchase(intent);
+            _repairShop.CommitIntentForPurchase(intent);
             _fsm.OnHostPurchaseIntent(intent);
             return true;
         }
@@ -603,10 +668,38 @@ namespace WinterMP.Core.Sync
             return _fluids.TryAcceptGuestState(message, playerId);
         }
         public void OnRemoteFluidContainerState(FluidContainerState message) { EnsureSyncReady(); _fluids.OnRemoteState(message); }
+        public bool OnHostGuestBrewState(BrewState message, byte playerId)
+        {
+            EnsureSyncReady();
+            return _kilju.TryAcceptGuestState(message, playerId);
+        }
+        public void OnRemoteBrewState(BrewState message) { EnsureSyncReady(); _kilju.OnRemoteState(message); }
         public void OnRemoteWorldProgressState(WorldProgressState message) { EnsureSyncReady(); _progress.Apply(message); }
         public void OnRemoteJobSiteState(JobSiteState message) { EnsureSyncReady(); _jobSites.Apply(message); }
         public void OnRemoteMailOrderState(MailOrderState message) { EnsureSyncReady(); _mailOrders.Apply(message); }
         public void OnHostMailOrderIntent(MailOrderIntent message) { EnsureSyncReady(); _mailOrders.RememberIntent(message); }
+        public void OnRemoteFleetariOrderState(FleetariOrderState message) { EnsureSyncReady(); _repairShop.Apply(message); }
+        public void OnHostFleetariOrderIntent(FleetariOrderIntent message) { EnsureSyncReady(); _repairShop.RememberIntent(message); }
+        internal bool TryBuildFleetariIntent(string path, PlayMakerFSM fsm, out FleetariOrderIntent intent)
+        {
+            EnsureSyncReady();
+            return _repairShop.TryBuildIntent(path, fsm, out intent);
+        }
+        public void OnRemoteFleaSaleState(FleaSaleState message) { EnsureSyncReady(); _fleaSale.Apply(message); }
+        public bool OnHostFleaSaleIntent(FleaSaleIntent message) { EnsureSyncReady(); return _fleaSale.TryAcceptIntent(message); }
+        public void OnRemoteTaxiJobState(TaxiJobState message) { EnsureSyncReady(); _taxiJob.Apply(message); }
+        public void OnRemoteWelfareState(WelfareState message) { EnsureSyncReady(); _welfare.Apply(message); }
+        public void OnRemoteHitchhikerState(HitchhikerState message) { EnsureSyncReady(); _hitchhiker.Apply(message); }
+        public void OnRemoteWantedState(WantedState message) { EnsureSyncReady(); _wanted.Apply(message); }
+        public bool OnHostCrimeReport(CrimeReport message) { EnsureSyncReady(); return _wanted.TryAcceptCrimeReport(message); }
+        public void OnRemoteJailState(JailState message) { EnsureSyncReady(); _jail.Apply(message); }
+        public void OnRemotePursuitState(PursuitState message) { EnsureSyncReady(); _pursuit.Apply(message); }
+        public void OnRemoteRallyResultsState(RallyResultsState message) { EnsureSyncReady(); _rallyResults.Apply(message); }
+        public void OnRemoteJokkisRaceState(JokkisRaceState message) { EnsureSyncReady(); _jokkis.Apply(message); }
+        public void OnRemoteApplianceState(ApplianceState message) { EnsureSyncReady(); _appliances.Apply(message); }
+        public void OnRemotePhoneCallEvent(PhoneCallEvent message) { EnsureSyncReady(); _phone.Apply(message); }
+        public void OnRemotePissAreaState(PissAreaState message) { EnsureSyncReady(); _pissAreas.Apply(message); }
+        public void OnRemoteCarRadioState(CarRadioState message) { EnsureSyncReady(); _carRadio.Apply(message); }
         public void OnRemoteInspectionState(InspectionState message) { EnsureSyncReady(); _inspection.Apply(message); }
         public void OnRemotePoliceState(PoliceState message) { EnsureSyncReady(); _police.Apply(message); }
         public bool OnHostPoliceIntent(PoliceIntent message, out PoliceState state)
@@ -640,6 +733,28 @@ namespace WinterMP.Core.Sync
             return _mailOrders.TryBuildIntent(path, fsm, out intent);
         }
         public void ForceHeatSourceBroadcast() { EnsureSyncReady(); _heat.ForceBroadcast(); }
+        public void OnRemoteGamblingState(GamblingState message)
+        {
+            EnsureSyncReady();
+            _gambling.OnRemoteState(message);
+            _ventti.OnRemoteState(message);
+        }
+        public bool OnHostGamblingIntent(GamblingIntent message)
+        {
+            EnsureSyncReady();
+            // Slot and Ventti share the 93/94 wire; each ignores the other's machine id / kind.
+            return _gambling.TryAcceptIntent(message) || _ventti.TryAcceptIntent(message);
+        }
+        public void ForceGamblingBroadcast()
+        {
+            EnsureSyncReady();
+            _gambling.ForceBroadcast();
+            _ventti.ForceBroadcast();
+        }
+        public void OnRemoteUtilityBillState(UtilityBillState message) { EnsureSyncReady(); _utilityBills.Apply(message); }
+        public void ForceUtilityBillBroadcast() { EnsureSyncReady(); _utilityBills.ForceBroadcast(); }
+        public void OnRemoteLotteryDrawState(LotteryDrawState message) { EnsureSyncReady(); _lottery.Apply(message); }
+        public void ForceLotteryBroadcast() { EnsureSyncReady(); _lottery.ForceBroadcast(); }
 
         public bool TryGetRemoteClothing(byte playerId, out byte stage, out byte type)
         {
@@ -665,6 +780,22 @@ namespace WinterMP.Core.Sync
             EnsureSyncReady();
             if (!_vehicles.TryAcceptGuestVehicleState(message, playerId)) return false;
             _vehicles.OnRemoteVehicleState(message);
+            return true;
+        }
+        public void OnRemoteVehicleDamage(VehicleDamage message) { EnsureSyncReady(); _vehicles.ApplyVehicleDamage(message); }
+        public bool OnHostGuestVehicleDamage(VehicleDamage message, byte playerId)
+        {
+            EnsureSyncReady();
+            if (!_vehicles.TryAcceptGuestVehicleDamage(message, playerId)) return false;
+            _vehicles.ApplyVehicleDamage(message); // host applies if it isn't the owner
+            return true;
+        }
+        public void OnRemoteVehicleCondition(VehicleCondition message) { EnsureSyncReady(); _vehicles.ApplyVehicleCondition(message); }
+        public bool OnHostGuestVehicleCondition(VehicleCondition message, byte playerId)
+        {
+            EnsureSyncReady();
+            if (!_vehicles.TryAcceptGuestVehicleCondition(message, playerId)) return false;
+            _vehicles.ApplyVehicleCondition(message); // host applies if it isn't the owner
             return true;
         }
         public bool OnHostVehicleFuelIntent(VehicleFuelIntent message, out VehicleState state)
@@ -771,6 +902,24 @@ namespace WinterMP.Core.Sync
             _iceRace.Clear();
             _iceRaceEvent.Clear();
             _iceRaceResults.Clear();
+            _gambling.Clear();
+            _ventti.Clear();
+            _utilityBills.Clear();
+            _lottery.Clear();
+            _repairShop.Clear();
+            _fleaSale.Clear();
+            _taxiJob.Clear();
+            _welfare.Clear();
+            _hitchhiker.Clear();
+            _wanted.Clear();
+            _jail.Clear();
+            _pursuit.Clear();
+            _rallyResults.Clear();
+            _jokkis.Clear();
+            _appliances.Clear();
+            _phone.Clear();
+            _pissAreas.Clear();
+            _carRadio.Clear();
             _nextObjectRequestAt.Clear();
             _snapshotRequested = false;
             _worldSyncDisabled = false;

@@ -47,6 +47,19 @@ namespace WinterMP.Core.Sync
     public HutongGames.PlayMaker.FsmFloat? FluidLevelVar;
     public HutongGames.PlayMaker.FsmFloat? FluidCapacityVar;
     public HutongGames.PlayMaker.FsmBool? FluidPouringVar;
+    // Kilju bucket fermentation (tracked-item scalar state; see KiljuSync).
+    public bool BrewProbed;
+    public float NextBrewProbeAt;
+    public HutongGames.PlayMaker.FsmFloat? BrewAlcoholVar;
+    public HutongGames.PlayMaker.FsmFloat? BrewTimeVar;
+    public HutongGames.PlayMaker.FsmBool? BrewFinishedVar;
+    public HutongGames.PlayMaker.FsmBool? BrewLidVar;
+    public float NextBrewSendAt;
+    public float LastSentBrewAlcohol = float.NaN;
+    public byte LastSentBrewFlags;
+    public ushort OutBrewSequence;
+    public byte LastRemoteBrewOwner;
+    public ushort LastRemoteBrewSequence;
     public ushort OutFluidSequence;
     public ushort LastRemoteFluidSequence;
     public byte LastRemoteFluidOwner = WorldSyncIds.NoOwner;
@@ -150,6 +163,34 @@ namespace WinterMP.Core.Sync
     public GameObject? GaugeTachNeedle;
     public PlayMakerFSM? ElectricityPowerFsm;
     public PlayMakerFSM? GaugeTachDataFsm;
+    // Engine part-breakage (owner-authoritative; see VehicleWorldSync.Damage).
+    public PlayMakerFSM? PartBreakagesFsm;
+    public HutongGames.PlayMaker.FsmFloat? PartBreakageChanceVar;
+    public bool DamageHooksInstalled;
+    public uint LiveDamageMask;
+    public uint LastSentDamageMask;
+    public uint AppliedDamageMask;
+    public bool HasSentDamage;
+    public ushort OutDamageSequence;
+    public ushort LastDamageSequence;
+    public float NextDamageTickAt;
+    public float NextDamageKeepAliveAt;
+    // Drivetrain wear + per-wheel tire condition (owner-authoritative; VehicleWorldSync.Condition).
+    public bool ConditionProbed;
+    public float NextConditionProbeAt;
+    public HutongGames.PlayMaker.FsmFloat? TirePressureVar;
+    public HutongGames.PlayMaker.FsmInt? DrivetrainDamageVar;
+    public HutongGames.PlayMaker.FsmInt? GearVar;    // Drivetrain :: Gears "Gear" (owner->peers gear indicator)
+    public PlayMakerFSM?[]? WheelConditionFsms;      // [FL, FR, RL, RR]
+    public HutongGames.PlayMaker.FsmFloat?[]? WheelHealthVars;
+    public bool HasSentCondition;
+    public ushort OutConditionSequence;
+    public ushort LastConditionSequence;
+    public byte LastCondPressure, LastCondDrivetrain, LastCondFlags;
+    public byte LastCondHFL, LastCondHFR, LastCondHRL, LastCondHRR;
+    public byte AppliedCondFlags;
+    public float NextConditionTickAt;
+    public float NextConditionKeepAliveAt;
     public ushort OutVehicleStateSequence;
     public float NextVehicleStateAt;
     public ushort LastVehicleStateSequence;
@@ -263,6 +304,9 @@ namespace WinterMP.Core.Sync
         public bool OriginalKinematic;
 
         public ushort LastRemoteSequence;
+        // Consecutive stale-sequence drops; a long run signals the host restarted this
+        // NetId's OutSequence (traffic body respawned under the same path-derived id).
+        public int StaleDropStreak;
         public float LastRemoteAt = -999f;
         public Vector3 TargetPosition;
         public Quaternion TargetRotation = Quaternion.identity;

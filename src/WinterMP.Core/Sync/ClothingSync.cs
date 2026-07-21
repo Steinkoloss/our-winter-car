@@ -26,6 +26,8 @@ namespace WinterMP.Core.Sync
 
         private FsmInt? _clothingStage;
         private FsmInt? _clothingType;
+        private PlayMakerFSM? _winterJacket;   // EQUIPMENTS/winter jacket(itemx) :: Use
+        private PlayMakerFSM? _winterCoverall; // EQUIPMENTS/winter coverall(itemx) :: Use
         private float _nextProbeAt;
         private float _nextReportAt;
         private bool _loggedStage;
@@ -34,6 +36,7 @@ namespace WinterMP.Core.Sync
         private bool _hasSent;
         private byte _lastSentStage;
         private byte _lastSentType;
+        private byte _lastSentWinter;
 
         private readonly Dictionary<byte, ClothingSnapshot> _remote = new Dictionary<byte, ClothingSnapshot>();
 
@@ -41,6 +44,7 @@ namespace WinterMP.Core.Sync
         {
             public byte Stage;
             public byte Type;
+            public byte Winter;
         }
 
         public void Clear()
@@ -54,6 +58,9 @@ namespace WinterMP.Core.Sync
             _hasSent = false;
             _lastSentStage = 0;
             _lastSentType = 0;
+            _lastSentWinter = 0;
+            _winterJacket = null;
+            _winterCoverall = null;
             _remote.Clear();
         }
 
@@ -72,13 +79,15 @@ namespace WinterMP.Core.Sync
 
             byte stage = ReadByte(_clothingStage);
             byte type = ReadByte(_clothingType);
+            byte winter = ReadWinterGarment();
 
-            if (_hasSent && stage == _lastSentStage && type == _lastSentType)
+            if (_hasSent && stage == _lastSentStage && type == _lastSentType && winter == _lastSentWinter)
                 return;
 
             _hasSent = true;
             _lastSentStage = stage;
             _lastSentType = type;
+            _lastSentWinter = winter;
 
             session.SendWorldMessage(
                 new PlayerClothingState
@@ -86,6 +95,7 @@ namespace WinterMP.Core.Sync
                     PlayerId = session.LocalPlayerId,
                     ClothingStage = stage,
                     ClothingType = type,
+                    WinterGarment = winter,
                 },
                 Channel.ReliableOrdered);
         }
@@ -100,6 +110,7 @@ namespace WinterMP.Core.Sync
             {
                 Stage = message.ClothingStage,
                 Type = message.ClothingType,
+                Winter = message.WinterGarment,
             };
 
             SyncEventLog.Record("clothing",
@@ -126,6 +137,7 @@ namespace WinterMP.Core.Sync
                     PlayerId = localPlayerId,
                     ClothingStage = _clothingStage != null ? ReadByte(_clothingStage) : _lastSentStage,
                     ClothingType = _clothingType != null ? ReadByte(_clothingType) : _lastSentType,
+                    WinterGarment = _lastSentWinter,
                 };
             }
 
@@ -137,6 +149,7 @@ namespace WinterMP.Core.Sync
                     PlayerId = kv.Key,
                     ClothingStage = kv.Value.Stage,
                     ClothingType = kv.Value.Type,
+                    WinterGarment = kv.Value.Winter,
                 };
             }
         }
@@ -221,6 +234,42 @@ namespace WinterMP.Core.Sync
         {
             if (variable == null) return 0;
             return (byte)Mathf.Clamp(variable.Value, 0, 255);
+        }
+
+        // Worn winter garment: 1 = jacket, 2 = coverall, 0 = none. The garment items carry a
+        // separate ClothType from ClothingStage/ClothingType; only the wearer sees them, so
+        // peers need this to render the worn garment (avatar mesh render is a visual follow-up).
+        private byte ReadWinterGarment()
+        {
+            if (_winterJacket == null) _winterJacket = FindUseFsm("EQUIPMENTS/winter jacket(itemx)");
+            if (_winterCoverall == null) _winterCoverall = FindUseFsm("EQUIPMENTS/winter coverall(itemx)");
+            if (IsGarmentWorn(_winterJacket)) return 1;
+            if (IsGarmentWorn(_winterCoverall)) return 2;
+            return 0;
+        }
+
+        private static PlayMakerFSM? FindUseFsm(string path)
+        {
+            try
+            {
+                var go = GameObject.Find(path);
+                if (go == null) return null;
+                foreach (var fsm in go.GetComponents<PlayMakerFSM>())
+                    if (fsm != null && fsm.FsmName == "Use") return fsm;
+            }
+            catch { }
+            return null;
+        }
+
+        private static bool IsGarmentWorn(PlayMakerFSM? fsm)
+        {
+            if (fsm == null) return false;
+            try
+            {
+                string s = fsm.Fsm != null ? (fsm.Fsm.ActiveStateName ?? string.Empty) : string.Empty;
+                return s == "Wear" || s == "Wear Load" || s == "Set loaded";
+            }
+            catch { return false; }
         }
     }
 }

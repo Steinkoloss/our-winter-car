@@ -72,13 +72,29 @@ namespace WinterMP.Core.Sync
             _localDeathActive = false;
             _deathReported = false;
 
+            Vector3 feet = Vector3.zero;
+            Quaternion rot = Quaternion.identity;
             var player = GameObject.Find("PLAYER");
-            if (player == null) return;
+            if (player != null)
+            {
+                var controller = player.GetComponent<CharacterController>();
+                feet = PlayerPoseReader.ReadFeetPosition(player.transform, controller);
+                rot = PlayerPoseReader.ReadLookRotation(player.transform);
+            }
+            else
+            {
+                // PLAYER momentarily unresolvable — e.g. still inactive in the death->respawn
+                // window, or the 120 s respawn-watch timeout fallback (PollRespawn). Fall back
+                // to PlayerSync's cached tracker, which still reads a pose from a deactivated
+                // object that GameObject.Find would miss.
+                PlayerSyncManager.Instance?.TryReadLocalPose(out feet, out rot);
+            }
 
-            var controller = player.GetComponent<CharacterController>();
-            var feet = PlayerPoseReader.ReadFeetPosition(player.transform, controller);
-            var rot = PlayerPoseReader.ReadLookRotation(player.transform);
-
+            // ALWAYS broadcast the respawn, even with a best-effort pose: a peer clears its
+            // RemotePlayer.IsDead only on a PlayerRespawn (a live player's resumed
+            // PlayerTransform stream never un-ghosts them). Returning early on a null PLAYER
+            // left the respawned player an invisible ghost on every peer until their next
+            // death. Any pose slack is corrected by the next PlayerTransform within a frame.
             session.SendPlayerProfileMessage(new PlayerRespawn
             {
                 PlayerId = session.LocalPlayerId,

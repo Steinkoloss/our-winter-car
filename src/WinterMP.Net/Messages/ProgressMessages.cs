@@ -98,6 +98,8 @@ namespace WinterMP.Net.Messages
         public const byte KindSewage = 1;
         public const byte KindFirewood = 2;
         public const byte KindSewageTruck = 3;
+        /// <summary>Farm job (hay/combine). Primary carries the int JobStage; Active = Done.</summary>
+        public const byte KindFarm = 4;
 
         // Bits are kind-specific. For sites bit 0 means the order is active; for
         // the sewage truck it means the pump is running, with the other three bits

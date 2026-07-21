@@ -88,6 +88,8 @@ namespace WinterMP.Net.Messages
         public const byte FlagHasSavedNeeds = 2;
         /// <summary>Wire v55: the persisted dirtiness value is known (legacy sidecars omit it).</summary>
         public const byte FlagHasSavedDirtiness = 4;
+        /// <summary>Wire v78: the persisted PlayerAlco BAC is known (legacy sidecars omit it).</summary>
+        public const byte FlagHasSavedAlco = 8;
 
         public NetVector3 HostPosition;
         public NetQuaternion HostRotation = NetQuaternion.Identity;
@@ -106,10 +108,13 @@ namespace WinterMP.Net.Messages
         public float Drunk;
         /// <summary>Wire v55: saved PlayerDirtiness, restored only when the sidecar supplied it.</summary>
         public float Dirtiness;
+        /// <summary>Wire v78: saved persistent PlayerAlco BAC, restored only when the sidecar supplied it.</summary>
+        public float PlayerAlco;
 
         public bool HasLastPosition => (Flags & FlagHasLastPosition) != 0;
         public bool HasSavedNeeds => (Flags & FlagHasSavedNeeds) != 0;
         public bool HasSavedDirtiness => (Flags & FlagHasSavedDirtiness) != 0;
+        public bool HasSavedAlco => (Flags & FlagHasSavedAlco) != 0;
 
         public MessageId Id => MessageId.GuestSpawn;
 
@@ -128,6 +133,7 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(Stress);
             writer.WriteSingle(Drunk);
             writer.WriteSingle(Dirtiness);
+            writer.WriteSingle(PlayerAlco);
         }
 
         public void Read(NetReader reader)
@@ -145,6 +151,7 @@ namespace WinterMP.Net.Messages
             Stress = reader.ReadSingle();
             Drunk = reader.ReadSingle();
             Dirtiness = reader.ReadSingle();
+            PlayerAlco = reader.ReadSingle();
         }
     }
 

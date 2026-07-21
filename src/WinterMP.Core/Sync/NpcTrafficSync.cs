@@ -20,6 +20,11 @@ namespace WinterMP.Core.Sync
         private const float MoveThresholdSqr = 0.01f;
         private const float RemoteLerpSpeed = 10f;
         private const float RemoteSnapDistance = 20f;
+        // Consecutive "stale" drops for one NPC that we treat as a sender-sequence reset
+        // (a respawned traffic body reusing its path-derived NetId with OutSequence back at
+        // 0) rather than packet reordering. Ordinary unreliable reordering never runs this
+        // deep; a reset produces an unbroken backward run.
+        private const int SequenceResetStreak = 8;
 
         private readonly WorldSyncBridge _bridge;
         private readonly Dictionary<uint, SyncedNpc> _npcs = new Dictionary<uint, SyncedNpc>();
@@ -35,6 +40,14 @@ namespace WinterMP.Core.Sync
         private static readonly ScriptedMoverDef[] MoverDefs =
         {
             new ScriptedMoverDef("AnimalsMoose/Moose", "Move"),
+            // Hitchhiker walks/rides host-authoritatively; freeze its local Logic AI and stream
+            // the pose so the same variant appears in the same place (COVERAGE-ROADMAP 3.4).
+            new ScriptedMoverDef("JOBS/KILJUGUY/HikerPivot/Hitchhiker", "Logic"),
+            // Crime-reaction NPC Reijo the janitor (COVERAGE-ROADMAP 7.3): its anger→chase→shoot
+            // is per-client. Freeze its local Move AI and stream the host pose so the reaction
+            // (movement) is host-authoritative and identical; the crime it registers feeds 4.1.
+            // The pub fighter (HUMANS/FighterPub) already streams via the HUMANS/ rigidbody path.
+            new ScriptedMoverDef("SOCCER/Janitor/Reijo", "Move"),
         };
         private readonly Dictionary<uint, ScriptedMover> _movers = new Dictionary<uint, ScriptedMover>();
 
@@ -204,10 +217,24 @@ namespace WinterMP.Core.Sync
 
             if (ItemTransformPolicy.IsStaleSequence(npc.LastRemoteSequence, message.Sequence))
             {
-                if (!message.IsFinal)
-                    ConnectionQuality.Instance.NoteUnreliableDropped();
-                return;
+                // A brief run of "stale" packets is ordinary reordering on the unreliable
+                // channel. A SUSTAINED run means the sender's per-NetId sequence restarted:
+                // NPC NetIds are derived from the scene path, so a traffic body that despawned
+                // and respawned reuses the id with OutSequence back at 0 while we still hold a
+                // high LastRemoteSequence. NPC spawn/despawn is not a networked event (no
+                // despawn message or snapshot sentinel to re-baseline against, unlike items and
+                // vehicles), so without this the host's authoritative stream for the respawned
+                // body would be dropped for hundreds of packets and the guest would revert to a
+                // local-AI ghost. On a sustained run, fall through to accept and re-baseline.
+                if (++npc.StaleDropStreak < SequenceResetStreak)
+                {
+                    if (!message.IsFinal)
+                        ConnectionQuality.Instance.NoteUnreliableDropped();
+                    return;
+                }
             }
+
+            npc.StaleDropStreak = 0;
 
             if (!message.IsFinal)
                 ConnectionQuality.Instance.NoteUnreliableReceived();
@@ -563,11 +590,14 @@ namespace WinterMP.Core.Sync
 
         private void SendMoverTransform(SessionManager session, ScriptedMover mover, bool final)
         {
+            byte flags = final ? NpcTransform.FlagFinal : (byte)0;
+            if (IsMoverDead(mover)) flags |= NpcTransform.FlagDead;
+
             var message = new NpcTransform
             {
                 NetId = mover.NetId,
                 Sequence = ++mover.OutSequence,
-                Flags = final ? NpcTransform.FlagFinal : (byte)0,
+                Flags = flags,
                 Position = mover.Transform.position.ToNet(),
                 Rotation = mover.Transform.rotation.ToNet(),
             };
@@ -594,6 +624,18 @@ namespace WinterMP.Core.Sync
             Vector3 position = message.Position.ToUnity();
             Quaternion rotation = message.Rotation.ToUnity();
 
+            // Host says this animal died — activate our own corpse ragdoll so the moose is
+            // dead everywhere, not only on the hitting client. Idempotent.
+            if ((message.Flags & NpcTransform.FlagDead) != 0 && !mover.DeadApplied)
+            {
+                var dead = FindDeadChild(mover);
+                if (dead != null)
+                {
+                    try { dead.gameObject.SetActive(true); mover.DeadApplied = true; }
+                    catch { }
+                }
+            }
+
             if (message.IsFinal)
             {
                 // Host's moose came to rest — hand control back to the local AI from here.
@@ -618,6 +660,35 @@ namespace WinterMP.Core.Sync
             mover.TargetRotation = rotation;
             mover.LastRemoteAt = Time.unscaledTime;
             mover.GuestRemoteActive = true;
+        }
+
+        // A moose is dead once its "dead moose(xxxxx)" ragdoll child exists and is active.
+        private static bool IsMoverDead(ScriptedMover mover)
+        {
+            var dead = FindDeadChild(mover);
+            try { return dead != null && dead.gameObject.activeInHierarchy; }
+            catch { return false; }
+        }
+
+        private static Transform? FindDeadChild(ScriptedMover mover)
+        {
+            if (mover.DeadChild != null) return mover.DeadChild;
+            if (mover.DeadProbed || mover.Transform == null) return null;
+            try
+            {
+                foreach (var child in mover.Transform.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child != null && child.name.StartsWith("dead moose", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mover.DeadChild = child;
+                        break;
+                    }
+                }
+            }
+            catch { }
+            // Only mark probed once we've had a real chance (the ragdoll may spawn later).
+            if (mover.DeadChild == null) mover.DeadProbed = false;
+            return mover.DeadChild;
         }
 
         private static void FreezeMoverAi(ScriptedMover mover)
@@ -669,6 +740,12 @@ namespace WinterMP.Core.Sync
             public Vector3 LastPosition;
             public Vector3 TargetPosition;
             public Quaternion TargetRotation = Quaternion.identity;
+            // Moose death (COVERAGE-ROADMAP 7.1): the "dead moose(xxxxx)" ragdoll child that
+            // activates on collision. Host detects it; guests activate their own so the corpse
+            // appears everywhere instead of only on the hitting client.
+            public Transform? DeadChild;
+            public bool DeadProbed;
+            public bool DeadApplied;
         }
 
         private static bool IsNpcTrafficPath(string path)

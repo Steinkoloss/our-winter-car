@@ -175,6 +175,27 @@ namespace WinterMP.Core.Sync
             });
         }
 
+        /// <summary>
+        /// Best-effort local player feet pose + look rotation from the cached tracker.
+        /// Unlike a fresh <c>GameObject.Find("PLAYER")</c>, this still resolves while the
+        /// PLAYER object is momentarily *inactive* (Find skips inactive objects; a cached
+        /// Transform reference does not), so death/respawn can report a pose without its own
+        /// fragile Find. Returns false only before the local player has ever been tracked.
+        /// </summary>
+        public bool TryReadLocalPose(out Vector3 feetPosition, out Quaternion lookRotation)
+        {
+            if (_localPlayer == null)
+            {
+                feetPosition = Vector3.zero;
+                lookRotation = Quaternion.identity;
+                return false;
+            }
+
+            feetPosition = PlayerPoseReader.ReadFeetPosition(_localPlayer, _localController);
+            lookRotation = PlayerPoseReader.ReadLookRotation(_localPlayer);
+            return true;
+        }
+
         private byte ReadLocalMoveState()
         {
             if (_localPlayer == null) return 0;

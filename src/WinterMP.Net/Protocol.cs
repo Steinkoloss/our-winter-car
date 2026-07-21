@@ -93,13 +93,87 @@ namespace WinterMP.Net
         //      against fresh position, registered seat geometry, and canonical occupancy.
         // v53: PlayerTransform relays reject non-finite/out-of-map positions, invalid
         //      rotations, and unknown movement bits before proximity checks use them.
-        // v54: Session admission rejects packets from untrusted peers, guest world
+        // v54: RadiatorThermostatState (92) mirrors a host-owned fixed-radiator
+        //      thermostat's absolute Rotation on change and in join snapshots
+        //      (Increase/Decrease turn transitions only carry deltas). Session
+        //      admission rejects packets from untrusted peers, guest world
         //      traffic before handshake completion, and off-contract channels;
         //      bounded snapshot/spawn collections and host request limits contain
         //      malformed or abusive packets before they reach game state.
         // v55: PlayerDirtiness is appended to per-guest needs reports and rejoin
         //      profiles, preserving the locally simulated hygiene result.
-        public const ushort Version = 55;
+        // v56: PlayerNeedsReport gains a trailing HasDirtiness byte. Needs reporting
+        //      no longer waits on the PlayerDirtiness global (a fragile/late binding
+        //      would have blocked all seven other needs), and HasDirtiness=false makes
+        //      the host record dirtiness as unknown so a late-binding guest is never
+        //      restored to clean.
+        // v57: GamblingState/GamblingIntent (93/94). Shared slot machines (pub + station)
+        //      are host-authoritative — the host runs the spin RNG + payout and broadcasts
+        //      reels/credit; guests relay button presses as intents. Closes the shared-wallet
+        //      flip-flop where each client rolled its own reels and win/loss.
+        // v58: UtilityBillState (95). Host owns the electricity/phone bill ledger and blackout;
+        //      guests apply the unpaid total + MainSwitch so both homes cut power together.
+        //      Bill payment routes through the catalogued Pay buttons (host purchase path).
+        // v59: LotteryDrawState (96). Host owns the national lottery draw (round + winning
+        //      numbers + pot) so every ticket is judged against the same numbers; ticket
+        //      buy-in routes through the catalogued Lotto/Megaveto Pay buttons.
+        // v60: VehicleDamage (64). Engine part-breakage is owner-authoritative — non-owners
+        //      zero their PartBreakages roll and apply the owner's accumulated breakage mask,
+        //      so a part breaks once and both peers + late joiners agree on the broken set.
+        // v61: VehicleCondition (65). Drivetrain wear + per-wheel tire condition (pressure,
+        //      health, puncture/rim) is owner-authoritative — non-owners apply the streamed
+        //      condition so a flat tire and wear agree across peers + join.
+        // v62: FleetariOrderState/Intent (97/98). Repair-shop order is capture-and-paired to
+        //      the guest's payment (host applies the actual jobs) and the record is broadcast
+        //      so observers/joiners agree; payment already rode the catalogued OrderFleetari buy.
+        // v63: VehicleState gains a trailing Gear byte (gear+1; 0=reverse, 1=neutral) so an
+        //      observer's gear indicator matches the driver's selected gear.
+        // v64: FleaSaleState/Intent (101/102). Flea-market sale table is host-owned — the host
+        //      runs the day-timed sale RNG + broadcasts proceeds/rent, guests suppress their
+        //      local Sell FSM; rent/collect relay as intents so the shared wallet moves once.
+        // v65: TaxiJobState (103). Host owns the taxi-job lifecycle (stage/employment/earnings)
+        //      and broadcasts it; the taxi vehicle streams via the normal vehicle path (2.4).
+        // v66: BrewState (105). Kilju bucket fermentation streams as tracked-item scalar state
+        //      (Alcohol/BrewTime/finished/lid) like FluidContainerState, so both peers brew the
+        //      same quality; the stream also carries ingredient-add effects.
+        // v67: JobSiteState gains kind 4 (farm) — the farm job stage (int JobStage) + Done
+        //      mirror through the existing host-owned job-site path to the shared wallet.
+        // v68: WelfareState (107). Host owns the Kela unemployment claim + benefit calc and
+        //      broadcasts it; the weekly benefit credits the shared wallet via host logic.
+        // v69: HitchhikerState (106). Host owns the hiker variant (ordinary/KiljuMurderer/
+        //      suicide) + stage + payout and broadcasts it; the body streams via the
+        //      NpcTransform ScriptedMover path (hiker added to NpcTrafficSync MoverDefs).
+        // v70: WantedState/CrimeReport (140/141). Host owns the shared wanted level (crime
+        //      counters + sentence); a guest reports its own crime deltas so its crimes reach
+        //      the group total instead of being erased by the broadcast. Range 140-159 opened.
+        // v71: JailState (142). Host owns the jail-sentence countdown (JAIL DaysLeft + sentence)
+        //      so a jailed player is jailed on all machines and released together.
+        // v72: PursuitState (143). Host owns the police pursuit chase-active + siren flags per
+        //      cop car (cars already NPC-streamed); DUI arrest escalates via the wanted/jail
+        //      records. Vehicle impound (4.3) rides existing vehicle transform reconciliation.
+        // v73: RallyResultsState (150). Host owns the rally results ledger + enroll + parc-fermé
+        //      penalty (stage times, placement, class, Registered) so standings + enroll agree;
+        //      reward rides the existing host-gated race price triggers.
+        // v74: JokkisRaceState (151). JOKKIS banger-race lap/time/checkpoint is host-broadcast
+        //      (identical structure to CORRIS) so both see the same standings without
+        //      refactoring the CORRIS-coupled IceRaceSync.
+        // v75: ApplianceState (99). Host owns each oven/stove (hotplate heats + fire + fuse) so
+        //      an unattended stove fire and cooking state agree; fire hazard converges from the
+        //      synced heats. Fuse flag also covers the 6.4 per-appliance fuse.
+        // v76: PhoneCallEvent (108). Host decides an incoming phone call (topic + call id) and
+        //      broadcasts it so both phones ring for the same call instead of per-client RNG.
+        // v77: NpcTransform gains FlagDead (bit 1). The host broadcasts the moose death edge so
+        //      guests activate their own corpse ragdoll — the collision→dead transition no
+        //      longer fires only on the hitting client. (Meat spawn = 7.2 SPAWNITEM audit.)
+        // v78: PlayerNeedsReport + GuestSpawn gain PlayerAlco (persistent BAC that drives DUI
+        //      checkpoints + sobering) + a HasAlco gate, mirroring the v55/v56 dirtiness add, so
+        //      a rejoining guest keeps their blood-alcohol instead of resetting sober.
+        // v79: PlayerClothingState gains WinterGarment (0 none / 1 jacket / 2 coverall) so a
+        //      worn winter jacket/coverall shows on peers (its ClothType is separate from
+        //      ClothingStage/ClothingType).
+        // v80: PissAreaState (109) mirrors the five host-owned yard piss-stain scales, and
+        //      CarRadioState (66) mirrors the in-car (CORRIS/SORBET) radio channel + volume.
+        public const ushort Version = 80;
     }
 
     /// <summary>

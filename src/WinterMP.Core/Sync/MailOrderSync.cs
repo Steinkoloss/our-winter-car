@@ -192,8 +192,16 @@ namespace WinterMP.Core.Sync
             return true;
         }
 
-        /// <summary>Applies only the matching queued guest order immediately before host payment.</summary>
-        public bool ApplyIntentForPurchase(PurchaseIntent purchase)
+        /// <summary>
+        /// Phase 1 of a guest mail-order payment: resolve the queued order and bring its
+        /// (possibly inactive) data FSM online so the purchase can be scanned and
+        /// proximity-validated. Deliberately does NOT write the guest's descriptor into
+        /// authoritative host state — that waits until the purchase itself passes host
+        /// validation (see <see cref="CommitIntentForPurchase"/>), so a rejected/spoofed
+        /// payment can never leave the host order carrying a stranger's selection.
+        /// Returns true (pass-through) for non-mail-order purchases.
+        /// </summary>
+        public bool PrepareIntentForPurchase(PurchaseIntent purchase)
         {
             if (purchase.EventName != "PAYMENT" || !IsMailOrderNetId(purchase.NetId)) return true;
             if (!_pendingIntents.TryGetValue(purchase.PlayerId, out var pending))
@@ -201,9 +209,9 @@ namespace WinterMP.Core.Sync
                 WinterMPPlugin.Log.LogWarning($"MailOrderSync: missing selected order data for player {purchase.PlayerId}.");
                 return false;
             }
-            _pendingIntents.Remove(purchase.PlayerId);
             if (Time.unscaledTime > pending.ExpiresAt)
             {
+                _pendingIntents.Remove(purchase.PlayerId);
                 WinterMPPlugin.Log.LogWarning($"MailOrderSync: selected order data expired for player {purchase.PlayerId}.");
                 return false;
             }
@@ -213,6 +221,7 @@ namespace WinterMP.Core.Sync
             if (!_orders.TryGetValue(message.Kind, out var order) || order.NetId != purchase.NetId
                 || order.NetId != message.OrderNetId)
             {
+                _pendingIntents.Remove(purchase.PlayerId);
                 WinterMPPlugin.Log.LogWarning(
                     $"MailOrderSync: rejected mismatched {DescribeKind(message.Kind)} order for player {purchase.PlayerId}.");
                 return false;
@@ -228,13 +237,32 @@ namespace WinterMP.Core.Sync
             }
             catch (Exception e)
             {
+                _pendingIntents.Remove(purchase.PlayerId);
                 WinterMPPlugin.Log.LogWarning($"MailOrderSync: could not activate {DescribeKind(message.Kind)} order: {e.Message}");
                 return false;
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Phase 2: the payment passed host proximity/sequence validation, so commit the
+        /// guest's selected descriptor into the authoritative order FSM and consume the
+        /// queued intent. No-op for non-mail-order purchases or if the queued intent is
+        /// gone (e.g. the payment was rejected between prepare and commit).
+        /// </summary>
+        public void CommitIntentForPurchase(PurchaseIntent purchase)
+        {
+            if (purchase.EventName != "PAYMENT" || !IsMailOrderNetId(purchase.NetId)) return;
+            if (!_pendingIntents.TryGetValue(purchase.PlayerId, out var pending)) return;
+            _pendingIntents.Remove(purchase.PlayerId);
+
+            var message = pending.Message;
+            if (!_orders.TryGetValue(message.Kind, out var order) || order.NetId != message.OrderNetId)
+                return;
+
             ApplyValues(order, message.Flags, message.Price, message.WaitTime, message.PriceInt,
                 message.Data1, message.Data2, message.Data3);
-            return true;
         }
 
         private IEnumerable<MailOrderState> BuildStates(bool changedOnly)
@@ -258,14 +286,21 @@ namespace WinterMP.Core.Sync
                     || !string.Equals(data3, order.LastData3, StringComparison.Ordinal);
                 if (changedOnly && !changed) continue;
 
-                order.HasLastState = true;
-                order.LastPrice = price;
-                order.LastWaitTime = waitTime;
-                order.LastPriceInt = priceInt;
-                order.LastFlags = flags;
-                order.LastData1 = data1;
-                order.LastData2 = data2;
-                order.LastData3 = data3;
+                // Only the periodic delta path owns the change-detection baseline. The
+                // join-snapshot path (changedOnly==false) emits to the joining peer ONLY,
+                // so advancing Last* here would mark a not-yet-broadcast change as sent and
+                // strand already-connected guests on a stale pending order.
+                if (changedOnly)
+                {
+                    order.HasLastState = true;
+                    order.LastPrice = price;
+                    order.LastWaitTime = waitTime;
+                    order.LastPriceInt = priceInt;
+                    order.LastFlags = flags;
+                    order.LastData1 = data1;
+                    order.LastData2 = data2;
+                    order.LastData3 = data3;
+                }
                 yield return new MailOrderState
                 {
                     Kind = order.Kind,

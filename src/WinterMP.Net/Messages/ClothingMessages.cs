@@ -17,6 +17,10 @@ namespace WinterMP.Net.Messages
         /// <summary>Outfit variant (FsmInt ClothingType on the Piss FSM), clamped to a byte.</summary>
         public byte ClothingType;
 
+        /// <summary>Wire v79: worn winter garment (0 none, 1 jacket, 2 coverall) — the separate
+        /// <c>ClothType</c> on EQUIPMENTS/winter jacket|coverall, so peers see the worn garment.</summary>
+        public byte WinterGarment;
+
         public MessageId Id => MessageId.PlayerClothingState;
 
         public void Write(NetWriter writer)
@@ -24,6 +28,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(PlayerId);
             writer.WriteByte(ClothingStage);
             writer.WriteByte(ClothingType);
+            writer.WriteByte(WinterGarment);
         }
 
         public void Read(NetReader reader)
@@ -31,6 +36,7 @@ namespace WinterMP.Net.Messages
             PlayerId = reader.ReadByte();
             ClothingStage = reader.ReadByte();
             ClothingType = reader.ReadByte();
+            WinterGarment = reader.ReadByte();
         }
     }
 }

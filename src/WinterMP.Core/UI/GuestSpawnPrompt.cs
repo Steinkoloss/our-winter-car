@@ -63,6 +63,8 @@ namespace WinterMP.Core.UI
                 Drunk = offer.Drunk,
                 Dirtiness = offer.Dirtiness,
                 HasDirtiness = offer.HasSavedDirtiness,
+                PlayerAlco = offer.PlayerAlco,
+                HasAlco = offer.HasSavedAlco,
                 Valid = true,
             });
         }

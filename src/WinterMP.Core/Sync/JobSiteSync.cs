@@ -24,9 +24,10 @@ namespace WinterMP.Core.Sync
             public uint Id;
             public byte Kind;
             public string Path = string.Empty;
-            public FsmFloat Primary = null!;
-            public FsmFloat Secondary = null!;
-            public FsmBool Active = null!;
+            public FsmFloat? Primary;
+            public FsmInt? PrimaryInt;   // farm JobStage is an int, not a float
+            public FsmFloat? Secondary;
+            public FsmBool? Active;
             public FsmBool? HoseAttached;
             public FsmBool? HoseInWaste;
             public FsmBool? Sucking;
@@ -83,9 +84,10 @@ namespace WinterMP.Core.Sync
             site.LastRemoteSequence = message.Sequence;
 
             if (!IsFinite(message.Primary) || !IsFinite(message.Secondary)) return;
-            site.Primary.Value = Mathf.Max(0f, message.Primary);
-            site.Secondary.Value = Mathf.Max(0f, message.Secondary);
-            site.Active.Value = message.IsActive;
+            if (site.PrimaryInt != null) site.PrimaryInt.Value = Mathf.Max(0, Mathf.RoundToInt(message.Primary));
+            if (site.Primary != null) site.Primary.Value = Mathf.Max(0f, message.Primary);
+            if (site.Secondary != null) site.Secondary.Value = Mathf.Max(0f, message.Secondary);
+            if (site.Active != null) site.Active.Value = message.IsActive;
             if (site.HoseAttached != null)
                 site.HoseAttached.Value = (message.Flags & JobSiteState.FlagHoseAttached) != 0;
             if (site.HoseInWaste != null)
@@ -98,8 +100,9 @@ namespace WinterMP.Core.Sync
         {
             foreach (var site in _sites.Values)
             {
-                float primary = site.Primary.Value;
-                float secondary = site.Secondary.Value;
+                float primary = site.PrimaryInt != null ? site.PrimaryInt.Value
+                    : (site.Primary != null ? site.Primary.Value : 0f);
+                float secondary = site.Secondary != null ? site.Secondary.Value : 0f;
                 byte flags = ReadFlags(site);
                 bool changed = float.IsNaN(site.LastPrimary)
                     || Mathf.Abs(primary - site.LastPrimary) > ChangeEpsilon
@@ -107,9 +110,17 @@ namespace WinterMP.Core.Sync
                     || flags != site.LastFlags;
                 if (changedOnly && !changed) continue;
 
-                site.LastPrimary = primary;
-                site.LastSecondary = secondary;
-                site.LastFlags = flags;
+                // Only the periodic delta path (changedOnly) owns the change-detection
+                // baseline. The join-snapshot path (changedOnly==false) emits current
+                // values to the joining peer ONLY, so it must NOT advance Last*: doing so
+                // would mark a not-yet-broadcast change as sent and strand already-connected
+                // guests on a stale value (job-site state is in no checksum, so it never heals).
+                if (changedOnly)
+                {
+                    site.LastPrimary = primary;
+                    site.LastSecondary = secondary;
+                    site.LastFlags = flags;
+                }
                 yield return new JobSiteState
                 {
                     SiteId = site.Id,
@@ -138,13 +149,22 @@ namespace WinterMP.Core.Sync
                     string path = ScenePath.Of(fsm.transform);
                     byte kind;
                     FsmFloat? primary;
+                    FsmInt? primaryInt = null;
                     FsmFloat? secondary;
                     FsmBool? active;
                     FsmBool? hoseAttached = null;
                     FsmBool? hoseInWaste = null;
                     FsmBool? sucking = null;
 
-                    if (path.StartsWith("JOBS/HouseShit", StringComparison.Ordinal)
+                    if (path == "JOBS/Farm/Farmer/Walker" && fsm.FsmName == "Speak")
+                    {
+                        kind = JobSiteState.KindFarm;
+                        primary = null;
+                        primaryInt = fsm.FsmVariables.FindFsmInt("JobStage");
+                        secondary = null;
+                        active = fsm.FsmVariables.FindFsmBool("Done");
+                    }
+                    else if (path.StartsWith("JOBS/HouseShit", StringComparison.Ordinal)
                         && fsm.FsmName == "Level")
                     {
                         kind = JobSiteState.KindSewage;
@@ -175,7 +195,7 @@ namespace WinterMP.Core.Sync
                         continue;
                     }
 
-                    if (primary == null || secondary == null || active == null) continue;
+                    if ((primary == null && primaryInt == null) || active == null) continue;
                     uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
                     if (_sites.ContainsKey(id)) continue;
 
@@ -185,6 +205,7 @@ namespace WinterMP.Core.Sync
                         Kind = kind,
                         Path = path,
                         Primary = primary,
+                        PrimaryInt = primaryInt,
                         Secondary = secondary,
                         Active = active,
                         HoseAttached = hoseAttached,
@@ -215,7 +236,7 @@ namespace WinterMP.Core.Sync
 
         private static byte ReadFlags(Site site)
         {
-            byte flags = site.Active.Value ? JobSiteState.FlagActive : (byte)0;
+            byte flags = site.Active != null && site.Active.Value ? JobSiteState.FlagActive : (byte)0;
             if (site.HoseAttached != null && site.HoseAttached.Value)
                 flags |= JobSiteState.FlagHoseAttached;
             if (site.HoseInWaste != null && site.HoseInWaste.Value)

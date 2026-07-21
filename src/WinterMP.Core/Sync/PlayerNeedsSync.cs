@@ -21,12 +21,15 @@ namespace WinterMP.Core.Sync
         private HutongGames.PlayMaker.FsmFloat? _stress;
         private HutongGames.PlayMaker.FsmFloat? _drunk;
         private HutongGames.PlayMaker.FsmFloat? _dirtiness;
+        private HutongGames.PlayMaker.FsmFloat? _alco;
         private float _nextProbeAt;
         private float _nextReportAt;
         private ushort _sequence;
         private bool _loggedReady;
         private float _pendingDirtiness;
         private bool _hasPendingDirtiness;
+        private float _pendingAlco;
+        private bool _hasPendingAlco;
 
         public bool Ready => _hunger != null || _fatigue != null;
 
@@ -40,12 +43,15 @@ namespace WinterMP.Core.Sync
             _stress = null;
             _drunk = null;
             _dirtiness = null;
+            _alco = null;
             _nextProbeAt = 0f;
             _nextReportAt = 0f;
             _sequence = 0;
             _loggedReady = false;
             _pendingDirtiness = 0f;
             _hasPendingDirtiness = false;
+            _pendingAlco = 0f;
+            _hasPendingAlco = false;
         }
 
         public void Locate(bool force = false)
@@ -63,12 +69,20 @@ namespace WinterMP.Core.Sync
                 _stress = FindGlobalFloat("PlayerStress", "Stress");
             if (_dirtiness == null)
                 _dirtiness = FindGlobalFloat("PlayerDirtiness");
+            if (_alco == null)
+                _alco = FindGlobalFloat("PlayerAlco", "Alco");
 
             if (_hasPendingDirtiness && _dirtiness != null)
             {
                 Write(_dirtiness, _pendingDirtiness);
                 _hasPendingDirtiness = false;
                 WinterMPPlugin.Log.LogInfo("PlayerNeedsSync: restored pending guest dirtiness from host profile.");
+            }
+            if (_hasPendingAlco && _alco != null)
+            {
+                Write(_alco, _pendingAlco);
+                _hasPendingAlco = false;
+                WinterMPPlugin.Log.LogInfo("PlayerNeedsSync: restored pending guest BAC from host profile.");
             }
 
             if (_hunger != null && _fatigue != null) return;
@@ -91,7 +105,11 @@ namespace WinterMP.Core.Sync
             if (Time.unscaledTime < _nextReportAt) return;
 
             Locate();
-            if (!Ready || _dirtiness == null) return;
+            // Report as soon as the core need globals resolve. Dirtiness is best-effort:
+            // its report carries HasDirtiness so a late/unresolved PlayerDirtiness never
+            // blocks the other seven needs (regression guard) and never lets the host
+            // persist a bogus clean value. Do NOT re-add `|| _dirtiness == null` here.
+            if (!Ready) return;
 
             _nextReportAt = Time.unscaledTime + ReportIntervalSeconds;
 
@@ -114,6 +132,9 @@ namespace WinterMP.Core.Sync
                 Drunk = Read(_drunk),
                 Sequence = ++_sequence,
                 Dirtiness = Read(_dirtiness),
+                HasDirtiness = _dirtiness != null,
+                PlayerAlco = Read(_alco),
+                HasAlco = _alco != null,
             };
         }
 
@@ -134,6 +155,8 @@ namespace WinterMP.Core.Sync
                 Drunk = Read(_drunk),
                 Dirtiness = Read(_dirtiness),
                 HasDirtiness = _dirtiness != null,
+                PlayerAlco = Read(_alco),
+                HasAlco = _alco != null,
                 Valid = true,
             };
         }
@@ -162,6 +185,16 @@ namespace WinterMP.Core.Sync
                 {
                     _pendingDirtiness = needs.Dirtiness;
                     _hasPendingDirtiness = true;
+                }
+            }
+            if (needs.HasAlco)
+            {
+                if (_alco != null)
+                    Write(_alco, needs.PlayerAlco);
+                else
+                {
+                    _pendingAlco = needs.PlayerAlco;
+                    _hasPendingAlco = true;
                 }
             }
 

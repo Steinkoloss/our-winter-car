@@ -313,7 +313,7 @@ namespace WinterMP.Core.Sync
             string[] names =
             {
                 "Fatigue", "Hunger", "Thirst", "Urine", "Stress", "RunOver", "RunOverRally",
-                "Drown", "DrunkDrown", "Fire", "Gasolinefire", "Electrocute", "Hypothermia",
+                "Drown", "DrunkDrown", "Gasolinefire", "Electrocute", "Hypothermia",
                 "Murder", "Train", "Crash", "Sewage", "Carbon", "PTO", "CutterBlade",
                 "InJail", "PissTV", "Burn", "Smoking",
             };
@@ -368,7 +368,10 @@ namespace WinterMP.Core.Sync
                 case DeathCause.Stress: return "Stress";
                 case DeathCause.RunOver: return "RunOver";
                 case DeathCause.Drown: return "Drown";
-                case DeathCause.Fire: return "Fire";
+                // The death FSM has no "Fire" bool — general fire death is "Gasolinefire"
+                // (dump-23268598); "Burn" is its own cause below. Returning "Fire" set no
+                // bool at all, misrouting the permadeath-wipe death screen for fire deaths.
+                case DeathCause.Fire: return "Gasolinefire";
                 case DeathCause.Electrocute: return "Electrocute";
                 case DeathCause.Hypothermia: return "Hypothermia";
                 case DeathCause.Murder: return "Murder";

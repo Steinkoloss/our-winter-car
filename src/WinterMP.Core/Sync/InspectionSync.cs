@@ -16,6 +16,10 @@ namespace WinterMP.Core.Sync
     {
         private const float ScanIntervalSeconds = 5f;
         private const float SendIntervalSeconds = 4f;
+        // 38 wire slots; ShockRL/ShockRR don't exist on the current build's Results FSM
+        // (dump-23268598: only front shocks) so those two bits stay 0 on every peer.
+        // Kept anyway: dropping them would reshuffle bit assignments, and a future game
+        // build that adds rear-shock checks binds into the existing slots for free.
         private static readonly string[] ChecklistNames =
         {
             "Body", "Brakes", "Chassis", "Dashboard", "Emissions", "Engine", "Exhaust", "FuelLine",
@@ -102,7 +106,8 @@ namespace WinterMP.Core.Sync
         public InspectionState? BuildSnapshot()
         {
             Scan(force: true);
-            return BuildState(changedOnly: false);
+            // Targeted join send — must not advance the periodic change baseline.
+            return BuildState(changedOnly: false, advanceBaseline: false);
         }
 
         public void Apply(InspectionState message)
@@ -135,7 +140,7 @@ namespace WinterMP.Core.Sync
             SetActive(_museumPlate2, (message.PlateFlags & 8) != 0);
         }
 
-        private InspectionState? BuildState(bool changedOnly)
+        private InspectionState? BuildState(bool changedOnly, bool advanceBaseline = true)
         {
             if (_inspectFsm == null || _resultsFsm == null
                 || _standardPlateFsm == null || _museumPlateFsm == null) return null;
@@ -160,16 +165,21 @@ namespace WinterMP.Core.Sync
                 || museumPlate != _lastMuseumPlate;
             if (changedOnly && !changed) return null;
 
-            _hasLast = true;
-            _lastFlags = flags;
-            _lastNextDay = nextDay;
-            _lastIntervalDays = intervalDays;
-            _lastIntervalLetter = intervalLetter;
-            _lastChecklistLow = checklistLow;
-            _lastChecklistHigh = checklistHigh;
-            _lastPlateFlags = plateFlags;
-            _lastStandardPlate = standardPlate;
-            _lastMuseumPlate = museumPlate;
+            // Only broadcast-to-all paths own the change baseline; the join snapshot
+            // (advanceBaseline:false) must not suppress a pending delta to connected guests.
+            if (advanceBaseline)
+            {
+                _hasLast = true;
+                _lastFlags = flags;
+                _lastNextDay = nextDay;
+                _lastIntervalDays = intervalDays;
+                _lastIntervalLetter = intervalLetter;
+                _lastChecklistLow = checklistLow;
+                _lastChecklistHigh = checklistHigh;
+                _lastPlateFlags = plateFlags;
+                _lastStandardPlate = standardPlate;
+                _lastMuseumPlate = museumPlate;
+            }
             return new InspectionState
             {
                 Flags = flags,

@@ -8,6 +8,8 @@ namespace WinterMP.Net.Messages
     {
         /// <summary>Last packet of a stream — object came to rest at this pose.</summary>
         public const byte FlagFinal = 1;
+        /// <summary>The streamed animal has died (moose collision → corpse); appended v77.</summary>
+        public const byte FlagDead = 2;
 
         public uint NetId;
         public ushort Sequence;

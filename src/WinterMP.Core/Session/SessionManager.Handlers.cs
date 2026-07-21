@@ -153,6 +153,12 @@ namespace WinterMP.Core.Session
             // Heat sources ride the periodic HeatSourceState stream, not snapshot chunks;
             // force a full re-broadcast so the joiner isn't cold until the 20 s keepalive.
             world.ForceHeatSourceBroadcast();
+            // Gambling devices (slot machines) likewise ride their own periodic stream.
+            world.ForceGamblingBroadcast();
+            // Utility bill ledger + blackout ride their own periodic stream too.
+            world.ForceUtilityBillBroadcast();
+            // Lottery draw rides its own periodic stream too.
+            world.ForceLotteryBroadcast();
 
             WinterMPPlugin.Log.LogInfo($"Sent world snapshot to {peer} ({messages} messages).");
         }
@@ -211,9 +217,12 @@ namespace WinterMP.Core.Session
                 offer.Stress = needs.Stress;
                 offer.Drunk = needs.Drunk;
                 offer.Dirtiness = needs.Dirtiness;
+                offer.PlayerAlco = needs.PlayerAlco;
                 offer.Flags |= GuestSpawn.FlagHasSavedNeeds;
                 if (needs.HasDirtiness)
                     offer.Flags |= GuestSpawn.FlagHasSavedDirtiness;
+                if (needs.HasAlco)
+                    offer.Flags |= GuestSpawn.FlagHasSavedAlco;
             }
 
             return offer;
@@ -246,6 +255,8 @@ namespace WinterMP.Core.Session
                     Drunk = report.Drunk,
                     Dirtiness = report.Dirtiness,
                     HasDirtiness = report.HasDirtiness,
+                    PlayerAlco = report.PlayerAlco,
+                    HasAlco = report.HasAlco,
                     Valid = true,
                 });
                 return true;
@@ -469,8 +480,10 @@ namespace WinterMP.Core.Session
         }
 
         /// <summary>Seat races are settled by player id on the host, not packet arrival
-        /// order. A lower id replacing a higher occupant is safe: its relayed claim makes
-        /// the displaced guest's local controller exit; a higher id is corrected directly.</summary>
+        /// order. A higher-id claimant is rejected (and corrected by the caller); a lower-id
+        /// claimant evicts the higher-id occupant, which is then explicitly freed with a
+        /// self-addressed SeatNone so it exits at once instead of rendering two avatars in
+        /// one seat until its next ~8 s keepalive is rejected.</summary>
         private bool TryResolvePassengerSeatClaim(PassengerState state)
         {
             byte occupantId = 0;
@@ -491,7 +504,26 @@ namespace WinterMP.Core.Session
             if (occupantId < state.PlayerId) return false;
 
             _passengerOccupancy.Remove(occupantId);
+            SendSelfSeatNoneCorrection(occupantId);
             return true;
+        }
+
+        /// <summary>Tell one player the host has taken it out of its seat. Mirrors the
+        /// rejection correction; PassengerController treats a self-addressed SeatNone as an
+        /// explicit host order to exit (only acts if still locally seated).</summary>
+        private void SendSelfSeatNoneCorrection(byte playerId)
+        {
+            foreach (var pair in _playersByPeer)
+            {
+                if (pair.Value.PlayerId != playerId) continue;
+                SendTo(pair.Key, new PassengerState
+                {
+                    PlayerId = playerId,
+                    VehicleId = 0,
+                    SeatIndex = PassengerState.SeatNone,
+                }, Channel.ReliableOrdered);
+                return;
+            }
         }
 
         /// <summary>Guest-originated owner fields must match the authenticated peer.</summary>

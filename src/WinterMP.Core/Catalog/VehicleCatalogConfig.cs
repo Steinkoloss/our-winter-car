@@ -13,7 +13,16 @@ namespace WinterMP.Core.Catalog
 
         public bool IsVehicleRoot(Rigidbody body)
         {
-            if (RequireRoot && body.transform.parent != null) return false;
+            // A body carrying the full vehicle-simulation subtree IS a drivable, even when
+            // nested — the taxi (JOBS/TAXIJOB/MACHTWAGEN) is a complete sim car parented at
+            // depth. Gate on the structure (Simulation/Engine) rather than a name list so it
+            // generalizes to any future nested drivable. Only CORRIS/SORBET/MACHTWAGEN own
+            // this subtree in the current build, so this never over-registers a part body.
+            bool hasDrivableSubtree = HasDrivableSubtree(body.transform);
+
+            // A nested rigidbody is otherwise a part/sub-assembly, not a vehicle root.
+            if (RequireRoot && body.transform.parent != null && !hasDrivableSubtree) return false;
+            if (hasDrivableSubtree) return true;
             if (body.mass >= MinMass) return true;
 
             string name = body.name;
@@ -24,6 +33,19 @@ namespace WinterMP.Core.Catalog
             }
 
             return false;
+        }
+
+        private static bool HasDrivableSubtree(Transform root)
+        {
+            try
+            {
+                // Transform.Find walks a slash path and reaches inactive children.
+                return root.Find("Simulation/Engine") != null;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 

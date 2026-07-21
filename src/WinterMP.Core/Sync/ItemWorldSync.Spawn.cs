@@ -21,6 +21,22 @@ namespace WinterMP.Core.Sync
         // straight back to "Wait player" without a live player interaction, and the
         // spiller's bag-consumption despawn destroys the replica bags on the other
         // peers before a manifest could use them (both observed in-game, v29-v31).
+        //
+        // COVERAGE-ROADMAP 7.2 — Spawner/* completeness audit (14 subroots):
+        //   COVERED (bag "Spawn one/all" capture flow above):
+        //     BagContentsStore, BagContentsFleetari, CreateBagStore, CreateBagFleetari,
+        //     CreateItems, CreateItemsSeparate.
+        //   EXCLUDED — SPAWNITEM-event spawners (CreateMooseMeat, CreatePartsPackages,
+        //     CreateSprayCans, CreateTrophiesAmateur/Icerace/Junior/RallyAMA/RallyJR).
+        //     These fire a SPAWNITEM action on a game event (chop moose, buy part, win race)
+        //     rather than pouring near an opened container, so the bag capture window does
+        //     not apply. They spawn host-authoritatively (the triggering purchase/race is
+        //     already host-routed), and a LATE JOINER receives them via the join item
+        //     snapshot once ItemWorldSync scans them as pickables. Real-time materialization
+        //     on already-connected peers needs a dedicated SPAWNITEM->ItemSpawn hook and is
+        //     deliberately deferred: the capture flow is fragile (see the v29-v31 note above)
+        //     and each spawner's timing needs a 2-player check before enabling. Tracked as
+        //     the residual of 7.1 (moose meat) / 5.2 (rally parts).
 
         /// <summary>How far from the container's transform a fresh clone may appear.</summary>
         private const float SpawnCaptureRadius = 6f;
@@ -243,7 +259,8 @@ namespace WinterMP.Core.Sync
             Util.BootTrace.Crumb(
                 $"SPAWN-MINT host {intent.ContainerNetId:X8} #{epoch} offered={intent.Items.Count} minted={manifest.Items.Count} (guest spill)");
             SyncEventLog.Record("spawn", $"{intent.ContainerNetId:X8} #{epoch} x{manifest.Items.Count} (player {intent.PlayerId})");
-            SessionManager.Instance?.SendChat($"[ws] spilled {manifest.Items.Count} item(s) (player {intent.PlayerId})");
+            if (_bridge.SelfTest)
+                SessionManager.Instance?.SendChat($"[ws] spilled {manifest.Items.Count} item(s) (player {intent.PlayerId})");
 
             if (manifest.Items.Count > 0)
                 _hostSpawnManifests[SpawnKey(intent.ContainerNetId, epoch)] = manifest;
@@ -361,7 +378,8 @@ namespace WinterMP.Core.Sync
                 $"WorldSync: spawn {message.ContainerNetId:X8} #{message.Epoch} — bound {bound} own clone(s), released {released}.");
             Util.BootTrace.Crumb(
                 $"SPAWN-OFFER-BIND guest {message.ContainerNetId:X8} #{message.Epoch} bound={bound} released={released}");
-            SessionManager.Instance?.SendChat($"[ws] spilled {bound} item(s) (guest)");
+            if (_bridge.SelfTest)
+                SessionManager.Instance?.SendChat($"[ws] spilled {bound} item(s) (guest)");
         }
 
         private void BindOfferedBodyAsOwner(Rigidbody body, uint netId, float now)
@@ -588,7 +606,8 @@ namespace WinterMP.Core.Sync
                 $"WorldSync: spawn {pending.ContainerId:X8} #{pending.Epoch} — host minted {manifest.Items.Count} item(s).");
             Util.BootTrace.Crumb($"SPAWN-MINT host {pending.ContainerId:X8} #{pending.Epoch} captured={pending.Captured.Count} minted={manifest.Items.Count}");
             SyncEventLog.Record("spawn", $"{pending.ContainerId:X8} #{pending.Epoch} x{manifest.Items.Count}");
-            SessionManager.Instance?.SendChat($"[ws] spilled {manifest.Items.Count} item(s) (host)");
+            if (_bridge.SelfTest)
+                SessionManager.Instance?.SendChat($"[ws] spilled {manifest.Items.Count} item(s) (host)");
 
             if (manifest.Items.Count > 0)
             {
@@ -679,7 +698,7 @@ namespace WinterMP.Core.Sync
             WinterMPPlugin.Log.LogInfo(
                 $"WorldSync: spawn {pending.ContainerId:X8} #{pending.Epoch} — guest materialized {done}/{descriptors.Count} item(s).");
             Util.BootTrace.Crumb($"SPAWN-MATERIALIZE guest {pending.ContainerId:X8} #{pending.Epoch} done={done}/{descriptors.Count}");
-            if (done > 0)
+            if (_bridge.SelfTest && done > 0)
                 SessionManager.Instance?.SendChat($"[ws] materialized {done} item(s) (guest)");
         }
 

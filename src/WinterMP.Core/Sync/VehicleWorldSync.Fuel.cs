@@ -22,6 +22,7 @@ namespace WinterMP.Core.Sync
         private const float MaxStationaryVelocitySqr = 0.25f;
         private const float InitialFuelAllowanceLiters = 0.35f;
         private const float MaxFuelLitersPerSecond = 2.5f;
+        private const float FuelTransferHoldSeconds = 1f;
 
         private sealed class StationNozzle
         {
@@ -114,6 +115,16 @@ namespace WinterMP.Core.Sync
             // overwritten by someone still standing at the pump.
             if ((item.RemoteOwner != WorldSyncIds.NoOwner && item.RemoteOwner != message.PlayerId)
                 || item.Body.velocity.sqrMagnitude > MaxStationaryVelocitySqr)
+                return false;
+
+            // One physical filler neck: while a transfer is in flight, another player's
+            // intents are rejected rather than taking over the slot. Without this,
+            // alternating senders each reset the rate window below (fresh allowance +
+            // fixed elapsed floor), roughly doubling the per-vehicle fill cap, and each
+            // handover skipped the sequence dedup.
+            if (item.LastFuelTransferPlayer != message.PlayerId
+                && item.LastFuelTransferAt > 0f
+                && now - item.LastFuelTransferAt < FuelTransferHoldSeconds)
                 return false;
 
             if (item.LastFuelTransferPlayer == message.PlayerId)

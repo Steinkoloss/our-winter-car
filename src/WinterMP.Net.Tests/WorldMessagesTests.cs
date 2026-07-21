@@ -573,6 +573,7 @@ namespace WinterMP.Net.Tests
                 Drunk = 4.2f,
                 Sequence = 7,
                 Dirtiness = 81.25f,
+                HasDirtiness = true,
             };
             var decoded = Assert.IsType<PlayerNeedsReport>(PacketCodec.Decode(PacketCodec.Encode(original)));
             Assert.Equal(original.PlayerId, decoded.PlayerId);
@@ -582,6 +583,18 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Stress, decoded.Stress, 3);
             Assert.Equal(original.Drunk, decoded.Drunk, 3);
             Assert.Equal(original.Dirtiness, decoded.Dirtiness, 3);
+            Assert.True(decoded.HasDirtiness);
+        }
+
+        [Fact]
+        public void PlayerNeedsReport_HasDirtinessFalse_RoundTrips()
+        {
+            // v56: a guest whose PlayerDirtiness global has not resolved reports
+            // HasDirtiness=false so the host stores dirtiness as unknown (never
+            // restoring the guest to clean). This flag must survive the wire.
+            var original = new PlayerNeedsReport { PlayerId = 3, Dirtiness = 0f, HasDirtiness = false };
+            var decoded = Assert.IsType<PlayerNeedsReport>(PacketCodec.Decode(PacketCodec.Encode(original)));
+            Assert.False(decoded.HasDirtiness);
         }
 
         [Fact]
@@ -599,6 +612,9 @@ namespace WinterMP.Net.Tests
                 Drunk = 7f,
                 Sequence = 0xBEEF,
                 Dirtiness = 8f,
+                HasDirtiness = true,
+                PlayerAlco = 9f,
+                HasAlco = true,
             };
 
             var reader = new NetReader(PacketCodec.Encode(original));
@@ -613,6 +629,9 @@ namespace WinterMP.Net.Tests
             Assert.Equal(original.Drunk, reader.ReadSingle());
             Assert.Equal(original.Sequence, reader.ReadUInt16());
             Assert.Equal(original.Dirtiness, reader.ReadSingle());
+            Assert.Equal(1, reader.ReadByte());
+            Assert.Equal(original.PlayerAlco, reader.ReadSingle());
+            Assert.Equal(1, reader.ReadByte());
             Assert.Equal(0, reader.Remaining);
         }
 

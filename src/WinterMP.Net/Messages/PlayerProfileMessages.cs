@@ -6,6 +6,11 @@ namespace WinterMP.Net.Messages
     /// Wire v28 appends BodyTemp (PLAYER/BodyTemp.Temperature) as the 5th need.
     /// Wire v30 appends Stress (global) and Drunk ("Drunk Mode" FSM DrunkCurrent).
     /// Wire v55 appends Dirtiness (global PlayerDirtiness) after Sequence.
+    /// Wire v56 appends HasDirtiness after Dirtiness: false when the guest's
+    /// PlayerDirtiness global has not resolved locally, so the host records the
+    /// value as unknown and never restores a dirty guest to clean. This decouples
+    /// needs reporting from the dirtiness binding — the other seven needs report
+    /// even if PlayerDirtiness is (temporarily) unresolvable.
     /// </summary>
     public sealed class PlayerNeedsReport : IMessage
     {
@@ -19,6 +24,11 @@ namespace WinterMP.Net.Messages
         public float Drunk;
         public ushort Sequence;
         public float Dirtiness;
+        public bool HasDirtiness;
+        /// <summary>Wire v78: persistent PlayerAlco BAC (drives DUI checkpoints + sobering).</summary>
+        public float PlayerAlco;
+        /// <summary>Wire v78: false when PlayerAlco has not resolved locally (host records unknown).</summary>
+        public bool HasAlco;
 
         public MessageId Id => MessageId.PlayerNeedsReport;
 
@@ -34,6 +44,9 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(Drunk);
             writer.WriteUInt16(Sequence);
             writer.WriteSingle(Dirtiness);
+            writer.WriteByte(HasDirtiness ? (byte)1 : (byte)0);
+            writer.WriteSingle(PlayerAlco);
+            writer.WriteByte(HasAlco ? (byte)1 : (byte)0);
         }
 
         public void Read(NetReader reader)
@@ -48,6 +61,9 @@ namespace WinterMP.Net.Messages
             Drunk = reader.ReadSingle();
             Sequence = reader.ReadUInt16();
             Dirtiness = reader.ReadSingle();
+            HasDirtiness = reader.ReadByte() != 0;
+            PlayerAlco = reader.ReadSingle();
+            HasAlco = reader.ReadByte() != 0;
         }
     }
 

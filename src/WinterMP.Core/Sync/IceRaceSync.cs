@@ -94,6 +94,15 @@ namespace WinterMP.Core.Sync
             ObserveGuest(session);
         }
 
+        // KNOWN LIMITATION (unfixed, needs in-game work): unlike RallySync, the host does
+        // NOT observe its OWN ice-race driving — only guest drivers produce records (via
+        // TryAcceptIntent). So a host-driven ice race does not sync its standings to guests.
+        // A fix must mirror RallySync.ObserveHostStage, but IceRaceSync.TryAdvance needs the
+        // driver's world position (to pick time-trial vs lap start and gate markers) and the
+        // host's own PLAYER pose isn't currently available here (guest poses arrive over the
+        // net; the host's does not). Plumb a local-player-pose source + validate mode
+        // detection in a 2-player session before enabling. Tracked for the M10 playtest.
+
         public IEnumerable<IceRaceState> BuildSnapshots()
         {
             foreach (var record in _records.Values)

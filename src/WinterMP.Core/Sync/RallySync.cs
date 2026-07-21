@@ -45,6 +45,14 @@ namespace WinterMP.Core.Sync
             public byte Phase;
             public byte Checkpoint;
             public float StartedAt;
+            // Set when the record reaches PhaseFinished so the elapsed clock freezes
+            // (otherwise every later broadcast/snapshot of a finished record would
+            // report an ever-growing "final" time).
+            public float FinishedAt;
+            // A finished record must be broadcast to already-connected guests exactly
+            // once; racing records are re-sent at HostBroadcastSeconds but the finish is
+            // a one-shot terminal edge (host-driven finishes have no intent to relay).
+            public bool FinishedBroadcast;
         }
 
         private readonly ItemWorldSync _items;
@@ -123,6 +131,10 @@ namespace WinterMP.Core.Sync
 
             if (!TryAdvance(message.PlayerId, stage, message.Checkpoint, out var record)) return false;
             state = ToMessage(record);
+            // The caller broadcasts this accepted state, so the periodic one-shot must not
+            // re-send a guest finish; host-driven finishes leave the flag clear for it.
+            if (record.Phase == RallyState.PhaseFinished)
+                record.FinishedBroadcast = true;
             WinterMPPlugin.Log.LogInfo(
                 $"RallySync: accepted player {message.PlayerId} SS{message.Stage} checkpoint {message.Checkpoint}.");
             return true;
@@ -247,7 +259,17 @@ namespace WinterMP.Core.Sync
             foreach (var record in _records.Values)
             {
                 if (record.Phase == RallyState.PhaseRacing)
+                {
                     session.SendWorldMessage(ToMessage(record), Channel.ReliableOrdered);
+                }
+                else if (record.Phase == RallyState.PhaseFinished && !record.FinishedBroadcast)
+                {
+                    // Host-driven finishes have no guest intent to relay, so the periodic
+                    // loop is the only path that reaches already-connected guests. One-shot:
+                    // the terminal time is frozen (FinishedAt), so re-sending adds nothing.
+                    record.FinishedBroadcast = true;
+                    session.SendWorldMessage(ToMessage(record), Channel.ReliableOrdered);
+                }
             }
         }
 
@@ -274,12 +296,18 @@ namespace WinterMP.Core.Sync
 
             record.Checkpoint = checkpoint;
             if (checkpoint == stage.Checkpoints.Count)
+            {
                 record.Phase = RallyState.PhaseFinished;
+                record.FinishedAt = Time.unscaledTime;
+            }
             return true;
         }
 
         private RallyState ToMessage(Record record)
         {
+            float endTime = record.Phase == RallyState.PhaseFinished && record.FinishedAt > 0f
+                ? record.FinishedAt
+                : Time.unscaledTime;
             return new RallyState
             {
                 PlayerId = record.PlayerId,
@@ -287,7 +315,7 @@ namespace WinterMP.Core.Sync
                 Phase = record.Phase,
                 Checkpoint = record.Checkpoint,
                 Sequence = ++_outStateSequence,
-                ElapsedCentiseconds = (uint)Mathf.Max(0, Mathf.RoundToInt((Time.unscaledTime - record.StartedAt) * 100f)),
+                ElapsedCentiseconds = (uint)Mathf.Max(0, Mathf.RoundToInt((endTime - record.StartedAt) * 100f)),
             };
         }
 

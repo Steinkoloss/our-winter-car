@@ -184,6 +184,9 @@ self-trigger releases, and never commit unless asked.
 - Wire format → `protocol/PROTOCOL.md`.
 - **Where is the code for X?** → `docs/CODEMAP.md`.
 - **How do I add a message / catalog rule / FSM hook?** → `docs/AGENT-RECIPES.md`.
+- **What vanilla feature is still unsynced / what should I build next?** →
+  `docs/COVERAGE-ROADMAP.md` — the prioritized, AI-iterable backlog of every unsynced
+  game system (work it top-to-bottom, one task per PR).
 - How to build/deploy/test → `docs/BUILDING.md`.
 - Still unclear and it's a real fork in the road → ask the user. Don't guess on
   anything that could corrupt a save or desync a live session.

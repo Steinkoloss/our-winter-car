@@ -290,6 +290,8 @@ namespace WinterMP.Net.Messages
         public byte FuelLevel;
         /// <summary>Coolant temp gauge, 0-255 maps to 0-120 °C.</summary>
         public byte CoolantTemp;
+        /// <summary>Selected gear + 1 (0 = reverse, 1 = neutral, 2.. = forward); appended v63.</summary>
+        public byte Gear;
 
         public bool EngineOn => (Flags & FlagEngineOn) != 0;
         public bool AccOn => (Flags & FlagAccOn) != 0;
@@ -309,6 +311,7 @@ namespace WinterMP.Net.Messages
             writer.WriteUInt16(SpeedTenthsKmh);
             writer.WriteByte(FuelLevel);
             writer.WriteByte(CoolantTemp);
+            writer.WriteByte(Gear);
         }
 
         public void Read(NetReader reader)
@@ -321,6 +324,7 @@ namespace WinterMP.Net.Messages
             SpeedTenthsKmh = reader.ReadUInt16();
             FuelLevel = reader.ReadByte();
             CoolantTemp = reader.ReadByte();
+            Gear = reader.ReadByte();
         }
     }
 

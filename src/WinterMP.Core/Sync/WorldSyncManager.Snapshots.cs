@@ -220,6 +220,9 @@ namespace WinterMP.Core.Sync
 
             var session = SessionManager.Instance;
             byte ownerPlayerId = session != null ? session.LocalPlayerId : WorldSyncIds.NoOwner;
+            foreach (var brew in _kilju.BuildSnapshots(ownerPlayerId))
+                yield return brew;
+
             foreach (var fluid in _fluids.BuildSnapshots(ownerPlayerId))
                 yield return fluid;
 
@@ -228,6 +231,56 @@ namespace WinterMP.Core.Sync
 
             foreach (var mailOrder in _mailOrders.BuildSnapshots())
                 yield return mailOrder;
+
+            var fleetariOrder = _repairShop.BuildSnapshot();
+            if (fleetariOrder != null)
+                yield return fleetariOrder;
+
+            var fleaSale = _fleaSale.BuildSnapshot();
+            if (fleaSale != null)
+                yield return fleaSale;
+
+            var taxiJob = _taxiJob.BuildSnapshot();
+            if (taxiJob != null)
+                yield return taxiJob;
+
+            var welfare = _welfare.BuildSnapshot();
+            if (welfare != null)
+                yield return welfare;
+
+            var hitchhiker = _hitchhiker.BuildSnapshot();
+            if (hitchhiker != null)
+                yield return hitchhiker;
+
+            var wanted = _wanted.BuildSnapshot();
+            if (wanted != null)
+                yield return wanted;
+
+            var jail = _jail.BuildSnapshot();
+            if (jail != null)
+                yield return jail;
+
+            var pursuit = _pursuit.BuildSnapshot();
+            if (pursuit != null)
+                yield return pursuit;
+
+            var rallyResults = _rallyResults.BuildSnapshot();
+            if (rallyResults != null)
+                yield return rallyResults;
+
+            var jokkis = _jokkis.BuildSnapshot();
+            if (jokkis != null)
+                yield return jokkis;
+
+            foreach (var appliance in _appliances.BuildSnapshots())
+                yield return appliance;
+
+            var pissAreas = _pissAreas.BuildSnapshot();
+            if (pissAreas != null)
+                yield return pissAreas;
+
+            foreach (var carRadio in _carRadio.BuildSnapshots())
+                yield return carRadio;
 
             var inspection = _inspection.BuildSnapshot();
             if (inspection != null)
