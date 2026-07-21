@@ -10,6 +10,19 @@ game's title. One player hosts with their savefile; friends join through Steam
 - Windows 10/11 **or** Linux (with Steam + Proton)
 - All players must run the **same mod version**
 
+## First-time setup — one file (Windows **or** Linux)
+
+**OurWinterCar-Installer.com** is a single download that installs the mod on either
+OS. Get it from [GitHub Releases](https://github.com/Steinkoloss/our-winter-car/releases).
+
+- **Windows:** double-click it. (If SmartScreen blocks the `.com`, rename it to
+  `.exe` and run, or use **OurWinterCar-Setup.exe** below.)
+- **Linux:** `sh ./OurWinterCar-Installer.com` (running it directly can be grabbed
+  by Wine on some distros; the `sh` form always works — or use the AppImage below).
+
+It finds your Steam/Proton game, installs the mod, and opens the launcher for
+host/join + save-backups. The per-OS installers below do exactly the same thing.
+
 ## First-time setup — Windows
 
 1. Download **OurWinterCar-Setup.exe** from [GitHub Releases](https://github.com/Steinkoloss/our-winter-car/releases) and run it.

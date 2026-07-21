@@ -1,6 +1,9 @@
 # Our Winter Car — Multiplayer for My Winter Car
 
-**[Download OurWinterCar-Setup.exe (latest release)](https://github.com/Steinkoloss/our-winter-car/releases/latest)**
+**[Download the latest release](https://github.com/Steinkoloss/our-winter-car/releases/latest)** —
+`OurWinterCar-Installer.com` is one file that installs on **both Windows and Linux**
+(Windows: double-click; Linux: `sh ./OurWinterCar-Installer.com`). Windows-only
+`OurWinterCar-Setup.exe` and the Linux AppImage are also available.
 
 This thing is completely AI slopped with Fable 5 & Composer.
 Probably horrible!

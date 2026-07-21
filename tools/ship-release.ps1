@@ -170,6 +170,12 @@ function Build-ReleaseNotes {
     $setupUrl = "https://github.com/$repo/releases/download/$tag/OurWinterCar-Setup.exe"
     $zipUrl = "https://github.com/$repo/releases/download/$tag/OurWinterCar-Launcher-win-x64.zip"
     $appImageUrl = "https://github.com/$repo/releases/download/$tag/OurWinterCar-Launcher-linux-x64.AppImage"
+    $installerUrl = "https://github.com/$repo/releases/download/$tag/OurWinterCar-Installer.com"
+
+    $installerSection = if (Test-Path (Join-Path $root 'dist\OurWinterCar-Installer.com')) { @"
+**One file (Windows or Linux):** **[OurWinterCar-Installer.com]($installerUrl)** — Windows: double-click. Linux: ``sh ./OurWinterCar-Installer.com``.
+
+"@ } else { '' }
 
     $linuxSection = if ($HasAppImage) { @"
 
@@ -179,7 +185,7 @@ function Build-ReleaseNotes {
     return @"
 ## Download
 
-**Windows:** **[OurWinterCar-Setup.exe]($setupUrl)**
+$installerSection**Windows:** **[OurWinterCar-Setup.exe]($setupUrl)**
 
 If Windows Defender removes the installer, use **[OurWinterCar-Launcher-win-x64.zip]($zipUrl)** instead.
 $linuxSection
@@ -263,10 +269,16 @@ $setup = Join-Path $root 'dist\OurWinterCar-Setup.exe'
 $payload = Join-Path $root 'dist\OurWinterCar-payload.zip'
 $launcher = Join-Path $root 'dist\OurWinterCar-Launcher-win-x64.zip'
 $appImage = Join-Path $root 'dist\OurWinterCar-Launcher-linux-x64.AppImage'
+# Universal one-file installer (Windows + Linux). Built out-of-band by
+# tools/build-ape-installer.sh (needs cosmocc); uploaded when present.
+$installer = Join-Path $root 'dist\OurWinterCar-Installer.com'
 
 $assets = @($payload, $launcher)
 if (-not $Fast) {
     $assets = @($setup) + $assets
+}
+if (Test-Path $installer) {
+    $assets = @($installer) + $assets
 }
 if (Test-Path $appImage) {
     $assets += $appImage

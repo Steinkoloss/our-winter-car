@@ -57,6 +57,19 @@ Release zips land in `dist/`:
 `WinterMP-Launcher-win-x64.zip` (full launcher) and `WinterMP-payload.zip`
 (attach to GitHub releases for in-launcher mod updates).
 
+### Universal installer (one file, Windows + Linux)
+
+```bash
+export COSMOCC=~/cosmocc/bin/cosmocc      # Cosmopolitan toolchain
+./tools/build-ape-installer.sh            # -> dist/OurWinterCar-Installer.com
+```
+
+Compiles a single [Actually Portable Executable](https://justine.lol/ape.html)
+that carries both self-contained launcher builds and installs the mod on either
+OS (it detects the OS, extracts the matching launcher, and runs its
+`--install-mod` path). Toolchain setup + the Wine `binfmt_misc` gotcha are in
+[installer/ape/README.md](../installer/ape/README.md).
+
 Player guide: [PLAYERS.md](PLAYERS.md).
 
 Agent routing: [CODEMAP.md](CODEMAP.md), [AGENT-RECIPES.md](AGENT-RECIPES.md).

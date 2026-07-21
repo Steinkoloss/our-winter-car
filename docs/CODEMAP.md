@@ -10,6 +10,8 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 | BepInEx plugin | `src/WinterMP.Core/WinterMPPlugin.cs` — creates persistent `WinterMP` GameObject and subsystems |
 | FastBoot (save gate) | `src/WinterMP.FastBoot/SessionGate.cs` |
 | Launcher | `src/WinterMP.Launcher/MainWindow.axaml.cs` (Avalonia) |
+| Headless install (used by installers) | `src/WinterMP.Launcher/Services/CliInstallRunner.cs` (`--install-mod`) |
+| Universal installer (one file, Win+Linux) | `installer/ape/ourwintercar-installer.c` + `tools/build-ape-installer.sh` (APE) |
 | Protocol (engine-independent) | `src/WinterMP.Net/` — **unit-tested, builds without the game** |
 
 ## Session & transport

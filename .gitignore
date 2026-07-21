@@ -18,6 +18,7 @@ vendor/*.zip
 vendor/appimagetool-*.AppImage
 tools/inno-setup/
 dist/
+build/
 
 # Runtime artifacts
 dumps/
