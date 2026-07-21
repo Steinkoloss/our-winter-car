@@ -70,6 +70,20 @@ OS (it detects the OS, extracts the matching launcher, and runs its
 `--install-mod` path). Toolchain setup + the Wine `binfmt_misc` gotcha are in
 [installer/ape/README.md](../installer/ape/README.md).
 
+### Windows Setup.exe — on Linux, via Wine
+
+The Inno Setup installer is **not** Windows-only. `ISCC.exe` compiles under Wine,
+so the exact same `OurWinterCar-Setup.exe` builds on Linux:
+
+```bash
+./tools/build-setup-linux.sh              # -> dist/OurWinterCar-Setup.exe
+```
+
+It installs Inno Setup once into a throwaway Wine prefix (`~/.cache/ourwintercar/`,
+never `~/.wine`) and runs `wine ISCC.exe WinterMP.iss`. With this,
+`build-ape-installer.sh`, and `build-appimage.sh`, **every** release artifact is
+Linux-buildable — only the `ship-release.ps1` orchestration still expects Windows/pwsh.
+
 Player guide: [PLAYERS.md](PLAYERS.md).
 
 Agent routing: [CODEMAP.md](CODEMAP.md), [AGENT-RECIPES.md](AGENT-RECIPES.md).
