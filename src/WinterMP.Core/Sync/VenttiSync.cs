@@ -14,13 +14,25 @@ namespace WinterMP.Core.Sync
     /// different hand — and Ventti stakes real money <b>and the Satsuma car</b>, so a
     /// per-client outcome desyncs both the wallet and car ownership.
     ///
-    /// Same model as <see cref="GamblingSync"/>: the <b>host</b> deals — a guest's bet /
-    /// hit / stand / car-wager press is relayed as a <see cref="GamblingIntent"/>
-    /// (Kind=Ventti on the reply), the host forces the matching button state on its own
-    /// FSM so the real draw + resolution + payout run host-side, and the resolved hand
-    /// totals broadcast via <see cref="GamblingState"/> while money rides
-    /// <see cref="WalletState"/> and any car transfer runs through the host's own
-    /// GameManager (never a local guest ownership write).
+    /// Host: deals normally and broadcasts hand totals via <see cref="GamblingState"/>; a
+    /// guest's press arrives as a <see cref="GamblingIntent"/> and is replayed onto the
+    /// host's own button FSM so the real draw + payout run host-side. Money rides
+    /// <see cref="WalletState"/>.
+    ///
+    /// Guest: <b>locked down</b>. The guest hooks are observers (<see cref="FsmHook"/>
+    /// prepends, it does not suppress), so before R2.1 a guest's Bet/Hit/Stand also resolved
+    /// on local RNG — money reconverged via WalletState but the car wager did not, and
+    /// ownership diverged permanently. Now <c>Table/GameManager :: Use</c> is disabled on
+    /// guests: it is the sole owner of 'Win car'/'Lose car'/'Win house'/'Lose house', so
+    /// nothing on a guest can perform a durable transfer. Presses still emit intents.
+    /// Belt and braces: BetCar/BetHouse are forced false each tick (so 'Car?'/'House?' can
+    /// only take their OFF branch), and host hand totals are only written once the resolver
+    /// is confirmed cut.
+    ///
+    /// Known gaps: a transfer on the <b>host</b> does not propagate to guests
+    /// (COVERAGE-ROADMAP R2.11), and the host-side intent replay is likely inert unless the
+    /// host also has the table open (R2.12) — this change makes that visible rather than
+    /// causing it.
     /// </summary>
     internal sealed class VenttiSync
     {
@@ -52,6 +64,11 @@ namespace WinterMP.Core.Sync
         private FsmInt? _playerHand;       // HitPlayer :: Hand
         private FsmInt? _houseHand;        // HitHouse :: Hand (read via manager subtree)
         private FsmBool? _betCar;          // GameManager :: BetCar
+        private FsmBool? _betHouse;        // GameManager :: BetHouse
+
+        private readonly FsmSuppressor _managerSuppressor = new FsmSuppressor();
+        private bool _lockdownLogged;
+        private bool _hookedBet, _hookedWagerCar, _hookedHit, _hookedStand;
 
         private bool _hostEntriesReady;
         private bool _hooksInstalled;
@@ -70,13 +87,19 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
+            // Restore before dropping the ref, or a player who guests once keeps a dead
+            // Ventti table for the rest of the process — including back in singleplayer.
+            _managerSuppressor.Restore();
+
             _anchor = null;
             _bet = _hitPlayer = _stand = _manager = null;
-            _betValue = null; _playerHand = _houseHand = null; _betCar = null;
+            _betValue = null; _playerHand = _houseHand = null; _betCar = null; _betHouse = null;
             _tableId = 0;
             _loggedFound = false;
+            _lockdownLogged = false;
             _hostEntriesReady = false;
             _hooksInstalled = false;
+            _hookedBet = _hookedWagerCar = _hookedHit = _hookedStand = false;
             _outIntentSequence = 0;
             _lastIntentSequences.Clear();
             _built = false;
@@ -95,13 +118,47 @@ namespace WinterMP.Core.Sync
                 Locate();
             }
 
-            if (!session.IsHost) return;
+            if (!session.IsHost)
+            {
+                GuestLockdown();
+                return;
+            }
+
             if (Time.unscaledTime < _nextHostTickAt) return;
             _nextHostTickAt = Time.unscaledTime + HostTickSeconds;
 
             bool keepAlive = Time.unscaledTime >= _nextKeepAliveAt;
             if (keepAlive) _nextKeepAliveAt = Time.unscaledTime + KeepAliveSeconds;
             HostBroadcastIfChanged(session, keepAlive);
+        }
+
+        // ---- Guest: lockdown -------------------------------------------------
+
+        // Cut the one FSM that can durably transfer the Satsuma or the house, then make the
+        // transfer states unreachable by data as well. The wager clear runs every guest tick
+        // so a stray write to BetCar/BetHouse can never arm a transfer.
+        private void GuestLockdown()
+        {
+            if (_manager != null && !_managerSuppressor.Active && _managerSuppressor.Suppress(_manager))
+            {
+                if (!_lockdownLogged)
+                {
+                    _lockdownLogged = true;
+                    WinterMPPlugin.Log.LogInfo(
+                        $"VenttiSync: guest lockdown — local GameManager disabled (table {_tableId:X8}); host resolves.");
+                }
+                SyncEventLog.Record("ventti-guest-lockdown", $"table {_tableId:X8}");
+            }
+
+            try
+            {
+                if (_betCar != null && _betCar.Value) _betCar.Value = false;
+                if (_betHouse != null && _betHouse.Value) _betHouse.Value = false;
+            }
+            catch (System.Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug("VenttiSync: wager clear failed: " + e.Message);
+            }
         }
 
         public void ForceBroadcast()
@@ -120,6 +177,14 @@ namespace WinterMP.Core.Sync
 
             EnsureBuilt();
             Locate();
+
+            // GameManager :: Use rests in 'Check hand' and is the only FSM carrying
+            // PLAYERWIN/PLAYERLOSE, so it very likely polls these two Hand ints. Writing the
+            // host's totals into a *live* guest resolver would let the mod itself trigger a
+            // guest-side car transfer from across the map. Display-only, and only once the
+            // resolver is confirmed cut.
+            if (!_managerSuppressor.Active) return;
+
             try
             {
                 WriteFloat(_betValue, message.Bet);
@@ -246,7 +311,13 @@ namespace WinterMP.Core.Sync
                 var hitHouse = FindChildFsm(root, "GAME/Gamestuff/HitHouse", "Use");
                 if (hitHouse != null) _houseHand = hitHouse.FsmVariables.FindFsmInt("Hand");
             }
-            if (_betCar == null && _manager != null) _betCar = _manager.FsmVariables.FindFsmBool("BetCar");
+            if (_manager != null)
+            {
+                // FsmVariables reads are plain field access — they still work on a component
+                // we have disabled, so binding after lockdown is fine.
+                if (_betCar == null) _betCar = _manager.FsmVariables.FindFsmBool("BetCar");
+                if (_betHouse == null) _betHouse = _manager.FsmVariables.FindFsmBool("BetHouse");
+            }
 
             if (!_loggedFound && (_hitPlayer != null || _bet != null))
             {
@@ -282,18 +353,23 @@ namespace WinterMP.Core.Sync
         {
             if (_hooksInstalled) return;
             bool all = true;
-            all &= HookOnce(_bet, StateBetIncrease, GamblingIntent.ActionVenttiBet);
-            all &= HookOnce(_bet, StateWagerCar, GamblingIntent.ActionVenttiWagerCar);
-            all &= HookOnce(_hitPlayer, StateHit, GamblingIntent.ActionVenttiHit);
-            all &= HookOnce(_stand, StateStand, GamblingIntent.ActionVenttiStand);
+            all &= HookOnce(_bet, StateBetIncrease, GamblingIntent.ActionVenttiBet, ref _hookedBet);
+            all &= HookOnce(_bet, StateWagerCar, GamblingIntent.ActionVenttiWagerCar, ref _hookedWagerCar);
+            all &= HookOnce(_hitPlayer, StateHit, GamblingIntent.ActionVenttiHit, ref _hookedHit);
+            all &= HookOnce(_stand, StateStand, GamblingIntent.ActionVenttiStand, ref _hookedStand);
             _hooksInstalled = all;
         }
 
-        private bool HookOnce(PlayMakerFSM? fsm, string stateName, byte action)
+        // Per-hook latch: _hooksInstalled is all-or-nothing, so one not-yet-Awake FSM used to
+        // make the 5 s probe re-prepend an FsmHookAction to every already-hooked state —
+        // N probes meant N duplicate intents per press.
+        private bool HookOnce(PlayMakerFSM? fsm, string stateName, byte action, ref bool installed)
         {
+            if (installed) return true;
             if (fsm == null) return false;
             var capturedAction = action;
-            return FsmHook.OnStateEnter(fsm, stateName, () => EmitIntent(capturedAction));
+            installed = FsmHook.OnStateEnter(fsm, stateName, () => EmitIntent(capturedAction));
+            return installed;
         }
 
         private void EmitIntent(byte action)

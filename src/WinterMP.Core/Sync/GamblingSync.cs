@@ -20,6 +20,17 @@ namespace WinterMP.Core.Sync
     ///
     /// Mirrors <see cref="HeatSourceSync"/> (anyone-triggers intent + host scalar-state
     /// broadcast). All FSM/var lookups are best-effort and crash-contained.
+    ///
+    /// <b>R2.1 — read before "fixing" the guest hooks.</b> Like <see cref="VenttiSync"/>, the
+    /// guest hooks here are observers, so a guest's machine also spins locally on local RNG.
+    /// That is left alone <i>on purpose</i>. Ventti needed a hard cut because it stakes the
+    /// Satsuma and a wrong outcome is permanent; a slot machine mutates nothing durable —
+    /// reels/credit/locks are overwritten by <see cref="GamblingState"/> and money rides
+    /// <see cref="WalletState"/> (host to guest, absolute). Slots are transiently wrong, never
+    /// permanently wrong. Disabling <c>Buttons/Start :: Use</c> would also be actively harmful:
+    /// it fuses the input surface with the spin chain and renders the machine, so cutting it
+    /// would freeze the reels, stop the guest emitting intents at all, and — since
+    /// <c>Fsm.Active</c> gates on <c>owner.enabled</c> — also kill the host's own replay path.
     /// </summary>
     internal sealed class GamblingSync
     {
@@ -67,6 +78,11 @@ namespace WinterMP.Core.Sync
 
             public bool HostEntriesReady;
             public bool HooksInstalled;
+            // Per-hook latches: HooksInstalled is all-or-nothing, so one not-yet-Awake FSM
+            // made the 5 s probe re-prepend a hook to every already-hooked state — N probes
+            // meant N duplicate intents per press.
+            public bool HookedPay, HookedBet, HookedStart, HookedCashout;
+            public bool HookedLock1, HookedLock2, HookedLock3;
             public float NextIntentAt;
             public ushort OutIntentSequence;
 
@@ -359,22 +375,24 @@ namespace WinterMP.Core.Sync
         {
             if (machine.HooksInstalled) return;
             bool all = true;
-            all &= HookOnce(machine.PayMoney, StatePay, machine, GamblingIntent.ActionPay);
-            all &= HookOnce(machine.Bet, StateBet, machine, GamblingIntent.ActionBet);
-            all &= HookOnce(machine.Start, StateStart, machine, GamblingIntent.ActionStart);
-            all &= HookOnce(machine.Cashout, StateCashout, machine, GamblingIntent.ActionCashout);
-            all &= HookOnce(machine.Lock1, StateLock, machine, GamblingIntent.ActionLock1);
-            all &= HookOnce(machine.Lock2, StateLock, machine, GamblingIntent.ActionLock2);
-            all &= HookOnce(machine.Lock3, StateLock, machine, GamblingIntent.ActionLock3);
+            all &= HookOnce(machine.PayMoney, StatePay, machine, GamblingIntent.ActionPay, ref machine.HookedPay);
+            all &= HookOnce(machine.Bet, StateBet, machine, GamblingIntent.ActionBet, ref machine.HookedBet);
+            all &= HookOnce(machine.Start, StateStart, machine, GamblingIntent.ActionStart, ref machine.HookedStart);
+            all &= HookOnce(machine.Cashout, StateCashout, machine, GamblingIntent.ActionCashout, ref machine.HookedCashout);
+            all &= HookOnce(machine.Lock1, StateLock, machine, GamblingIntent.ActionLock1, ref machine.HookedLock1);
+            all &= HookOnce(machine.Lock2, StateLock, machine, GamblingIntent.ActionLock2, ref machine.HookedLock2);
+            all &= HookOnce(machine.Lock3, StateLock, machine, GamblingIntent.ActionLock3, ref machine.HookedLock3);
             machine.HooksInstalled = all;
         }
 
-        private bool HookOnce(PlayMakerFSM? fsm, string stateName, Machine machine, byte action)
+        private bool HookOnce(PlayMakerFSM? fsm, string stateName, Machine machine, byte action, ref bool installed)
         {
+            if (installed) return true;
             if (fsm == null) return false;
             var captured = machine;
             var capturedAction = action;
-            return FsmHook.OnStateEnter(fsm, stateName, () => EmitIntent(captured, capturedAction));
+            installed = FsmHook.OnStateEnter(fsm, stateName, () => EmitIntent(captured, capturedAction));
+            return installed;
         }
 
         private void EmitIntent(Machine machine, byte action)

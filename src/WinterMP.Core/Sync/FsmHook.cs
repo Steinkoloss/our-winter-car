@@ -156,4 +156,85 @@ namespace WinterMP.Core.Sync
             return FindState(fsm, stateName) != null;
         }
     }
+
+    /// <summary>
+    /// Guest-side kill switch for exactly one FSM, with restore.
+    ///
+    /// <see cref="OnStateEnter"/> only *observes* — it prepends an action, and the state's own
+    /// actions still run. When a guest must not resolve something locally (RNG, payout, an
+    /// ownership transfer), the FSM has to be cut instead.
+    ///
+    /// Disabling the component is a hard cut, verified against the shipped PlayMaker.dll:
+    /// <c>Fsm.Active</c> gates on <c>owner.enabled</c>, and <c>Fsm.ProcessEvent</c> early-returns
+    /// when inactive — so a disabled FSM cannot be driven into a state by its own Update, by a
+    /// targeted SendEvent, by a global transition, or by a broadcast.
+    ///
+    /// The subtlety is <c>Fsm.RestartOnEnable</c> (default true). Left alone, disabling runs
+    /// <c>Stop() -> StopAndReset()</c> — firing ExitState on the very state we are freezing —
+    /// and re-enabling would restart the FSM at its start state. Pinning it false across the
+    /// window makes this freeze-in-place / resume-in-place instead.
+    /// </summary>
+    internal sealed class FsmSuppressor
+    {
+        private PlayMakerFSM? _fsm;
+        private bool _previousEnabled;
+        private bool _previousRestartOnEnable = true;
+        private bool _active;
+
+        /// <summary>True only while a live component is confirmed disabled by us.</summary>
+        public bool Active { get { return _active && _fsm != null; } }
+
+        public bool Suppress(PlayMakerFSM? fsm)
+        {
+            if (fsm == null) return false;
+            if (_active && !ReferenceEquals(fsm, _fsm)) Restore();
+            if (_active) return true;
+
+            try
+            {
+                _previousEnabled = fsm.enabled;
+                _previousRestartOnEnable = true;
+
+                var inner = fsm.Fsm;
+                if (inner != null)
+                {
+                    _previousRestartOnEnable = inner.RestartOnEnable;
+                    inner.RestartOnEnable = false;
+                }
+
+                if (fsm.enabled) fsm.enabled = false;
+                _fsm = fsm;
+                _active = true;
+                return true;
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug("FsmSuppressor: suppress failed: " + e.Message);
+                _fsm = null;
+                _active = false;
+                return false;
+            }
+        }
+
+        public void Restore()
+        {
+            var fsm = _fsm;
+            _fsm = null;
+            _active = false;
+            if (fsm == null) return;   // Unity fake-null also covers a destroyed component
+
+            try
+            {
+                // Order matters: OnEnable fires inside this assignment and reads
+                // RestartOnEnable, which must still be false or it restarts the FSM.
+                fsm.enabled = _previousEnabled;
+                var inner = fsm.Fsm;
+                if (inner != null) inner.RestartOnEnable = _previousRestartOnEnable;
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug("FsmSuppressor: restore failed: " + e.Message);
+            }
+        }
+    }
 }

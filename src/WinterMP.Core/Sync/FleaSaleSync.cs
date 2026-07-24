@@ -35,7 +35,7 @@ namespace WinterMP.Core.Sync
         private FsmFloat? _moneyTotal;
         private FsmInt? _rentDays;
         private bool _loggedFound;
-        private bool _sellSuppressed;
+        private readonly FsmSuppressor _sellSuppressor = new FsmSuppressor();
         private bool _rentHookState;
 
         private bool _built;
@@ -55,12 +55,16 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
+            // Restore before dropping _sell, or the FSM stays dead for the rest of the
+            // process — a player who guests once could never sell at the flea market again,
+            // not even back in singleplayer.
+            _sellSuppressor.Restore();
+
             _anchor = null;
             _logic = _sell = _rentButton = null;
             _moneyTotal = null;
             _rentDays = null;
             _loggedFound = false;
-            _sellSuppressed = false;
             _rentHookState = false;
             _built = false;
             _nextProbeAt = _nextHostTickAt = _nextKeepAliveAt = _nextIntentAt = 0f;
@@ -191,9 +195,8 @@ namespace WinterMP.Core.Sync
         // only the host may sell and credit the shared wallet.
         private void SuppressLocalSaleRng()
         {
-            if (_sellSuppressed || _sell == null) return;
-            try { _sell.enabled = false; _sellSuppressed = true; }
-            catch { /* best-effort */ }
+            if (_sellSuppressor.Active || _sell == null) return;
+            _sellSuppressor.Suppress(_sell);
         }
 
         // ---- Discovery -------------------------------------------------------

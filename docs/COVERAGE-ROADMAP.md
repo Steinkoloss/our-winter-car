@@ -155,15 +155,26 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       host-authoritative-climate rule.
 
 **R2 — Synced but wrong** (shipped code that silently does nothing, or the wrong thing)
-- [ ] R2.1 **`VenttiSync` guest hooks are observers, not suppressors.** `HookOnce` uses
-      `FsmHook.OnStateEnter`, which *prepends* a callback but lets the state's own actions
-      run — so a guest's Bet/Hit/Stand still resolve on local RNG. Money reconverges via
-      `WalletState`, but the **SATSUMA car wager does not**: ownership diverges permanently.
-      The class docstring's "any car transfer runs through the host's own GameManager" is
-      false today. `GamblingSync` (slots) has the identical pattern — it only self-heals
-      because slots move money and nothing else. Needs a real suppression primitive in
-      `FsmHook` (`FleaSaleSync.SuppressLocalSaleRng`'s `fsm.enabled = false` is the closest
-      existing precedent). **Fix both together.**
+- [x] R2.1 **`VenttiSync` guest hooks are observers, not suppressors** — fixed 2026-07-24.
+      `FsmHook.OnStateEnter` *prepends* a callback but lets the state's own actions run, so a
+      guest's Bet/Hit/Stand resolved on local RNG; money reconverged via `WalletState` but the
+      SATSUMA wager diverged permanently. Fix: new `FsmSuppressor` primitive in `FsmHook.cs`
+      (disable the component, pinning `Fsm.RestartOnEnable = false` so it freezes and resumes
+      in place), applied to `Table/GameManager :: Use` on guests — the sole owner of
+      `Win car`/`Lose car`/`Win house`/`Lose house`. Verified against the decompiled
+      `PlayMaker.dll`: `Fsm.Active` gates on `owner.enabled` and `Fsm.ProcessEvent`
+      early-returns when inactive, so a disabled FSM cannot be driven by Update, a targeted
+      `SendEvent`, a global transition, or a broadcast. Slots deliberately NOT suppressed
+      (nothing durable; cutting `Buttons/Start :: Use` would freeze the reels *and* kill the
+      host's replay path) — rationale is in the `GamblingSync` docstring.
+      Also fixed alongside: the duplicate-hook latch in both classes (`HooksInstalled` was
+      all-or-nothing, so one un-Awake FSM made the 5 s probe re-prepend hooks to already-hooked
+      states → N duplicate intents per press), and `FleaSaleSync`'s suppression leak (it
+      disabled `Sell` and never restored, so a player who guested once could not sell at the
+      flea market again *even in singleplayer* until they restarted the game).
+- [ ] R2.1b Slot reels visibly flicker on a guest: the host's 1 Hz keep-alive rewrites reel
+      symbols mid-spin. Fix by parking the state and applying on the next idle tick — needs a
+      reliable "is this machine mid-spin" test, which the current dump cannot supply (R3.1b).
 - [ ] R2.2 Moose killed by a *guest* never dies for anyone else — `NpcTransform` `FlagDead`
       is only ever set in the host's `UpdateHostMovers`; there is no guest→host death report.
       The guest sees a corpse while the host keeps streaming a live pose.
@@ -201,6 +212,29 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       would freeze the guest's AI and teleport the guest's opponents onto the host's stage,
       hijacking the guest's own rally. Attempted and reverted 2026-07-24. Any real fix must
       sync `AIdrivers` `Stage` first and gate the stream on stage agreement.
+
+- [ ] R2.11 **A car/house transfer on the *host* does not reach guests.** R2.1 stops a guest
+      inventing its own outcome, but says nothing about propagating the host's. If `Lose car`
+      physically moves or removes the car, `VehicleWorldSync` carries it incidentally; if it
+      only flips a flag or writes an ES2 key, the guest keeps a stale title. The guest's world
+      stays self-consistent (its resolver is off), but the two peers do not agree about
+      ownership. Needs real action data (R3.1b) plus a wire field.
+- [ ] R2.12 **The host-side intent replay is probably already inert.** `Fsm.Active` requires
+      `owner.gameObject.active` (confirmed in the decompiled DLL), and all four
+      `GAME/Gamestuff/*` FSMs dump at `active=False` — that subtree is likely only active on
+      the client whose player has a game open. So `FsmHook.FireRemoteEntry` from
+      `TryAcceptIntent` hits an inactive FSM and does nothing unless the host is *also* sitting
+      at the table. Applies to all seven `GamblingSync` forcing paths too, and `ActionCashout`
+      additionally pays out the host's own never-spun credit meter. R2.1 did not create this —
+      it makes it visible (a guest now gets an inert table instead of a divergent one). The
+      real destination is a lease/settlement model: lease the device to one player at a time
+      and settle through the wallet, rather than puppeting the host's FSMs.
+- [ ] R2.13 **Ventti's wire fields are lossy.** `HostBroadcastIfChanged` does
+      `bet = ClampByte(ReadFloat(_betValue))`, but a car-wager stake is by definition above
+      `BigBetLimit`, so any stake > 255 mk cannot be represented — and that same clamped byte
+      is then fed into `Credit`, a float field. `V3` is hardcoded 0 despite PROTOCOL.md
+      documenting it as an outcome code. Display-only while R2.1's lockdown holds; fix as part
+      of R2.12 (needs a version bump).
 
 **R3 — Tooling debt blocking the above**
 - [x] R3.1a Dumper emits `globalTransitions` (2026-07-24, tools 0.2.0). Per-state
