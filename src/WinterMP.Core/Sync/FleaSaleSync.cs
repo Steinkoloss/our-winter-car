@@ -20,6 +20,7 @@ namespace WinterMP.Core.Sync
     internal sealed class FleaSaleSync
     {
         private const string TablePath = "FleaMarket/SaleTable";
+        private const string RentButtonPath = "FleaMarket/LOD/OpenHours/BuyTableRent";
         private const float ProbeIntervalSeconds = 5f;
         private const float HostTickSeconds = 2f;
         private const float KeepAliveSeconds = 20f;
@@ -30,6 +31,7 @@ namespace WinterMP.Core.Sync
         private Transform? _anchor;
         private PlayMakerFSM? _logic;   // SaleTable :: Logic
         private PlayMakerFSM? _sell;    // SaleTable :: Sell (RNG — suppressed on guests)
+        private PlayMakerFSM? _rentButton; // BuyTableRent :: Buy (the actual "rent a week" control)
         private FsmFloat? _moneyTotal;
         private FsmInt? _rentDays;
         private bool _loggedFound;
@@ -54,7 +56,7 @@ namespace WinterMP.Core.Sync
         public void Clear()
         {
             _anchor = null;
-            _logic = _sell = null;
+            _logic = _sell = _rentButton = null;
             _moneyTotal = null;
             _rentDays = null;
             _loggedFound = false;
@@ -204,7 +206,7 @@ namespace WinterMP.Core.Sync
 
         private void Locate()
         {
-            if (Ready && _sell != null) return;
+            if (Ready && _sell != null && _rentButton != null) return;
 
             GameObject? go;
             try { go = GameObject.Find(TablePath); }
@@ -223,6 +225,15 @@ namespace WinterMP.Core.Sync
                 _moneyTotal = _logic.FsmVariables.FindFsmFloat("MoneyTotal");
                 _rentDays = _logic.FsmVariables.FindFsmInt("RentDays");
             }
+            if (_rentButton == null)
+            {
+                GameObject? rentGo;
+                try { rentGo = GameObject.Find(RentButtonPath); }
+                catch { rentGo = null; }
+                if (rentGo != null)
+                    foreach (var fsm in rentGo.GetComponents<PlayMakerFSM>())
+                        if (fsm != null && fsm.FsmName == "Buy") { _rentButton = fsm; break; }
+            }
 
             if (!_loggedFound && Ready)
             {
@@ -237,9 +248,12 @@ namespace WinterMP.Core.Sync
         // Guest: relay the rent-table press to the host.
         private void InstallGuestHooks()
         {
-            if (_rentHookState || _logic == null) return;
-            // "Set array ID"/"RENT" flow — hook the RENT-producing state so a rent press relays.
-            if (FsmHook.OnStateEnter(_logic, "Set array ID", () => EmitIntent(FleaSaleIntent.ActionRent)))
+            if (_rentHookState || _rentButton == null) return;
+            // A rent press adds a week via BuyTableRent :: Buy "Add"; relay it so the host charges
+            // the shared wallet + advances RentDays. (The old hook was SaleTable::Logic "Set array
+            // ID", which fires when any item is PLACED on the table — spurious rent, and the real
+            // rent press never relayed.)
+            if (FsmHook.OnStateEnter(_rentButton, "Add", () => EmitIntent(FleaSaleIntent.ActionRent)))
                 _rentHookState = true;
         }
 

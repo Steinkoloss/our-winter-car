@@ -63,6 +63,12 @@ fishing minigame, host migration, water wells/taps (per-player thirst), map cloc
 
 Tick when merged. Ordered by priority (shared-state corruption first).
 
+> **Every box below is ticked — that does not mean the game is fully synced.** These 35
+> tasks were the *2026-07-21 audit's* decomposition, and they are implemented but still
+> largely **unplaytested**. A later re-audit found a whole unsynced background-economy
+> cluster plus several subsystems that bind the wrong FSM variable and silently no-op.
+> **Read §1b before concluding anything here is finished.**
+
 **Phase 0 — Housekeeping (do first; cheap, unblocks others)**
 - [x] 0.1 Correct the 4 `PLAN.md` coverage overstatements
 - [x] 0.2 Fix the vehicle-registration `RequireRoot` gate (unblocks 2.4, 3.2) — structural `Simulation/Engine` check; adds only the taxi
@@ -115,6 +121,95 @@ Tick when merged. Ordered by priority (shared-state corruption first).
 - [x] 8.2 Winter jacket / coverall worn state — extended PlayerClothingState (v79) with WinterGarment byte
 - [x] 8.3 Yard piss-stains (persistent world marks) — `PissAreaState` (109, v80) host-owned 5 stain scales
 - [x] 8.4 In-car radio / CD power+channel *(cosmetic-adjacent; lowest)* — `CarRadioState` (66, v80) host-owned channel/volume
+
+---
+
+## 1b. Round 2 — what the v80 "complete" claim missed
+
+Every box in §1 is ticked, but a 2026-07-22 re-audit (and a 2026-07-24 dump-verification
+pass) showed §1 is **not** the same thing as "every shared-state gap is closed". The tasks
+above decomposed *interactive* systems; they missed the passive daily-tick `Systems/*`
+economy, and several shipped subsystems bind the wrong FSM variable and silently no-op.
+
+Work this list the same way as §1. **Priority order — the top group corrupts shared state.**
+
+**R1 — Never synced at all** (verified: zero references anywhere in `src/WinterMP.Core`)
+- [ ] R1.1 `Systems/BankAccount` (+ `Data/InterestRate`) — the bank balance is a *separate*
+      variable from the cash `Money` global that `WalletSync` owns, and daily interest
+      accrues per-client. Balances diverge permanently.
+- [ ] R1.2 `Systems/Expenses::Rent` + `::Livingsupport` — `WelfareSync` binds only Kela.
+      Weekly rent debit, the KICKOUT eviction (destroys furniture, relocates the player) and
+      housing benefit are all unsynced.
+- [ ] R1.3 VideoPoker / Rami-Pokeri (`PERAPORTTI/.../VideoPoker`) — a *third* money machine
+      covered by neither `GamblingSync` (slots) nor `VenttiSync`. Per-client card RNG on the
+      shared wallet.
+- [ ] R1.4 `Systems/HockeyGames` incl. `Betting::Logic` + `Runkosarja` season sim — betting
+      real money on standings each client simulates independently (`GoalsSimulated` RNG).
+- [ ] R1.5 `Systems/ScrapMetalPrice` + `REPAIRSHOP/Scrapmetal/GarbageTrigger` — daily RNG
+      scrap price and the scrap-selling payout.
+- [ ] R1.6 `Sheets/DebtLetter` — an interest-bearing loan accruing per-client; payment is
+      not wallet-routed.
+- [ ] R1.7 `Database/Keys::PlayerKeys` (UncleStage / property keys) — progression + ownership.
+- [ ] R1.8 Non-project vehicle cabin climate — `VehicleClimateConfig` hardcodes SORBET and
+      CORRIS only, so taxi/GIFU/KEKMET/BACHGLOTZ cabins diverge. Violates the
+      host-authoritative-climate rule.
+
+**R2 — Synced but wrong** (shipped code that silently does nothing, or the wrong thing)
+- [ ] R2.1 **`VenttiSync` guest hooks are observers, not suppressors.** `HookOnce` uses
+      `FsmHook.OnStateEnter`, which *prepends* a callback but lets the state's own actions
+      run — so a guest's Bet/Hit/Stand still resolve on local RNG. Money reconverges via
+      `WalletState`, but the **SATSUMA car wager does not**: ownership diverges permanently.
+      The class docstring's "any car transfer runs through the host's own GameManager" is
+      false today. `GamblingSync` (slots) has the identical pattern — it only self-heals
+      because slots move money and nothing else. Needs a real suppression primitive in
+      `FsmHook` (`FleaSaleSync.SuppressLocalSaleRng`'s `fsm.enabled = false` is the closest
+      existing precedent). **Fix both together.**
+- [ ] R2.2 Moose killed by a *guest* never dies for anyone else — `NpcTransform` `FlagDead`
+      is only ever set in the host's `UpdateHostMovers`; there is no guest→host death report.
+      The guest sees a corpse while the host keeps streaming a live pose.
+- [ ] R2.3 Appliance house-fire never propagates — `FlagFire` samples
+      `Simulation::Data.ActiveStateName == "Fire"`, a one-frame transient in a continuous
+      polling loop that rests elsewhere, so it is almost never true. Ignition stays per-client.
+- [ ] R2.4 Vehicle late-join is climate-only — the join snapshot carries no engine/fuel/gear/
+      damage/tire state, *and* the vehicle CRC folds only flags+fuel, so a parked damaged
+      unowned car checksums identical on both peers and never resyncs.
+- [ ] R2.5 `CarRadioSync` station never syncs — `Channel` is bound with `FindFsmFloat` but
+      the radio's `Channel` is a Bool (the SORBET tuner float is named `Tune`), so the bind
+      is null and only `Volume` works. Bug class **D**.
+- [ ] R2.6 Guest-initiated sleep is ungated — `PlayerSleepHook.Probe` bails on `!IsHost`, so
+      only the host hooks `SleepTrigger`. A sleeping guest skips its own clock (then gets
+      snapped back by `TimeSync`) and fires time-gated FSMs locally.
+- [ ] R2.7 Ice race broadcasts no standings (in-code known limitation; the guest→host path
+      exists but there is no `ObserveHost` counterpart as rally has).
+- [ ] R2.8 Taxi fare is lost for guests — but **not** for the reason it looks like. Adding a
+      `JOBS/TAXIJOB/Customer1/TaxiWalker/.../PayMoney` controls rule *alone is a no-op*:
+      (a) the host rejects the intent because `IsGuestNear` measures against the host's copy
+      of the customer, whose pose is unsynced (the customer is not in `NpcTrafficSync`
+      `MoverDefs`), and (b) the replayed button pays the *host's* `TaxiWalker::Logic` `Cost`,
+      which is also unsynced. `TaxiFunctions::Payments` (what `TaxiJobSync` streams today) is
+      the employment payday FSM, not the per-ride fare — fix that docstring too. Needs all
+      three parts: catalog rule + customer `ScriptedMoverDef` + `Cost`/`Paid` on the wire.
+- [ ] R2.9 `JOBS/Farm/Farmer` is a walking, position-unsynced NPC, so the farm `PayMoney`
+      rule added in round 2 may also be dropped by the same proximity gate as R2.8. Same
+      question for the hitchhiker rule, whose `Timer.Money` the host overwrites every 20 s.
+- [ ] R2.10 Rally opponent cars run per-client — **do not "fix" this by streaming them.**
+      Unlike ICERACE (16 opponents partitioned into four disjoint per-venue sets), RALLY has
+      exactly **one** fleet, `RACES/RALLY/RallyCars/RALLYCAR{1,2,3}`, multiplexed across all
+      three special stages by `RallyCars::AIdrivers` (int `Stage`, events SS1/SS2/SS3), which
+      nothing syncs — while `RallySync` deliberately tracks stage progress *per player*. So
+      "host on SS1, guest on SS3" is a supported state, and host-streaming those three bodies
+      would freeze the guest's AI and teleport the guest's opponents onto the host's stage,
+      hijacking the guest's own rally. Attempted and reverted 2026-07-24. Any real fix must
+      sync `AIdrivers` `Stage` first and gate the stream on stage agreement.
+
+**R3 — Tooling debt blocking the above**
+- [ ] R3.1 `catalog/dump-*.json` carries **no action data and no FSM global transitions**
+      (`toolsVersion 0.1.0`). Consequences hit constantly: you cannot tell from the repo
+      whether a state charges money, whether `SendEvent("NORMAL")` is accepted from a resting
+      state, or where a global-only event like `SaleTable::Logic`'s `RENT` lands. Extend
+      `src/WinterMP.Tools/FsmDumperPlugin.cs` to dump `Fsm.GlobalTransitions` and per-state
+      action types, then take a fresh F9 dump. **Do this before R2.1/R2.3** — both hinge on
+      questions only a richer dump can answer.
 
 ---
 

@@ -224,6 +224,27 @@
       "requireStates": ["Wait button", "State 1"]
     },
     {
+      "pathPrefix": "JOBS/Farm/Farmer",
+      "pathContains": "/PayMoney",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathPrefix": "JOBS/JOKKE/HouseDrunkNew/KiljuBuyer",
+      "pathContains": "/PayMoney",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
+      "pathPrefix": "JOBS/KILJUGUY/HikerPivot/Hitchhiker",
+      "pathContains": "/PayMoney",
+      "fsmName": "Use",
+      "states": ["State 1"],
+      "requireStates": ["Wait button", "State 1"]
+    },
+    {
       "pathPrefix": "KEKMET(350-400psi)/LOD/Dashboard/PTO",
       "fsmName": "Use",
       "states": ["On", "Off"],

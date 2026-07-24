@@ -11,8 +11,9 @@ namespace WinterMP.Core.Sync
     /// cop cars stream their pose over <see cref="NpcTransform"/> (host-sim, guest AI frozen),
     /// but whether they are chasing and their sirens are decided per-client. The <b>host</b>
     /// owns the pursuit: it reads each POLICECAR's chase + siren and broadcasts the flags so
-    /// the pursuit and sirens agree; guests apply the siren so the lights match. DUI arrest
-    /// escalation flows through the shared wanted/jail records (4.1/4.2).
+    /// the pursuit and sirens agree; guests apply <b>only</b> the siren so the lights match
+    /// (mirroring the chase bool would make each guest raise its own fine — see Apply). DUI
+    /// arrest escalation flows through the shared wanted/jail records (4.1/4.2).
     /// </summary>
     internal sealed class PursuitSync
     {
@@ -22,20 +23,23 @@ namespace WinterMP.Core.Sync
 
         private sealed class CopCar
         {
-            public string NavPath = string.Empty;
-            public string LogicPath = string.Empty;
-            public PlayMakerFSM? Navigation;   // Navigation :: Chase (Sirens bool)
+            public string RootPath = string.Empty;     // TRAFFIC/.../POLICECARn
+            public PlayMakerFSM? SirenFsm;     // Sirens<n> :: Blinking (Siren bool + NORMAL/OFF events)
             public PlayMakerFSM? Passenger;    // CopPassenger :: Logic (Chase bool)
+            // The real siren bool lives on the car's Sirens<n>::Blinking. Navigation::Chase's
+            // "Sirens" is a GameObjectVariable (a ref to that object), so FindFsmBool there
+            // returns null — binding it was why this whole subsystem used to be a no-op.
             public FsmBool? Sirens;
+            // CopPassenger::Logic "Chase" is HOST-READ ONLY — see the note on Apply().
             public FsmBool? Chase;
+            public bool AppliedInit;
+            public bool LastAppliedSiren;
         }
 
         private readonly CopCar[] _cars =
         {
-            new CopCar { NavPath = "TRAFFIC/Police/Checkpoints/Cops/POLICECAR1/Navigation",
-                         LogicPath = "TRAFFIC/Police/Checkpoints/Cops/POLICECAR1/CopPassenger" },
-            new CopCar { NavPath = "TRAFFIC/Police/Checkpoints/Cops/POLICECAR2/Navigation",
-                         LogicPath = "TRAFFIC/Police/Checkpoints/Cops/POLICECAR2/CopPassenger" },
+            new CopCar { RootPath = "TRAFFIC/Police/Checkpoints/Cops/POLICECAR1" },
+            new CopCar { RootPath = "TRAFFIC/Police/Checkpoints/Cops/POLICECAR2" },
         };
 
         private float _nextProbeAt;
@@ -48,7 +52,7 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
-            foreach (var c in _cars) { c.Navigation = c.Passenger = null; c.Sirens = c.Chase = null; }
+            foreach (var c in _cars) { c.SirenFsm = c.Passenger = null; c.Sirens = c.Chase = null; c.AppliedInit = false; c.LastAppliedSiren = false; }
             _nextProbeAt = _nextHostTickAt = _nextKeepAliveAt = 0f;
             _outSequence = _lastRemoteSequence = 0;
             _hasLast = false;
@@ -83,6 +87,13 @@ namespace WinterMP.Core.Sync
             if (_lastRemoteSequence != 0 && (diff == 0 || diff > short.MaxValue)) return;
             _lastRemoteSequence = message.Sequence;
 
+            // Only the siren is applied. FlagCarNChase is deliberately NOT mirrored onto
+            // CopPassenger::Logic "Chase": that FSM walks Wait chase -> Distance player ->
+            // Raise fine / Set wanted, so driving it on a guest would make every guest issue
+            // its own fine and its own PoliceEvasion — which PoliceSync/WantedSync would then
+            // relay back to the host as duplicates. The chase bits stay host-owned and are
+            // broadcast for observability only; the guest sees the pursuit through the cop
+            // car's NpcTransform pose stream plus these lights.
             try
             {
                 ApplySiren(_cars[0], (message.Flags & PursuitState.FlagCar1Siren) != 0);
@@ -96,7 +107,24 @@ namespace WinterMP.Core.Sync
 
         private static void ApplySiren(CopCar car, bool on)
         {
-            if (car.Sirens != null) car.Sirens.Value = on;
+            if (car.Sirens == null) return;
+            bool edge = !car.AppliedInit || car.LastAppliedSiren != on;
+            car.AppliedInit = true;
+            car.LastAppliedSiren = on;
+
+            // Re-assert the bool on every message, not just on the edge: the 15 s keep-alive is
+            // what heals a guest whose local FSM drifted, and edge-only writes would skip it.
+            car.Sirens.Value = on;
+
+            // The blink/audio loop is event-driven, so the bool alone won't restart a resting
+            // FSM — drive the visual on the edge too. (Whether "NORMAL" is accepted from every
+            // resting state is unverified: the catalog dump carries no global transitions. The
+            // send is harmless if unhandled; a mismatch would show as lights that never start.)
+            if (edge && car.SirenFsm != null)
+            {
+                try { car.SirenFsm.SendEvent(on ? "NORMAL" : "OFF"); }
+                catch { /* best-effort */ }
+            }
         }
 
         private void HostBroadcastIfChanged(SessionManager session, bool keepAlive)
@@ -127,18 +155,47 @@ namespace WinterMP.Core.Sync
         {
             foreach (var car in _cars)
             {
+                // FsmBool refs are plain managed objects: they survive their FSM being
+                // destroyed, so a re-instantiated cop car would wedge the binding forever.
+                // Drop the vars whenever their owning component is gone (Unity fake-null).
+                if (car.SirenFsm == null) car.Sirens = null;
+                if (car.Passenger == null) car.Chase = null;
                 if (car.Sirens != null && car.Chase != null) continue;
-                if (car.Navigation == null)
+
+                if (car.SirenFsm == null)
                 {
-                    var nav = TryFind(car.NavPath, "Chase");
-                    if (nav != null) { car.Navigation = nav; car.Sirens = nav.FsmVariables.FindFsmBool("Sirens"); }
+                    // The siren child is numbered per car (POLICECAR1/Sirens1,
+                    // POLICECAR2/Sirens2), so match by prefix rather than a hardcoded
+                    // index — a build renaming the child must not silently unbind us.
+                    var siren = FindChildFsmByPrefix(car.RootPath, "Sirens", "Blinking");
+                    if (siren != null) { car.SirenFsm = siren; car.Sirens = siren.FsmVariables.FindFsmBool("Siren"); }
                 }
                 if (car.Passenger == null)
                 {
-                    var logic = TryFind(car.LogicPath, "Logic");
+                    var logic = TryFind(car.RootPath + "/CopPassenger", "Logic");
                     if (logic != null) { car.Passenger = logic; car.Chase = logic.FsmVariables.FindFsmBool("Chase"); }
                 }
             }
+        }
+
+        private static PlayMakerFSM? FindChildFsmByPrefix(string rootPath, string childPrefix, string fsmName)
+        {
+            GameObject? root;
+            try { root = GameObject.Find(rootPath); }
+            catch { return null; }
+            if (root == null) return null;
+
+            try
+            {
+                foreach (Transform child in root.transform)
+                {
+                    if (child == null || !child.name.StartsWith(childPrefix, System.StringComparison.Ordinal)) continue;
+                    foreach (var fsm in child.GetComponents<PlayMakerFSM>())
+                        if (fsm != null && fsm.FsmName == fsmName) return fsm;
+                }
+            }
+            catch { /* best-effort */ }
+            return null;
         }
 
         private static PlayMakerFSM? TryFind(string path, string fsmName)
