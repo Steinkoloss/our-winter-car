@@ -173,7 +173,12 @@ namespace WinterMP.Net
         //      ClothingStage/ClothingType).
         // v80: PissAreaState (109) mirrors the five host-owned yard piss-stain scales, and
         //      CarRadioState (66) mirrors the in-car (CORRIS/SORBET) radio channel + volume.
-        public const ushort Version = 80;
+        // v81: CarRadioState's byte "Channel" becomes a float "Tune". No radio Knob FSM has a
+        //      float named Channel (the only Channel is a *string* on the CD player), so the
+        //      old field bound null and the station never synced. The real tuner value is the
+        //      "Tune" float on StockRadio0/ButtonsRadio/Volume :: Knob; its per-station
+        //      windows are not knowable from the catalog dump, so it rides unquantized.
+        public const ushort Version = 81;
     }
 
     /// <summary>

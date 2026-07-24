@@ -19,18 +19,24 @@ namespace WinterMP.Core.Sync
         private const float HostTickSeconds = 2f;
         private const float KeepAliveSeconds = 20f;
         private const float VolumeScale = 100f;
+        private const float TuneEpsilon = 0.001f;
+
+        // Both values live on the stock radio's volume knob; the separate TunerPivot/Tuner
+        // "Knob" carries only its own copy of Tune, and the CD player's CDplrVolume "Knob"
+        // is a different device entirely. Bind the one FSM that has both.
+        private const string KnobChildPath = "StockRadio0/ButtonsRadio/Volume";
 
         private sealed class Radio
         {
             public byte Id;
             public string ContainerPath = string.Empty;
             public bool LoggedFound;
-            public FsmFloat? Channel;
+            public FsmFloat? Tune;
             public FsmFloat? Volume;
             public bool HasLast;
-            public byte LastChannel;
+            public float LastTune;
             public byte LastVolume;
-            public bool Ready => Channel != null || Volume != null;
+            public bool Ready => Tune != null || Volume != null;
         }
 
         private readonly Radio[] _radios =
@@ -47,7 +53,7 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
-            foreach (var r in _radios) { r.Channel = r.Volume = null; r.HasLast = false; r.LoggedFound = false; }
+            foreach (var r in _radios) { r.Tune = r.Volume = null; r.HasLast = false; r.LoggedFound = false; }
             _nextProbeAt = _nextHostTickAt = _nextKeepAliveAt = 0f;
             _outSequence = _lastRemoteSequence = 0;
         }
@@ -94,7 +100,7 @@ namespace WinterMP.Core.Sync
 
             try
             {
-                if (radio.Channel != null) radio.Channel.Value = message.Channel;
+                if (radio.Tune != null) radio.Tune.Value = message.Tune;
                 if (radio.Volume != null) radio.Volume.Value = message.Volume / VolumeScale;
             }
             catch (System.Exception e)
@@ -108,10 +114,13 @@ namespace WinterMP.Core.Sync
             Locate(radio);
             if (!radio.Ready) return;
             var state = BuildState(radio);
-            bool changed = !radio.HasLast || radio.LastChannel != state.Channel || radio.LastVolume != state.Volume;
+            // Tune is a continuous knob value, so compare with a deadband — an exact float
+            // compare would resend on every imperceptible drift.
+            bool changed = !radio.HasLast || Mathf.Abs(radio.LastTune - state.Tune) > TuneEpsilon
+                || radio.LastVolume != state.Volume;
             if (!changed && !keepAlive) return;
             radio.HasLast = true;
-            radio.LastChannel = state.Channel;
+            radio.LastTune = state.Tune;
             radio.LastVolume = state.Volume;
             session.SendWorldMessage(state, Channel.ReliableOrdered);
         }
@@ -122,7 +131,7 @@ namespace WinterMP.Core.Sync
             {
                 Sequence = ++_outSequence,
                 RadioId = radio.Id,
-                Channel = (byte)Mathf.Clamp(radio.Channel != null ? radio.Channel.Value : 0f, 0f, 255f),
+                Tune = radio.Tune != null ? radio.Tune.Value : 0f,
                 Volume = (byte)Mathf.Clamp((radio.Volume != null ? radio.Volume.Value : 0f) * VolumeScale, 0f, 255f),
             };
         }
@@ -135,14 +144,21 @@ namespace WinterMP.Core.Sync
             catch { return; }
             if (go == null) return;
 
-            foreach (var fsm in go.GetComponentsInChildren<PlayMakerFSM>(true))
+            // Target the knob by path instead of taking the first FSM named "Knob" in the
+            // subtree: each radio has three of them (tuner, radio volume, CD volume) and
+            // hierarchy order decided which one we bound.
+            Transform? knob;
+            try { knob = go.transform.Find(KnobChildPath); }
+            catch { knob = null; }
+            if (knob == null) return;
+
+            foreach (var fsm in knob.GetComponents<PlayMakerFSM>())
             {
                 if (fsm == null || fsm.FsmName != "Knob") continue;
-                var channel = fsm.FsmVariables.FindFsmFloat("Channel");
-                var volume = fsm.FsmVariables.FindFsmFloat("Volume");
-                if (channel == null && volume == null) continue;
-                radio.Channel = channel;
-                radio.Volume = volume;
+                // "Tune" is the station value. There is no float named "Channel" anywhere on
+                // these FSMs — the old bind was silently null, so only volume ever synced.
+                radio.Tune = fsm.FsmVariables.FindFsmFloat("Tune");
+                radio.Volume = fsm.FsmVariables.FindFsmFloat("Volume");
                 break;
             }
 
