@@ -181,9 +181,20 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
 - [ ] R2.3 Appliance house-fire never propagates — `FlagFire` samples
       `Simulation::Data.ActiveStateName == "Fire"`, a one-frame transient in a continuous
       polling loop that rests elsewhere, so it is almost never true. Ignition stays per-client.
-- [ ] R2.4 Vehicle late-join is climate-only — the join snapshot carries no engine/fuel/gear/
-      damage/tire state, *and* the vehicle CRC folds only flags+fuel, so a parked damaged
-      unowned car checksums identical on both peers and never resyncs.
+- [x] R2.4a Vehicle late-join was climate-only — fixed 2026-07-24. The join snapshot called
+      `BuildJoinClimateSnapshots()`, so a late joiner started with whatever engine/fuel/gear/
+      damage/tire state its *own* save held. It now sends `BuildJoinVehicleSnapshots()`, which
+      reuses the existing full `BuildVehicleResyncMessages()` set (VehicleState + climate).
+- [ ] R2.4b The vehicle CRC still folds only `id`+`flags`+`fuel`, so a parked damaged unowned
+      car checksums identical on both peers and never triggers a targeted resync. **The trap
+      that makes this non-trivial:** damage is held in *different fields per role* — the owner
+      accumulates `SyncedItem.LiveDamageMask`, a receiver stores `AppliedDamageMask`. Folding
+      either one naively mismatches by construction and would cause the perpetual false-mismatch
+      resync storm this file was already burned by (see the comment in `ComputeVehicleCrc`).
+      The likely-correct fold is the *union* `LiveDamageMask | AppliedDamageMask`, which is
+      symmetric for a car nobody currently owns — but that must be confirmed in a real 2-player
+      session before shipping, because getting it wrong degrades far worse than the gap it
+      closes. Same question for the tire/drivetrain condition fields.
 - [ ] R2.5 `CarRadioSync` station never syncs — `Channel` is bound with `FindFsmFloat` but
       the radio's `Channel` is a Bool (the SORBET tuner float is named `Tune`), so the bind
       is null and only `Volume` works. Bug class **D**.

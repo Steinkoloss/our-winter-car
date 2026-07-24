@@ -206,8 +206,8 @@ namespace WinterMP.Core.Sync
             if (despawns.ItemIds.Count > 0)
                 yield return despawns;
 
-            foreach (var climate in _vehicles.BuildJoinClimateSnapshots())
-                yield return climate;
+            foreach (var vehicle in _vehicles.BuildJoinVehicleSnapshots())
+                yield return vehicle;
 
             // After the item snapshot (adoption relies on the joiner having seen the
             // host-known id set first): re-send this session's spill manifests so a

@@ -98,15 +98,15 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        internal IEnumerable<VehicleClimate> BuildJoinClimateSnapshots()
+        // The join snapshot used to carry climate ONLY, so a late joiner started with a car
+        // whose engine/fuel/gear/damage/tire state was whatever its own save happened to hold.
+        // Nothing corrected it afterwards either: ComputeVehicleCrc folds only flags+fuel, so
+        // a parked damaged car checksums identical on both peers and never triggers the
+        // targeted resync that would have carried the rest. Send the same full set the resync
+        // path already builds.
+        internal IEnumerable<IMessage> BuildJoinVehicleSnapshots()
         {
-            foreach (var item in _items.Items.Values)
-            {
-                if (!item.IsVehicle) continue;
-                var climate = TryBuildVehicleClimate(item);
-                if (climate != null)
-                    yield return climate;
-            }
+            return BuildVehicleResyncMessages();
         }
 
         internal bool TryReadVehicleChecksum(SyncedItem item, out byte flags, out ushort rpm, out byte fuel,
