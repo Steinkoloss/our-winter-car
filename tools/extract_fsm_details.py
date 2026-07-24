@@ -27,6 +27,15 @@ def fmt(f: dict) -> str:
         actions = [a for a in s.get("actionTypes", []) if a]
         if actions:
             lines.append(f"    actions: {', '.join(actions)}")
+    gts = f.get("globalTransitions")
+    if gts:
+        lines.append("  globalTransitions: "
+                     + ", ".join(f"{t.get('event')}->{t.get('to')}" for t in gts))
+    elif gts is None:
+        # Pre-0.2.0 dump. An event listed with no state transition may still be a live
+        # global entry point, so absence here means "unknown", not "none" — say so rather
+        # than letting a reader conclude the event goes nowhere.
+        lines.append("  globalTransitions: (absent from this dump — re-dump with tools >= 0.2.0)")
     ev = ", ".join(e for e in f.get("events", []) if e)
     lines.append(f"  events: {ev}")
     var = f.get("variables", {})

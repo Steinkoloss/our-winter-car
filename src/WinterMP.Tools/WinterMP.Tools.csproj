@@ -8,6 +8,10 @@
     <Description>WinterMP dev tools plugin: FSM/object catalog dumper for sync catalog generation.</Description>
     <BepInExPluginGuid>com.ourwintercar.wintermp.tools</BepInExPluginGuid>
     <BepInExPluginName>WinterMP Tools</BepInExPluginName>
+    <!-- Lands in every dump's meta.toolsVersion. Bump when the dump SCHEMA changes, so a
+         stale dump is identifiable at a glance instead of silently missing fields.
+         0.2.0 = per-state actionTypes + FSM globalTransitions. -->
+    <Version>0.2.0</Version>
     <MwcManaged>$(MwcGamePath)/mywintercar_Data/Managed</MwcManaged>
   </PropertyGroup>
 

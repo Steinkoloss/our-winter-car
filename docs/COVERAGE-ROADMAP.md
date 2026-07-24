@@ -203,13 +203,16 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       sync `AIdrivers` `Stage` first and gate the stream on stage agreement.
 
 **R3 — Tooling debt blocking the above**
-- [ ] R3.1 `catalog/dump-*.json` carries **no action data and no FSM global transitions**
-      (`toolsVersion 0.1.0`). Consequences hit constantly: you cannot tell from the repo
-      whether a state charges money, whether `SendEvent("NORMAL")` is accepted from a resting
-      state, or where a global-only event like `SaleTable::Logic`'s `RENT` lands. Extend
-      `src/WinterMP.Tools/FsmDumperPlugin.cs` to dump `Fsm.GlobalTransitions` and per-state
-      action types, then take a fresh F9 dump. **Do this before R2.1/R2.3** — both hinge on
-      questions only a richer dump can answer.
+- [x] R3.1a Dumper emits `globalTransitions` (2026-07-24, tools 0.2.0). Per-state
+      `actionTypes` was already emitted — it just post-dates the dump on disk.
+- [ ] R3.1b **Take a fresh F9 dump.** `catalog/dump-23268598.json` is from 2026-06-13 at
+      `toolsVersion 0.1.0`, so it has *no* action data and *no* global transitions — 0 of its
+      8,615 records carry `actionTypes`. That is why so much of §R2 reads "unverifiable":
+      you cannot tell from the repo whether a state charges money, whether
+      `SendEvent("NORMAL")` is accepted from a resting state, or where a global-only event
+      like `SaleTable::Logic`'s `RENT` lands. Needs the game running, so it is a **human
+      step**: launch with WinterMP.Tools deployed, press F9, commit the new dump.
+      **Do this before R2.1/R2.3** — both hinge on questions only a richer dump can answer.
 
 ---
 

@@ -7,7 +7,7 @@ Per-game-build data describing *what* gets synchronized (PLAN.md §4.2).
 | File | Purpose |
 |------|---------|
 | `sync-catalog.json` | **Shipped with the mod.** Curated rules the runtime loads. |
-| `dump-23268598.json` | **Dev reference** for Steam build 23268598 (GAME scene, post-sleep F9 dump 2026-06-13). Full F9 dump (~8600 FSMs). Diff across patches with `tools/catalog_diff.py`. |
+| `dump-23268598.json` | **Dev reference** for Steam build 23268598 (GAME scene, post-sleep F9 dump 2026-06-13). Full F9 dump (~8600 FSMs). ⚠ `toolsVersion 0.1.0` — **no `actionTypes`, no `globalTransitions`**; re-dump with tools ≥ 0.2.0 before relying on it for sync work. Diff across patches with `tools/catalog_diff.py`. |
 
 ## Rule sections in `sync-catalog.json`
 
@@ -47,6 +47,11 @@ Shared rule fields:
    Schema v2 dumps also include each state’s PlayMaker action type names, which are
    essential when a transition shape alone cannot prove whether it charges money,
    rolls RNG, spawns an object, or only updates presentation.
+   **Check `meta.toolsVersion` before trusting a dump.** `0.1.0` has neither
+   `actionTypes` nor `globalTransitions`; `0.2.0` has both. Without
+   `globalTransitions` an event can appear in `events[]` with no state pointing at
+   it and still be a live entry point — absence reads as "unknown", not "none".
+   `dump-23268598.json` is `0.1.0`, so it cannot answer either question.
 2. Find the FSM: `python tools/extract_fsm_details.py dump.json show:ButtonFoo`
 3. Add an entry to the right section in `sync-catalog.json`.
 4. Rebuild — `sync-catalog.json` deploys next to `WinterMP.Core.dll`.

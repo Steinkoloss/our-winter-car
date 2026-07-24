@@ -233,6 +233,26 @@ namespace WinterMP.Tools
                 }
                 json.EndArray();
 
+                // Global transitions are how most game FSMs are actually driven from the
+                // outside (SendEvent("RENT"), "NORMAL", ...). Without them a dump shows an
+                // event in the events[] list with no state referencing it, and you cannot
+                // tell where — or whether — firing it lands. Sync work leans on this to
+                // pick suppression/replay targets, so dump it alongside the per-state ones.
+                json.Key("globalTransitions");
+                json.BeginArray();
+                var globalTransitions = ReflectionUtil.GetMember(fsm, "GlobalTransitions") as IEnumerable;
+                if (globalTransitions != null)
+                {
+                    foreach (var transition in globalTransitions)
+                    {
+                        json.BeginObject();
+                        json.Key("event"); json.Value(ReflectionUtil.GetString(transition, "EventName"));
+                        json.Key("to"); json.Value(ReflectionUtil.GetString(transition, "ToState"));
+                        json.EndObject();
+                    }
+                }
+                json.EndArray();
+
                 json.Key("variables");
                 json.BeginObject();
                 object? variables = ReflectionUtil.GetMember(fsm, "Variables");
