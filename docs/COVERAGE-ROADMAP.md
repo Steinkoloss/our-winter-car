@@ -120,7 +120,7 @@ Tick when merged. Ordered by priority (shared-state corruption first).
 - [x] 8.1 PlayerAlco (BAC) reconnect persistence — extended PlayerNeedsReport+GuestSpawn (v78) mirroring the Dirtiness add across 5 files
 - [x] 8.2 Winter jacket / coverall worn state — extended PlayerClothingState (v79) with WinterGarment byte
 - [x] 8.3 Yard piss-stains (persistent world marks) — `PissAreaState` (109, v80) host-owned 5 stain scales
-- [x] 8.4 In-car radio / CD power+channel *(cosmetic-adjacent; lowest)* — `CarRadioState` (66, v80) host-owned channel/volume
+- [x] 8.4 In-car radio / CD power+channel *(cosmetic-adjacent; lowest)* — `CarRadioState` (66, v80) host-owned channel/volume; the station half was a silent no-op until **v81** (see §1b R2.5)
 
 ---
 
@@ -195,9 +195,15 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       symmetric for a car nobody currently owns — but that must be confirmed in a real 2-player
       session before shipping, because getting it wrong degrades far worse than the gap it
       closes. Same question for the tire/drivetrain condition fields.
-- [ ] R2.5 `CarRadioSync` station never syncs — `Channel` is bound with `FindFsmFloat` but
-      the radio's `Channel` is a Bool (the SORBET tuner float is named `Tune`), so the bind
-      is null and only `Volume` works. Bug class **D**.
+- [x] R2.5 `CarRadioSync` station never synced — fixed 2026-07-24 (protocol **v81**). No radio
+      Knob FSM has a *float* named `Channel` (the only `Channel` in the subtree is a string on
+      the CD player), so `FindFsmFloat("Channel")` bound null and only `Volume` worked — bug
+      class **D**. The station value is `Tune`. Also fixed a second fault: `Locate()` took the
+      *first* FSM named "Knob" in the subtree, but each radio has three (tuner, radio volume,
+      CD volume), so hierarchy order decided which was bound; it now targets
+      `StockRadio0/ButtonsRadio/Volume :: Knob` by path, the one FSM carrying both `Tune` and
+      `Volume`. Wire field `byte Channel` → `float Tune`, unquantized (the per-station windows
+      are not knowable from a dump without action data).
 - [ ] R2.6 Guest-initiated sleep is ungated — `PlayerSleepHook.Probe` bails on `!IsHost`, so
       only the host hooks `SleepTrigger`. A sleeping guest skips its own clock (then gets
       snapped back by `TimeSync`) and fires time-gated FSMs locally.
