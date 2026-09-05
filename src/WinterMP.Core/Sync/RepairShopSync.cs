@@ -55,11 +55,18 @@ namespace WinterMP.Core.Sync
         private float _lastCost = float.NaN;
         private string _lastJobs = string.Empty;
 
-        // Capture-and-pair (host side).
-        private FleetariOrderIntent? _pendingIntent;
-        private byte _pendingIntentPlayer;
-        private float _pendingIntentExpiresAt;
-        private ushort _lastGuestIntentSequence;
+        // Capture-and-pair (host side), keyed per player like MailOrderSync: one shared
+        // slot/latch would let guest A's confirmed order block or evict guest B's.
+        private sealed class PendingIntent
+        {
+            public FleetariOrderIntent Message = null!;
+            public float ExpiresAt;
+        }
+
+        private readonly System.Collections.Generic.Dictionary<byte, PendingIntent> _pendingIntents =
+            new System.Collections.Generic.Dictionary<byte, PendingIntent>();
+        private readonly System.Collections.Generic.Dictionary<byte, ushort> _lastGuestIntentSequences =
+            new System.Collections.Generic.Dictionary<byte, ushort>();
         private ushort _outIntentSequence;
 
         private bool Ready => _fsm != null && _order != null;
@@ -76,11 +83,16 @@ namespace WinterMP.Core.Sync
             _hasLast = false;
             _lastCost = float.NaN;
             _lastJobs = string.Empty;
-            _pendingIntent = null;
-            _pendingIntentPlayer = 0;
-            _pendingIntentExpiresAt = 0f;
-            _lastGuestIntentSequence = 0;
+            _pendingIntents.Clear();
+            _lastGuestIntentSequences.Clear();
             _outIntentSequence = 0;
+        }
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop stale state.</summary>
+        public void ForgetPlayer(byte playerId)
+        {
+            _lastGuestIntentSequences.Remove(playerId);
+            _pendingIntents.Remove(playerId);
         }
 
         public void Update(SessionManager session)
@@ -143,16 +155,18 @@ namespace WinterMP.Core.Sync
         {
             if (!IsValid(message)) return false;
 
-            if (_lastGuestIntentSequence != 0)
+            if (_lastGuestIntentSequences.TryGetValue(message.PlayerId, out ushort previous))
             {
-                ushort difference = (ushort)(message.Sequence - _lastGuestIntentSequence);
+                ushort difference = (ushort)(message.Sequence - previous);
                 if (difference == 0 || difference > short.MaxValue) return false;
             }
-            _lastGuestIntentSequence = message.Sequence;
+            _lastGuestIntentSequences[message.PlayerId] = message.Sequence;
 
-            _pendingIntent = message;
-            _pendingIntentPlayer = message.PlayerId;
-            _pendingIntentExpiresAt = Time.unscaledTime + IntentTtlSeconds;
+            _pendingIntents[message.PlayerId] = new PendingIntent
+            {
+                Message = message,
+                ExpiresAt = Time.unscaledTime + IntentTtlSeconds,
+            };
             return true;
         }
 
@@ -160,8 +174,8 @@ namespace WinterMP.Core.Sync
         public bool PrepareIntentForPurchase(PurchaseIntent purchase)
         {
             if (!IsFleetariPayment(purchase)) return true;
-            if (_pendingIntent == null || _pendingIntentPlayer != purchase.PlayerId
-                || Time.unscaledTime > _pendingIntentExpiresAt)
+            if (!_pendingIntents.TryGetValue(purchase.PlayerId, out var pending)
+                || Time.unscaledTime > pending.ExpiresAt)
             {
                 WinterMPPlugin.Log.LogWarning($"RepairShopSync: missing/expired Fleetari order for player {purchase.PlayerId}.");
                 return false;
@@ -178,10 +192,10 @@ namespace WinterMP.Core.Sync
         /// <summary>Host phase 2: payment validated — commit the guest's descriptor into the host order.</summary>
         public void CommitIntentForPurchase(PurchaseIntent purchase)
         {
-            if (!IsFleetariPayment(purchase) || _pendingIntent == null || _pendingIntentPlayer != purchase.PlayerId)
+            if (!IsFleetariPayment(purchase) || !_pendingIntents.TryGetValue(purchase.PlayerId, out var pending))
                 return;
-            var message = _pendingIntent;
-            _pendingIntent = null;
+            var message = pending.Message;
+            _pendingIntents.Remove(purchase.PlayerId);
             Scan(force: true);
             if (!Ready) return;
             ApplyRecord(message.Flags, message.JobTotalCost, message.CarPaintColor, message.RimPaintColor,
@@ -299,8 +313,15 @@ namespace WinterMP.Core.Sync
 
         private void ExpirePendingIntent()
         {
-            if (_pendingIntent != null && Time.unscaledTime > _pendingIntentExpiresAt)
-                _pendingIntent = null;
+            if (_pendingIntents.Count == 0) return;
+            System.Collections.Generic.List<byte>? expired = null;
+            foreach (var pair in _pendingIntents)
+            {
+                if (Time.unscaledTime > pair.Value.ExpiresAt)
+                    (expired ?? (expired = new System.Collections.Generic.List<byte>())).Add(pair.Key);
+            }
+            if (expired != null)
+                for (int i = 0; i < expired.Count; i++) _pendingIntents.Remove(expired[i]);
         }
 
         private static bool IsFleetariPayment(PurchaseIntent purchase)

@@ -80,7 +80,11 @@ namespace WinterMP.Core.Sync
 
         private readonly List<Source> _sources = new List<Source>();
         private readonly Dictionary<uint, Source> _byId = new Dictionary<uint, Source>();
-        private readonly Dictionary<byte, ushort> _lastIntentSequences = new Dictionary<byte, ushort>();
+        // Keyed by (player, source): guests count intents per source, so a per-player-only
+        // latch would reject a second stove/sauna's fresh low counter as stale.
+        private readonly Dictionary<ulong, ushort> _lastIntentSequences = new Dictionary<ulong, ushort>();
+
+        private static ulong IntentKey(byte playerId, uint sourceId) => ((ulong)playerId << 32) | sourceId;
         private bool _built;
         private float _nextProbeAt;
         private float _nextHostTickAt;
@@ -95,6 +99,15 @@ namespace WinterMP.Core.Sync
             _nextProbeAt = 0f;
             _nextHostTickAt = 0f;
             _nextKeepAliveAt = 0f;
+        }
+
+        /// <summary>Host: a player (re)joined — its intent counters restarted; drop stale latches.</summary>
+        public void ForgetPlayer(byte playerId)
+        {
+            var stale = new List<ulong>();
+            foreach (var key in _lastIntentSequences.Keys)
+                if ((byte)(key >> 32) == playerId) stale.Add(key);
+            for (int i = 0; i < stale.Count; i++) _lastIntentSequences.Remove(stale[i]);
         }
 
         public void Update(SessionManager session)
@@ -180,7 +193,8 @@ namespace WinterMP.Core.Sync
                     $"HeatSourceSync: dropped invalid or distant intent {intent.SourceId:X8} action {intent.Action} from player {intent.PlayerId}.");
                 return false;
             }
-            if (_lastIntentSequences.TryGetValue(intent.PlayerId, out ushort previous))
+            ulong intentKey = IntentKey(intent.PlayerId, intent.SourceId);
+            if (_lastIntentSequences.TryGetValue(intentKey, out ushort previous))
             {
                 ushort difference = (ushort)(intent.Sequence - previous);
                 if (difference == 0 || difference > short.MaxValue)
@@ -191,7 +205,7 @@ namespace WinterMP.Core.Sync
                 }
             }
 
-            _lastIntentSequences[intent.PlayerId] = intent.Sequence;
+            _lastIntentSequences[intentKey] = intent.Sequence;
             FireEvent(fsm, eventName);
 
             SyncEventLog.Record("heat-intent", $"{intent.SourceId:X8} action {intent.Action} player {intent.PlayerId}");

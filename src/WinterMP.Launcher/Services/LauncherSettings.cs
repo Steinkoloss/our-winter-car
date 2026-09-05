@@ -9,6 +9,7 @@ namespace WinterMP.Launcher.Services
             "WinterMP", "launcher-settings.json");
 
         public DateTime? LastUpdateCheckUtc { get; set; }
+        public bool AutoInstallEnabled { get; set; } = true;
         /// <summary>Manual override when Steam library detection fails.</summary>
         public string? CustomGameDir { get; set; }
 

@@ -24,12 +24,73 @@ namespace WinterMP.Core.Sync
 
         public void BindVehicles(VehicleWorldSync vehicles) => _vehicles = vehicles;
 
+        /// <summary>
+        /// A player was (re)admitted — its per-item sequence counters restarted. Downgrade
+        /// every same-sender latch to the owner-change sentinel (and zero the sequence) so
+        /// the next packet rebases instead of being stale-dropped; the per-player dict
+        /// resets in OnPlayerAdmitted don't cover these per-item fields. Runs on EVERY
+        /// client (PlayerSpawn carries the signal to guests). RemoteOwner itself is left
+        /// alone — clearing it has physics side effects the stale-clear timers own.
+        /// </summary>
+        public void ForgetPlayerItemSequences(byte playerId)
+        {
+            foreach (var item in _items.Values)
+            {
+                if (item.LastRemoteSequenceOwner == playerId || item.RemoteOwner == playerId)
+                {
+                    item.LastRemoteSequenceOwner = WorldSyncIds.NoOwner;
+                    item.LastRemoteSequence = 0;
+                }
+                if (item.LastDamageSequenceOwner == playerId)
+                {
+                    item.LastDamageSequenceOwner = WorldSyncIds.NoOwner;
+                    item.LastDamageSequence = 0;
+                    item.HasDamageSequence = false;
+                }
+                if (item.LastConditionSequenceOwner == playerId)
+                {
+                    item.LastConditionSequenceOwner = WorldSyncIds.NoOwner;
+                    item.LastConditionSequence = 0;
+                }
+                if (item.LastClimateSequenceOwner == playerId)
+                {
+                    item.LastClimateSequenceOwner = WorldSyncIds.NoOwner;
+                    item.LastClimateSequence = 0;
+                }
+                if (item.LastRemoteBrewOwner == playerId)
+                {
+                    item.LastRemoteBrewOwner = WorldSyncIds.NoOwner;
+                    item.LastRemoteBrewSequence = 0;
+                }
+                if (item.LastRemoteFluidOwner == playerId)
+                {
+                    item.LastRemoteFluidOwner = WorldSyncIds.NoOwner;
+                    item.LastRemoteFluidSequence = 0;
+                }
+            }
+        }
+
+        /// <summary>The LOCAL player's world position (subsystems validating the host's own actions).</summary>
+        public bool TryGetLocalPlayerPosition(out Vector3 position)
+        {
+            _bridge.FindLocalPlayer();
+            var player = _bridge.LocalPlayer;
+            if (player == null)
+            {
+                position = Vector3.zero;
+                return false;
+            }
+            position = player.position;
+            return true;
+        }
+
         internal IEnumerable<uint> SessionDespawnedIds => _sessionDespawnedItems;
         internal IDictionary<uint, SyncedItem> Items => _items;
         public int ItemCount => _items.Count;
 
         internal void Clear()
         {
+            _vehicles?.ClearDamageHooks();
             _items.Clear();
             _trackedBodies.Clear();
             _pendingItemPoses.Clear();
@@ -46,6 +107,7 @@ namespace WinterMP.Core.Sync
 
         internal void ReleaseSession()
         {
+            _vehicles?.ClearDamageHooks();
             float now = Time.unscaledTime;
             foreach (var item in _items.Values)
             {

@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using WinterMP.Core.Catalog;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
@@ -516,11 +517,11 @@ namespace WinterMP.Core.Sync
                 }
 
                 if (item.PartBreakagesFsm == null
-                    && fsm.FsmName == "Damages"
-                    && fsm.gameObject.name == "PartBreakages")
+                    && SyncCatalog.VehicleDamage != null
+                    && fsm.FsmName == SyncCatalog.VehicleDamage.FsmName
+                    && fsm.gameObject.name == SyncCatalog.VehicleDamage.ObjectName)
                 {
                     item.PartBreakagesFsm = fsm;
-                    item.PartBreakageChanceVar = fsm.FsmVariables.FindFsmFloat("Chance");
                 }
 
                 if (item.GearVar == null && fsm.FsmName == "Gears" && fsm.gameObject.name == "Drivetrain")

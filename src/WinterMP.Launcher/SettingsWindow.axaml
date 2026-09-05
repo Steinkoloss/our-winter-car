@@ -71,6 +71,7 @@
                 </Border>
 
                 <StackPanel Margin="4,0,0,8">
+                    <Button Content="Install / Repair" Click="RepairMod_Click" HorizontalAlignment="Left" Margin="0,0,0,10" />
                     <Button Content="Remove mod from game" Click="RemoveMod_Click"
                             HorizontalAlignment="Left" Background="#FF5A2C2C" />
                     <TextBlock Classes="hint" Margin="0,10,0,0"

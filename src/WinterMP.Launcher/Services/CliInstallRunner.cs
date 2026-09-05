@@ -65,6 +65,8 @@ namespace WinterMP.Launcher.Services
 
                 log.Add($"Game: {game.GameDir} (build {game.BuildId ?? "?"})");
                 string result = BepInExInstaller.InstallOrRepair(game.GameDir);
+                settings.AutoInstallEnabled = true;
+                settings.Save();
                 log.Add(result);
                 WriteLog(log);
 

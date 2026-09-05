@@ -36,6 +36,9 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<byte, Record> _records = new Dictionary<byte, Record>();
         private readonly Dictionary<byte, ushort> _lastIntentSequence = new Dictionary<byte, ushort>();
         private PlayMakerFSM? _corrisRace;
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _lastIntentSequence.Remove(playerId);
         private FsmFloat? _time;
         private FsmBool? _checkpoint1;
         private FsmBool? _checkpoint2;
@@ -88,20 +91,49 @@ namespace WinterMP.Core.Sync
             Scan();
             if (session.IsHost)
             {
+                ObserveHost(session);
                 Broadcast(session);
                 return;
             }
             ObserveGuest(session);
         }
 
-        // KNOWN LIMITATION (unfixed, needs in-game work): unlike RallySync, the host does
-        // NOT observe its OWN ice-race driving — only guest drivers produce records (via
-        // TryAcceptIntent). So a host-driven ice race does not sync its standings to guests.
-        // A fix must mirror RallySync.ObserveHostStage, but IceRaceSync.TryAdvance needs the
-        // driver's world position (to pick time-trial vs lap start and gate markers) and the
-        // host's own PLAYER pose isn't currently available here (guest poses arrive over the
-        // net; the host's does not). Plumb a local-player-pose source + validate mode
-        // detection in a 2-player session before enabling. Tracked for the M10 playtest.
+        // Host observes its OWN driving with the same FSM edges the guest path reports
+        // (R2.7, mirroring RallySync.ObserveHostStage): the edges feed TryAdvance directly —
+        // no wire hop, no freshness check, and the pose is our own local player (via the
+        // world-sync bridge), so the time-trial-vs-lap mode pick is if anything more exact
+        // than the guest path's network pose. The _lastGuest* edge baselines are shared with
+        // ObserveGuest — safe, one role runs per session.
+        private void ObserveHost(SessionManager session)
+        {
+            if (session.PlayerCount == 0) return;
+            if (_corrisRace == null || _time == null || _checkpoint1 == null || _checkpoint2 == null || _laps == null) return;
+
+            float currentTime = _time.Value;
+            bool cp1 = _checkpoint1.Value;
+            bool cp2 = _checkpoint2.Value;
+            int laps = _laps.Value;
+
+            if (_items.TryGetLocalPlayerPosition(out Vector3 pose))
+            {
+                if (currentTime > 0.01f && _lastGuestTime <= 0.01f) HostAdvance(session, IceRaceIntent.MarkerStart, pose);
+                if (cp1 && !_lastGuestCheckpoint1) HostAdvance(session, IceRaceIntent.MarkerCheckpoint1, pose);
+                if (cp2 && !_lastGuestCheckpoint2) HostAdvance(session, IceRaceIntent.MarkerCheckpoint2, pose);
+                if (laps > _lastGuestLaps) HostAdvance(session, IceRaceIntent.MarkerFinish, pose);
+            }
+
+            _lastGuestTime = currentTime;
+            _lastGuestCheckpoint1 = cp1;
+            _lastGuestCheckpoint2 = cp2;
+            _lastGuestLaps = laps;
+        }
+
+        private void HostAdvance(SessionManager session, byte marker, Vector3 pose)
+        {
+            if (!TryAdvance(session.LocalPlayerId, marker, pose, out var record)) return;
+            session.SendWorldMessage(ToMessage(record), Channel.ReliableOrdered);
+            WinterMPPlugin.Log.LogInfo($"IceRaceSync: host marker {marker}, lap {record.Laps}.");
+        }
 
         public IEnumerable<IceRaceState> BuildSnapshots()
         {

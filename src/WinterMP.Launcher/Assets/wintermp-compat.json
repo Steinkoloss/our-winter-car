@@ -1,5 +1,10 @@
-﻿{
-  "modVersion": "0.1.30",
-  "protocolVersion": 80,
-  "testedGameBuildIds": []
+{
+  "modVersion": "0.1.31",
+  "protocolVersion": 94,
+  "testedGameBuildIds": [],
+  "releaseChannel": "test",
+  "gameVersion": "v.260516-01",
+  "targetGameBuildIds": [
+    "23268598"
+  ]
 }

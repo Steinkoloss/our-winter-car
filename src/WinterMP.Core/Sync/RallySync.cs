@@ -60,6 +60,13 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<byte, Record> _records = new Dictionary<byte, Record>();
         private readonly Dictionary<byte, ushort> _lastIntentSequence = new Dictionary<byte, ushort>();
         private readonly Dictionary<byte, bool> _guestStartObserved = new Dictionary<byte, bool>();
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop its stale latches.</summary>
+        public void ForgetPlayer(byte playerId)
+        {
+            _lastIntentSequence.Remove(playerId);
+            _guestStartObserved.Remove(playerId);
+        }
         private readonly Dictionary<uint, bool> _guestCheckpointObserved = new Dictionary<uint, bool>();
         private readonly Dictionary<byte, bool> _hostStartObserved = new Dictionary<byte, bool>();
         private readonly Dictionary<uint, bool> _hostCheckpointObserved = new Dictionary<uint, bool>();

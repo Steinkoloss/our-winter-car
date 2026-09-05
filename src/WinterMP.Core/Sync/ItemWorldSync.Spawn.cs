@@ -98,6 +98,9 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<byte, ushort> _lastGuestSpawnSequences = new Dictionary<byte, ushort>();
         private ushort _outSpawnSequence;
 
+        /// <summary>Host: a player (re)joined — its spawn counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayerSpawnSequence(byte playerId) => _lastGuestSpawnSequences.Remove(playerId);
+
         private static long SpawnKey(uint containerId, ushort epoch) => ((long)containerId << 16) | epoch;
 
         private ushort MintSpawnEpoch(uint containerId)

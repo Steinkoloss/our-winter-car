@@ -51,6 +51,12 @@ namespace WinterMP.Core.Session
                 ReturningGuest = GuestProfileStore.TryGet(peer.Value, out _, out _),
             };
 
+            // Every (re)admission restarts the remote's per-subsystem intent counters (its
+            // sync state clears on scene/menu transitions), while our per-player dedup
+            // latches would survive — dropping every report from the returning player as
+            // "stale" until it out-counted its previous life. Reset them for this slot.
+            Sync.WorldSyncManager.Instance?.OnPlayerAdmitted(player.PlayerId);
+
             SendAcceptedHandshake(peer, player.PlayerId);
 
             // Introduce existing players to the newcomer...

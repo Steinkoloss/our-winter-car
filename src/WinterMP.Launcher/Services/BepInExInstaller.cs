@@ -71,11 +71,30 @@ namespace WinterMP.Launcher.Services
 
         public static bool VendorPackagePresent() => FindBepInExZip() != null;
 
-        public static bool IsFullyInstalled(string gameDir) =>
-            GetStatus(gameDir) == BepInExStatus.Ready && GetInstalledModVersion(gameDir) != null;
+        public static bool IsFullyInstalled(string gameDir)
+        {
+            string dir = Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP");
+            var manifest = CompatManifest.LoadFrom(dir);
+            return GetStatus(gameDir) == BepInExStatus.Ready && manifest != null && manifest.ValidatePayload(dir) == null;
+        }
+
+        public static bool NeedsBundledRepair(string gameDir)
+        {
+            if (!IsFullyInstalled(gameDir)) return true;
+            string? installed = GetInstalledModVersion(gameDir);
+            return ModVersionHelper.TryParse(installed, out var version)
+                && ModVersionHelper.IsNewerThan(ModMeta.ModVersion, version);
+        }
 
         public static string InstallOrRepair(string gameDir)
         {
+            GameLauncher.RequireGameClosed();
+            if (GameLocator.TryFromDirectory(gameDir) == null)
+                throw new InvalidOperationException("The selected folder does not contain My Winter Car.");
+            var manifest = CompatManifest.Load();
+            string? payloadError = manifest?.ValidatePayload();
+            if (manifest == null || payloadError != null)
+                throw new InvalidOperationException(payloadError ?? "Mod compatibility manifest is missing or invalid.");
             if (!ModPayload.PayloadPresent())
             {
                 throw new InvalidOperationException(
@@ -123,7 +142,7 @@ namespace WinterMP.Launcher.Services
                     "• Wrong game folder — open Settings and browse to the folder that contains the game .exe");
             }
 
-            if (GetInstalledModVersion(gameDir) == null)
+            if (!IsFullyInstalled(gameDir))
             {
                 throw new InvalidOperationException(
                     "Mod files did not install into the game folder.\n\n" +

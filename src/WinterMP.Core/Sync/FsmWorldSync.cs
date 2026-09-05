@@ -38,6 +38,9 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<byte, ushort> _lastGuestPurchaseSequences = new Dictionary<byte, ushort>();
         private ushort _outPurchaseSequence;
 
+        /// <summary>Host: a player (re)joined — its purchase counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _lastGuestPurchaseSequences.Remove(playerId);
+
 
         public int DoorCount => _doors.Count;
         public int SpawnContainerCount => _spawnContainers.Count;

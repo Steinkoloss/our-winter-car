@@ -155,6 +155,26 @@ namespace WinterMP.Launcher
             Settings.DisplaySettingsSaved = true;
         }
 
+        private async void RepairMod_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var game = GameLocator.FindInstall(GamePathBox.Text);
+                if (game == null) throw new InvalidOperationException("Select the folder containing mywintercar.exe first.");
+                string result = BepInExInstaller.InstallOrRepair(game.GameDir);
+                Settings.AutoInstallEnabled = true;
+                Settings.CustomGameDir = GamePathBox.Text?.Trim();
+                Settings.Save();
+                await MessageBoxManager.GetMessageBoxStandard("Install / Repair", result, ButtonEnum.Ok, MsBoxIcon.Info)
+                    .ShowWindowDialogAsync(this);
+            }
+            catch (Exception ex)
+            {
+                await MessageBoxManager.GetMessageBoxStandard("Install / Repair", ex.Message, ButtonEnum.Ok, MsBoxIcon.Warning)
+                    .ShowWindowDialogAsync(this);
+            }
+        }
+
         private async void RemoveMod_Click(object? sender, RoutedEventArgs e)
         {
             if (_game == null)
@@ -178,6 +198,8 @@ namespace WinterMP.Launcher
             try
             {
                 string result = ModRemoval.RemoveFromGame(_game.GameDir);
+                Settings.AutoInstallEnabled = false;
+                Settings.Save();
                 await MessageBoxManager
                     .GetMessageBoxStandard("Remove mod", result, ButtonEnum.Ok, MsBoxIcon.Info)
                     .ShowWindowDialogAsync(this);

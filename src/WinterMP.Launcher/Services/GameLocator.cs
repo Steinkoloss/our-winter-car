@@ -13,8 +13,7 @@ namespace WinterMP.Launcher.Services
         {
             if (!string.IsNullOrWhiteSpace(customGameDir))
             {
-                var manual = TryFromDirectory(customGameDir.Trim());
-                if (manual != null) return manual;
+                return TryFromDirectory(customGameDir.Trim());
             }
 
             return FindSteamInstall();
@@ -47,6 +46,19 @@ namespace WinterMP.Launcher.Services
             string? exe = FindGameExe(gameDir);
             if (exe == null) return null;
 
+            if (buildId == null)
+            {
+                var parent = Directory.GetParent(Path.GetFullPath(gameDir));
+                string? steamApps = parent?.Parent?.FullName;
+                string? manifest = steamApps == null ? null : Path.Combine(steamApps, $"appmanifest_{AppId}.acf");
+                if (parent?.Name == "common" && manifest != null && File.Exists(manifest))
+                {
+                    string acf = File.ReadAllText(manifest);
+                    if (string.Equals(MatchValue(acf, "installdir"), Path.GetFileName(Path.TrimEndingDirectorySeparator(gameDir)),
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                        buildId = MatchValue(acf, "buildid");
+                }
+            }
             return new GameInstall(gameDir, exe, buildId);
         }
 

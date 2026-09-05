@@ -30,6 +30,10 @@ namespace WinterMP.Core.Sync
             _items = items;
         }
 
+        /// <summary>Level change: path-derived item ids repeat after a reload, so a parked
+        /// pre-reload state must not apply to the re-registered item.</summary>
+        public void Clear() => _pending.Clear();
+
         public void Update(SessionManager session)
         {
             float now = Time.unscaledTime;
@@ -42,10 +46,22 @@ namespace WinterMP.Core.Sync
                 Locate(item, now);
                 if (item.BrewAlcoholVar == null) continue;
 
-                // Guests only report a bucket they currently hold; the host owns resting ones.
-                if (!session.IsHost && !item.LocallyOwned) continue;
-
                 byte flags = ReadFlags(item);
+                // Lid flips are the one purely player-driven flag (Alcohol/BrewTime/Finished
+                // advance by per-client simulation on every peer, so float drift is NOT
+                // evidence of an interaction). A guest flipping the lid of a resting bucket
+                // claims it, so the change streams instead of being reverted by the host's
+                // 3 s keepalive — brewing was otherwise host-only.
+                bool lidFlipped = item.ObservedBrewSeeded
+                    && ((flags ^ item.ObservedBrewFlags) & BrewState.FlagLidOn) != 0;
+                item.ObservedBrewFlags = flags;
+                item.ObservedBrewSeeded = true;
+
+                // Guests only report a bucket they hold or just interacted with; the host
+                // owns resting ones.
+                if (!session.IsHost && !item.LocallyOwned
+                    && (!lidFlipped || !_items.TryClaimForInteraction(session, item)))
+                    continue;
                 float alcohol = item.BrewAlcoholVar.Value;
                 bool changed = float.IsNaN(item.LastSentBrewAlcohol)
                     || Mathf.Abs(alcohol - item.LastSentBrewAlcohol) > ChangeEpsilon
@@ -78,7 +94,14 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost
                 || !_items.Items.TryGetValue(message.ItemId, out var item)
-                || item.IsVehicle || item.Body == null || item.RemoteOwner != playerId)
+                || item.IsVehicle || item.Body == null)
+                return false;
+            // NoOwner accepted (mirroring the vehicle damage/condition gates): the lid-flip
+            // claim rides the UNRELIABLE transform channel while this state is reliable, and
+            // the receive pump drains reliable first — so the one BrewState of an interaction
+            // claim routinely arrives before the claim registers. Rejecting it here lost the
+            // flip forever (the claim releases at-rest before the next 3 s re-send).
+            if (item.RemoteOwner != playerId && item.RemoteOwner != WorldSyncIds.NoOwner)
                 return false;
             return TryApply(item, message);
         }
@@ -93,6 +116,9 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session != null && message.OwnerPlayerId == session.LocalPlayerId) return;
             if (session != null && session.IsHost && item.RemoteOwner != message.OwnerPlayerId) return;
+            // We own the bucket (held or interaction-claimed) — our stream is the source;
+            // the host's resting-bucket keepalive must not stomp it.
+            if (item.LocallyOwned) return;
             TryApply(item, message);
         }
 
@@ -116,6 +142,9 @@ namespace WinterMP.Core.Sync
                 if (item.BrewTimeVar != null) item.BrewTimeVar.Value = Mathf.Max(0f, message.BrewTime);
                 if (item.BrewFinishedVar != null) item.BrewFinishedVar.Value = message.Finished;
                 if (item.BrewLidVar != null) item.BrewLidVar.Value = message.LidOn;
+                // Remote-applied changes must not read as a local lid interaction.
+                item.ObservedBrewFlags = (byte)(message.Flags & (BrewState.FlagFinished | BrewState.FlagLidOn));
+                item.ObservedBrewSeeded = true;
             }
             catch (Exception e)
             {

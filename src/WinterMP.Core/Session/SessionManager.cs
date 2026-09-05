@@ -407,7 +407,10 @@ namespace WinterMP.Core.Session
 
                     _playersByPeer.Remove(peer);
                     if (IsHost)
+                    {
                         _passengerOccupancy.Remove(player.PlayerId);
+                        Sync.WorldSyncManager.Instance?.OnPlayerDeparted(player.PlayerId);
+                    }
                     AddChatLine($"* {player.Name} left ({reason})");
                     PlayerLeft?.Invoke(player);
 

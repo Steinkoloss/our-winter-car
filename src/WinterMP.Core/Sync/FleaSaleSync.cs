@@ -14,7 +14,9 @@ namespace WinterMP.Core.Sync
     /// on different days and the proceeds (→ shared wallet) diverge. The <b>host</b> owns the
     /// table: it runs the sale RNG and broadcasts the accumulated <c>MoneyTotal</c> + rent;
     /// guests suppress their local Sell FSM and apply the host's numbers. Renting the table
-    /// and collecting the envelope are relayed as intents so the shared wallet moves once.
+    /// is relayed as an intent so the shared wallet moves once; collecting the money
+    /// envelope needs no intent — the MoneyFlea button is a catalogued control, so the
+    /// press rides the generic host-validated <c>FsmStateEnter</c> path.
     /// Per-item placement/pricing stays local (dynamic picked-object refs; see PLAN §4.4).
     /// </summary>
     internal sealed class FleaSaleSync
@@ -45,6 +47,9 @@ namespace WinterMP.Core.Sync
         private float _nextIntentAt;
         private ushort _outIntentSequence;
         private readonly Dictionary<byte, ushort> _lastIntentSequences = new Dictionary<byte, ushort>();
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _lastIntentSequences.Remove(playerId);
 
         private bool _hasLast;
         private int _lastMoney;
@@ -135,7 +140,11 @@ namespace WinterMP.Core.Sync
             if (session == null || !session.IsHost) return false;
             EnsureBuilt();
             Locate();
-            if (_logic == null || _anchor == null || !IsGuestNear(session, intent.PlayerId, _anchor.position))
+            // Only the rent press is intent-relayed. Envelope collection (ActionCollect)
+            // has no emitter — the MoneyFlea button is a catalogued control riding the
+            // generic FsmStateEnter path — so anything else here is invalid.
+            if (intent.Action != FleaSaleIntent.ActionRent
+                || _logic == null || _anchor == null || !IsGuestNear(session, intent.PlayerId, _anchor.position))
             {
                 WinterMPPlugin.Log.LogWarning($"FleaSaleSync: dropped invalid/distant intent action {intent.Action} from player {intent.PlayerId}.");
                 return false;
@@ -147,8 +156,7 @@ namespace WinterMP.Core.Sync
             }
             _lastIntentSequences[intent.PlayerId] = intent.Sequence;
 
-            string eventName = intent.Action == FleaSaleIntent.ActionRent ? "RENT" : "MONEY";
-            try { _logic.SendEvent(eventName); }
+            try { _logic.SendEvent("RENT"); }
             catch (System.Exception e) { WinterMPPlugin.Log.LogDebug("FleaSaleSync: event failed: " + e.Message); }
             SyncEventLog.Record("flea-intent", $"action {intent.Action} player {intent.PlayerId}");
             _nextHostTickAt = 0f;

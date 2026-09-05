@@ -110,9 +110,9 @@ namespace WinterMP.Net.Messages
         IceRaceResultsState = 91,
         /// <summary>Host -> guests: exact fixed-radiator thermostat rotation.</summary>
         RadiatorThermostatState = 92,
-        /// <summary>Host -> guests: shared gambling device (slot machine / Ventti) reels/hand + credit + payout.</summary>
+        /// <summary>Host -> guests: legacy Ventti display. Slot use retired in v92.</summary>
         GamblingState = 93,
-        /// <summary>Guest -> host: an anyone-triggers action on a shared gambling device.</summary>
+        /// <summary>Guest -> host: legacy Ventti controls. Slot use retired in v92.</summary>
         GamblingIntent = 94,
         /// <summary>Host -> guests: utility meter (electricity/phone) unpaid total + power/line state.</summary>
         UtilityBillState = 95,
@@ -141,8 +141,12 @@ namespace WinterMP.Net.Messages
         HitchhikerState = 106,
         /// <summary>Host -> guests: an incoming phone call (topic + call id).</summary>
         PhoneCallEvent = 108,
+        /// <summary>Host -> guests: misc host-owned world scalars (scrap price, prime interest, player keys).</summary>
+        WorldScalarsState = 104,
         /// <summary>Host -> guests: yard piss-stain scales (persistent world marks).</summary>
         PissAreaState = 109,
+        /// <summary>Guest -> host: reporter's local copy of a streamed animal died (moose kill).</summary>
+        NpcDeathReport = 110,
 
         // 120-139: snapshots/bulk — M3 join snapshot
         WorldSnapshotRequest = 120,
@@ -167,10 +171,29 @@ namespace WinterMP.Net.Messages
         /// <summary>Host -> guests: JOKKIS banger-race lap/time/checkpoint state.</summary>
         JokkisRaceState = 151,
 
+        // 160-179: economy round 2 (93-99 and 104 are full)
+        /// <summary>Host -> guests: hockey betting round (matchup, odds, result, KurPa flag).</summary>
+        HockeyBettingState = 160,
+        /// <summary>Guest -> host: the sender's own oven sim rolled an ignition (fire report).</summary>
+        ApplianceFireReport = 161,
+        /// <summary>Guest -> host: an ATM cash deposit or withdrawal.</summary>
+        BankTransferIntent = 162,
+        /// <summary>Host -> guests: acknowledgment of one player's ATM request.</summary>
+        BankTransferResult = 163,
+        SlotMachineState = 164,
+        SlotMachineResult = 165,
+        SlotMachineIntent = 166,
+        PokerState = 167,
+        PokerResult = 168,
+        PokerIntent = 169,
+        DebtLetterState = 170,
+        DebtPaymentIntent = 171,
+        DebtPaymentResult = 172,
+
         // Reserved ranges for future subsystems:
         //   63-79 vehicles (attachment, fuel/damage)
         //   93-99 economy/appliances (FULL)
-        //   101-119 NPCs/jobs (NpcTransform = 100)
+        //   111-119 NPCs/jobs (NpcTransform = 100, WorldScalarsState = 104, NpcDeathReport = 110)
         //   126-139 snapshot/bulk transfer control
         //   140-159 crime & consequence + racing completeness
     }

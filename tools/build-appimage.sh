@@ -6,9 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DIST="$ROOT/dist"
+DIST="${OWC_RELEASE_DIR:-$ROOT/dist}"
 LAUNCHER_PROJ="$ROOT/src/WinterMP.Launcher/WinterMP.Launcher.csproj"
-APPDIR="$DIST/WinterMPLauncher.AppDir"
+APPDIR="${OWC_APPDIR:-$DIST/WinterMPLauncher.AppDir}"
 VENDOR_DIR="$ROOT/vendor"
 APPIMAGETOOL="$VENDOR_DIR/appimagetool-x86_64.AppImage"
 APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
@@ -19,9 +19,14 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 
 echo "==> Publishing linux-x64 launcher"
+if [[ -n "${OWC_LINUX_PUBLISH_DIR:-}" ]]; then
+    test -f "$OWC_LINUX_PUBLISH_DIR/WinterMPLauncher"
+    cp -a "$OWC_LINUX_PUBLISH_DIR/." "$APPDIR/usr/bin/"
+else
 dotnet publish "$LAUNCHER_PROJ" -c Release -r linux-x64 --self-contained true \
     -p:DeployToGame=false -v q /clp:ErrorsOnly \
     -o "$APPDIR/usr/bin"
+fi
 
 echo "==> Creating AppDir"
 
@@ -69,7 +74,7 @@ fi
 
 echo "==> Packaging AppImage"
 rm -f "$OUTPUT"
-ARCH=x86_64 "$APPIMAGETOOL" "$APPDIR" "$OUTPUT" 2>&1
+ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" "$APPDIR" "$OUTPUT" 2>&1
 chmod +x "$OUTPUT"
 
 echo ""

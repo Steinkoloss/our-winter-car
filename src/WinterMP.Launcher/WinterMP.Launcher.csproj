@@ -6,12 +6,13 @@
          Linux, Windows and macOS. Built as net8.0; RollForward=Major lets it run on a
          newer installed runtime (e.g. a machine with only the .NET 10 runtime). -->
     <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
     <RollForward>Major</RollForward>
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <RootNamespace>WinterMP.Launcher</RootNamespace>
     <AssemblyName>WinterMPLauncher</AssemblyName>
-    <Version>0.1.30</Version>
+    <Version>0.1.31</Version>
     <!-- Avalonia compiles XAML ahead of time; keep diagnostics readable. -->
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <WinterMPCoreOut>$(MSBuildThisFileDirectory)..\WinterMP.Core\bin\$(Configuration)\net35</WinterMPCoreOut>
@@ -26,6 +27,8 @@
     <!-- Avalonia dev tools (F12) only in Debug builds. -->
     <PackageReference Include="Avalonia.Diagnostics" Version="11.2.8" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="MessageBox.Avalonia" Version="3.2.0" />
+    <!-- Backported fix for GHSA-xrw6-gwf8-vvr9; Avalonia 11.2 otherwise pulls 0.20.0. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
     <!-- Unity stores display prefs in the Windows registry; types must resolve on the
          net8.0 (non-windows) TFM. All calls are guarded by OperatingSystem.IsWindows(). -->
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
@@ -36,7 +39,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="WinterMP.Launcher.Tests" />
     <None Include="..\..\docs\PLAYERS.md" Link="PLAYERS.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\TESTING.md" Link="TESTING.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\RELEASE-NOTES.md" Link="RELEASE-NOTES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- $(PublishDir) has a non-empty SDK default even on a plain `dotnet build`, so picking it

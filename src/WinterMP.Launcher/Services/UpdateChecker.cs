@@ -163,17 +163,8 @@ namespace WinterMP.Launcher.Services
             {
                 ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
 
-                string payloadDir = ModPayload.PayloadDir;
-                Directory.CreateDirectory(payloadDir);
-                try
-                {
-                    CopyPayloadFiles(extractDir, payloadDir);
-                }
-                catch (IOException)
-                {
-                    ScheduleModPayloadUpdate(extractDir, gameDir);
-                    return "Mod update scheduled — launcher will close and finish installing automatically.";
-                }
+                GameLauncher.RequireGameClosed();
+                ModPayload.ReplaceDirectory(extractDir, ModPayload.CachedPayloadDir, PlatformEnv.AppDataDir());
 
                 return BepInExInstaller.InstallOrRepair(gameDir);
             }
@@ -181,147 +172,6 @@ namespace WinterMP.Launcher.Services
             {
                 try { Directory.Delete(extractDir, recursive: true); } catch { /* best effort */ }
             }
-        }
-
-        /// <summary>
-        /// Copies payload after this process exits so locked DLLs (if any) are released first.
-        /// </summary>
-        public static void ScheduleModPayloadUpdate(string extractDir, string gameDir)
-        {
-            var copies = ResolvePayloadCopies(extractDir);
-            string launcherExe = ResolveLauncherExePath();
-            int launcherPid = Process.GetCurrentProcess().Id;
-
-            if (OperatingSystem.IsLinux())
-            {
-                string sh = WriteModPayloadUpdateScriptLinux(copies, gameDir, launcherExe, launcherPid);
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "/bin/bash",
-                    ArgumentList = { sh },
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                });
-                return;
-            }
-
-            string helper = WriteModPayloadUpdateScript(copies, gameDir, launcherExe, launcherPid);
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = helper,
-                UseShellExecute = true,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-            });
-        }
-
-        private static string WriteModPayloadUpdateScriptLinux(
-            List<(string Source, string Dest)> copies,
-            string gameDir,
-            string launcherExe,
-            int launcherPid)
-        {
-            string dir = Path.Combine(PlatformEnv.AppDataDir(), "updates");
-            Directory.CreateDirectory(dir);
-            string logPath = Path.Combine(PlatformEnv.AppDataDir(), "last-update.log");
-            string scriptPath = Path.Combine(dir, $"mod-payload-{Guid.NewGuid():N}.sh");
-
-            var lines = new List<string>
-            {
-                "#!/usr/bin/env bash",
-                $"LOG='{logPath}'",
-                $"echo \"[$(date)] Mod payload update started\" >> \"$LOG\"",
-                $"while kill -0 {launcherPid} 2>/dev/null; do sleep 1; done",
-            };
-
-            foreach (var (source, dest) in copies)
-            {
-                lines.Add($"cp -f '{source}' '{dest}' >> \"$LOG\" 2>&1 " +
-                          $"|| {{ echo \"[$(date)] copy failed: {source}\" >> \"$LOG\"; exit 1; }}");
-            }
-
-            lines.Add($"echo \"[$(date)] Payload copied, installing into game\" >> \"$LOG\"");
-            lines.Add($"'{launcherExe}' --install-mod --silent --game-dir '{gameDir}' >> \"$LOG\" 2>&1");
-            lines.Add($"echo \"[$(date)] Mod install OK, restarting launcher\" >> \"$LOG\"");
-            lines.Add($"nohup '{launcherExe}' >/dev/null 2>&1 &");
-            lines.Add("rm -- \"$0\"");
-
-            File.WriteAllText(scriptPath, string.Join("\n", lines) + "\n");
-            File.SetUnixFileMode(scriptPath,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
-            return scriptPath;
-        }
-
-        private static List<(string Source, string Dest)> ResolvePayloadCopies(string extractDir)
-        {
-            string payloadDir = ModPayload.PayloadDir;
-            Directory.CreateDirectory(payloadDir);
-
-            var copies = new List<(string Source, string Dest)>();
-            foreach (string file in ModPayload.RequiredFiles)
-            {
-                string? found = FindFileRecursive(extractDir, file);
-                if (found == null)
-                    throw new InvalidOperationException($"Update package is missing {file}.");
-
-                copies.Add((found, Path.Combine(payloadDir, file)));
-            }
-
-            return copies;
-        }
-
-        private static string WriteModPayloadUpdateScript(
-            List<(string Source, string Dest)> copies,
-            string gameDir,
-            string launcherExe,
-            int launcherPid)
-        {
-            string dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "WinterMP", "updates");
-            Directory.CreateDirectory(dir);
-
-            string logPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "WinterMP", "last-update.log");
-
-            string scriptPath = Path.Combine(dir, $"mod-payload-{Guid.NewGuid():N}.cmd");
-            // cmd expands %VAR% even inside quotes, so a literal % in a path must be doubled. Only
-            // path-derived values are escaped — the script's own %date%/%LOG%/%~f0 are intentional.
-            static string PctEsc(string p) => p.Replace("%", "%%");
-            var lines = new List<string>
-            {
-                "@echo off",
-                "setlocal",
-                $"set LOG=\"{PctEsc(logPath)}\"",
-                $"echo [%date% %time%] Mod payload update started>>%LOG%",
-                $":wait",
-                $"tasklist /FI \"PID eq {launcherPid}\" 2>nul | find \"{launcherPid}\" >nul",
-                "if %ERRORLEVEL%==0 (timeout /t 1 /nobreak >nul & goto wait)",
-            };
-
-            for (int i = 0; i < copies.Count; i++)
-            {
-                lines.Add($"copy /y \"{PctEsc(copies[i].Source)}\" \"{PctEsc(copies[i].Dest)}\" >>%LOG% 2>&1");
-                lines.Add("if errorlevel 1 goto failed");
-            }
-
-            lines.Add($"echo [%date% %time%] Payload copied, installing into game>>%LOG%");
-            lines.Add($"\"{PctEsc(launcherExe)}\" --install-mod --silent --game-dir \"{PctEsc(gameDir)}\" >>%LOG% 2>&1");
-            lines.Add("if errorlevel 1 goto failed");
-            lines.Add($"echo [%date% %time%] Mod install OK, restarting launcher>>%LOG%");
-            lines.Add($"start \"\" \"{PctEsc(launcherExe)}\"");
-            lines.Add("goto done");
-            lines.Add(":failed");
-            lines.Add($"echo [%date% %time%] Mod update FAILED>>%LOG%");
-            lines.Add($"start \"\" \"{PctEsc(launcherExe)}\"");
-            lines.Add(":done");
-            lines.Add("del \"%~f0\"");
-
-            File.WriteAllText(scriptPath, string.Join("\r\n", lines));
-            return scriptPath;
         }
 
         public static async Task<string> DownloadLauncherSetupAsync(string downloadUrl)
@@ -445,25 +295,6 @@ namespace WinterMP.Launcher.Services
             await using var file = File.Create(destPath);
             await stream.CopyToAsync(file).ConfigureAwait(false);
             return destPath;
-        }
-
-        private static void CopyPayloadFiles(string sourceDir, string destDir)
-        {
-            foreach (string file in ModPayload.RequiredFiles)
-            {
-                string? found = FindFileRecursive(sourceDir, file);
-                if (found == null)
-                    throw new InvalidOperationException($"Update package is missing {file}.");
-
-                File.Copy(found, Path.Combine(destDir, file), overwrite: true);
-            }
-        }
-
-        private static string? FindFileRecursive(string dir, string fileName)
-        {
-            foreach (string file in Directory.GetFiles(dir, fileName, SearchOption.AllDirectories))
-                return file;
-            return null;
         }
 
         private static async Task<(JsonDocument? Doc, HttpStatusCode? ErrorStatus, string? ErrorBody)> FetchReleaseJsonAsync()

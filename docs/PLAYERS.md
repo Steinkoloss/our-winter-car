@@ -4,6 +4,11 @@
 game's title. One player hosts with their savefile; friends join through Steam
 **Join Game**. Everyone shares the same world, money, and progress while connected.
 
+For **0.1.31 tester packages**, start with [TESTING.md](TESTING.md). This package
+targets My Winter Car **v.260516-01**, Steam build **23268598** (protocol **94**).
+Use the downloads supplied by your test organizer. The GitHub links below lead to
+public releases, which may still list an older version.
+
 ## Requirements
 
 - **My Winter Car** on Steam
@@ -42,7 +47,10 @@ My Winter Car runs through Steam Proton on Linux.
    ./OurWinterCar-Launcher-linux-x64.AppImage
    ```
    The launcher detects your Steam/Proton game folder and installs the mod automatically.
-3. If the game is not found, open **Settings** and browse to the game folder inside your
+   If your system lacks FUSE, run it with `--appimage-extract-and-run`, or use the Linux launcher zip.
+3. In Steam → My Winter Car → Properties → Launch Options, use
+   `WINEDLLOVERRIDES="winhttp=n,b" %command%` so Proton loads BepInEx.
+4. If the game is not found, open **Settings** and browse to the game folder inside your
    Steam library (e.g. `~/.steam/steam/steamapps/common/My Winter Car`).
 
 ## Hosting a session
@@ -57,7 +65,7 @@ My Winter Car runs through Steam Proton on Linux.
 
 ## Joining a friend
 
-1. Install **Our Winter Car** the same way (run the setup exe).
+1. Install **Our Winter Car** using the instructions for your operating system above.
 2. In Steam, right-click your friend who is hosting → **Join Game**.
 
 You can also click **JOIN GAME** in the launcher first (it opens the game without
@@ -72,15 +80,18 @@ The launcher checks GitHub on startup, then every ~90 seconds, and shows a banne
 newer release is available.
 
 - **Update mod** — downloads the payload zip and installs into your game.
-- **Update launcher** — downloads and runs the setup exe (launcher closes).
+- **Update launcher** on Windows — downloads and runs the setup exe (launcher closes).
+- **Linux launcher** — close the launcher and replace its AppImage or extracted launcher
+  folder with the newer download. Mod updates are available inside the launcher.
 
 ## Save backups
 
-- **Backup save** — manual backup anytime.
+- **Backup save** — manual backup with the game closed.
 - **Restore save…** — pick a previous backup (current save is backed up first).
 - **HOST GAME** — automatic backup before each host session.
 
-Backups are stored in `%LOCALAPPDATA%\WinterMP\backups`.
+Backups are stored in `%LOCALAPPDATA%\WinterMP\backups` on Windows, or
+`~/.local/share/WinterMP/backups` on Linux (under `$XDG_DATA_HOME` if customized).
 
 ## Troubleshooting
 
@@ -88,7 +99,7 @@ Backups are stored in `%LOCALAPPDATA%\WinterMP\backups`.
 |--------|-------------|
 | Game not found | Settings → browse to game folder |
 | Friends cannot join | Same mod version; host used **HOST GAME** |
-| Version mismatch in-game | **Update mod** in the launcher banner on both PCs |
+| Version mismatch in-game | Install the same tester package on both PCs; for public releases, use **Update mod** |
 | Guests must not save | Host saves only |
 | Need help | Open a GitHub issue on the project repo |
 
@@ -96,4 +107,8 @@ In-game: press **TAB** for session status and version info.
 
 ## Removing the mod
 
-Settings → **Remove mod from game**. BepInEx stays installed.
+Settings → **Remove mod from game**. BepInEx stays installed; automatic mod installation
+is paused until you choose **Install / Repair**.
+
+For a bug report, use **Info → Export diagnostics** and send the zip with reproduction
+steps. **Info → Tester guide** opens the testing checklist.

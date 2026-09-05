@@ -45,6 +45,11 @@ namespace WinterMP.Core.Catalog
         private static PickableRegistrationConfig _pickables = new PickableRegistrationConfig();
         private static ConsumableConfig _consumables = new ConsumableConfig();
         private static VehicleClimateConfig _vehicleClimate = new VehicleClimateConfig();
+        internal static BankingData? Banking { get; private set; }
+        internal static VehicleDamageData? VehicleDamage { get; private set; }
+        internal static SlotMachineData? SlotMachines { get; private set; }
+        internal static PokerData? VideoPoker { get; private set; }
+        internal static DebtLetterData? DebtLetter { get; private set; }
 
         public static void Load()
         {
@@ -61,6 +66,11 @@ namespace WinterMP.Core.Catalog
             _pickables = new PickableRegistrationConfig();
             _consumables = new ConsumableConfig();
             _vehicleClimate = new VehicleClimateConfig();
+            Banking = null;
+            VehicleDamage = null;
+            SlotMachines = null;
+            VideoPoker = null;
+            DebtLetter = null;
             Loaded = false;
             Hash = 0;
 
@@ -99,6 +109,11 @@ namespace WinterMP.Core.Catalog
                 LoadPartRules(data.Parts, _parts);
                 LoadBoltRules(data.Bolts, _bolts);
                 ApplyVehicleConfig(data);
+                Banking = data.Banking;
+                VehicleDamage = data.VehicleDamage;
+                SlotMachines = data.SlotMachines;
+                VideoPoker = data.VideoPoker;
+                DebtLetter = data.DebtLetter;
             }
             catch (Exception e)
             {

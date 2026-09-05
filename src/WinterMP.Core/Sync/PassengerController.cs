@@ -96,6 +96,9 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<uint, VehicleSeats> _vehicles = new Dictionary<uint, VehicleSeats>();
         private readonly Dictionary<byte, SeatRef> _remoteSeats = new Dictionary<byte, SeatRef>();
         private readonly Dictionary<byte, ushort> _remoteSeatSequences = new Dictionary<byte, ushort>();
+
+        /// <summary>A player (re)joined — its seat-claim counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _remoteSeatSequences.Remove(playerId);
         private readonly List<WorldSyncManager.VehicleInfo> _vehicleScratch = new List<WorldSyncManager.VehicleInfo>();
         private readonly List<byte> _purgeScratch = new List<byte>();
 

@@ -49,9 +49,11 @@ game dump → `python3 tools/extract_fsm_details.py catalog/dump-23268598.json s
 - **E** — remote-apply write onto a locally-owned object (ownership contamination). Guard every game-state write with `!LocallyOwned` / owner check.
 - **F** — sequence reset on a reused/path-derived id. Handle re-baseline (see `NpcTrafficSync` stale-run detection).
 
-**Reserved protocol id ranges** (current version **v80**; allocate the next free id in-range):
+**Reserved protocol id ranges** (current version **v94**; allocate the next free id in-range):
 `63–79` vehicles · `93–99` economy/appliances · `101–119` NPCs/jobs · `126–139` snapshot/bulk.
 Ranges are tight — if a range fills, extend it in `IMessage.cs` and document it.
+The economy overflow currently uses 160–172; 164–166 are the v92 slot ledger messages,
+167–169 are v93 VideoPoker, and 170–172 are v94 debt-letter quotes and payments.
 
 **Do NOT work on (verified out-of-scope — see §Appendix):** the in-game computer + its
 fishing minigame, host migration, water wells/taps (per-player thirst), map clock/weather
@@ -74,7 +76,7 @@ Tick when merged. Ordered by priority (shared-state corruption first).
 - [x] 0.2 Fix the vehicle-registration `RequireRoot` gate (unblocks 2.4, 3.2) — structural `Simulation/Engine` check; adds only the taxi
 
 **Phase 1 — Economy integrity** *(these corrupt the shared wallet / car ownership right now)*
-- [x] 1.1 Gambling: pub & station slot machines — `GamblingSync` (93/94, v57), host-authoritative spin/payout
+- [x] 1.1 Gambling: pub & station slot machines — `GamblingSync` (164–166, v92), host ledger and seeded local reels; two-player verification pending
 - [x] 1.2 Gambling: Ventti blackjack (incl. car wager) — `VenttiSync` reuses 93/94 (Kind=Ventti), host deals
 - [x] 1.3 Electricity + phone bills → power cutoff / blackout — `UtilityBillState` (95, v58) + catalogued Pay buttons
 - [x] 1.4 Lottery national draw + Lotto/Megaveto tickets — `LotteryDrawState` (96, v59) + catalogued ticket Pay buttons
@@ -133,26 +135,105 @@ economy, and several shipped subsystems bind the wrong FSM variable and silently
 
 Work this list the same way as §1. **Priority order — the top group corrupts shared state.**
 
+**Local verification, 2026-09-05 (0.1.31 tester package, v94):** 335 protocol/catalog tests,
+18 launcher tests and 5 evidence-tool tests pass. Net (both targets), Core, Tools,
+FastBoot and the launcher build against the installed game DLLs. Static extraction
+of build 23268598 verifies the configured economy globals, all five ATM mutations
+and 14 concrete damage mappings. Both slot machines' seven control bindings, typed
+variables, weighted reels and all 729 payout combinations match installed action data.
+VideoPoker’s 44 native visual assets, 12 input hooks and required scene objects also
+match the installed game; tests cover all 2,598,960 five-card hands, and an independent
+execution of the extracted classifier states agrees on 4,800 ordered hands. The debt
+letter's 15 native calculation/request/payment actions, typed variables and scene/text
+targets match the installed game; payment tests cover concurrency, retries, changing
+quotes and fractional charges. No two-player gameplay test has run for this pass.
+An isolated Wine startup check loads Core 0.1.31 in the current Unity/Mono runtime,
+reaches MainMenu and starts a local UDP host; native Steam-dependent menu actions
+report missing-Steam errors in that offline profile. It does not exercise the shared world.
+The slot half of R2.12, VideoPoker (R1.3) and debt payments (R1.6) are implemented;
+Ventti settlement/property transfers (R2.11–13) and vehicle CRC coverage remain open.
+
 **R1 — Never synced at all** (verified: zero references anywhere in `src/WinterMP.Core`)
-- [ ] R1.1 `Systems/BankAccount` (+ `Data/InterestRate`) — the bank balance is a *separate*
-      variable from the cash `Money` global that `WalletSync` owns, and daily interest
-      accrues per-client. Balances diverge permanently.
-- [ ] R1.2 `Systems/Expenses::Rent` + `::Livingsupport` — `WelfareSync` binds only Kela.
-      Weekly rent debit, the KICKOUT eviction (destroys furniture, relocates the player) and
-      housing benefit are all unsynced.
-- [ ] R1.3 VideoPoker / Rami-Pokeri (`PERAPORTTI/.../VideoPoker`) — a *third* money machine
-      covered by neither `GamblingSync` (slots) nor `VenttiSync`. Per-client card RNG on the
-      shared wallet.
-- [ ] R1.4 `Systems/HockeyGames` incl. `Betting::Logic` + `Runkosarja` season sim — betting
-      real money on standings each client simulates independently (`GoalsSimulated` RNG).
-- [ ] R1.5 `Systems/ScrapMetalPrice` + `REPAIRSHOP/Scrapmetal/GarbageTrigger` — daily RNG
-      scrap price and the scrap-selling payout.
-- [ ] R1.6 `Sheets/DebtLetter` — an interest-bearing loan accruing per-client; payment is
-      not wallet-routed.
-- [ ] R1.7 `Database/Keys::PlayerKeys` (UncleStage / property keys) — progression + ownership.
-- [ ] R1.8 Non-project vehicle cabin climate — `VehicleClimateConfig` hardcodes SORBET and
-      CORRIS only, so taxi/GIFU/KEKMET/BACHGLOTZ cabins diverge. Violates the
-      host-authoritative-climate rule.
+- [x] R1.1 `Systems/BankAccount` — implemented 2026-09-05 (**v90**), runtime validation
+      pending. Static extraction of installed build 23268598 establishes the globals
+      `PlayerMoney`, `PlayerBankAccount`, `PlayerNetIncome`. This also exposed and fixed
+      WalletSync's incorrect `Money` binding (there is no such global). WalletState now
+      carries all three balances with optional-field flags, retained state for late binds,
+      sequence ordering, and expanded wallet CRC/resync. Guests suppress the bank's own
+      interest/ledger FSM, restored on disconnect/scene change/destruction. ATM transfers
+      use host-validated requests + exact-once acknowledgments (162/163); guest deposits
+      settle per inserted note and withdrawals on cash collection, preserving local ATM UI.
+      Globals and ATM mutation bindings live in the catalog's `banking` section; hooks
+      verify each action's target balance before installing.
+      Bank statement history remains host-local. **Two-player check:** start from different
+      cash/bank balances, deposit/withdraw concurrently, retry a request, reconnect, cross an
+      interest day, and verify a later singleplayer session still runs the bank/ATM.
+- [x] R1.2 `Systems/Expenses::Rent` + `::Livingsupport` — fixed 2026-07-27 (**v84**).
+      `WelfareSync` now owns the whole Expenses object: `WelfareState` grew rentDebt /
+      rentPerWeek / asumistukiPerWeek + an Evicted flag. Guests suppress their own
+      Rent/Livingsupport FSMs for the session (`FsmSuppressor`; a guest plays in the host's
+      world — its local weekly ticks were throwaway divergence) and replay the terminal
+      `Kick out` state once when the host's eviction flag appears, so the furniture
+      destruction/relocation happens everywhere. Eviction detection polls
+      `ActiveStateName == "Kick out"` — safe because that state is *terminal* (unlike the
+      R2.3 one-frame `Fire` transient). Money movement itself still lands in the bank
+      balance → converges only once R1.1 ships.
+- [x] R1.3 VideoPoker / Rami-Pokeri — implemented 2026-09-05 (**v93**, 167–169),
+      two-player verification pending. `PokerSync` pauses native resolution on both peers;
+      `PokerLedger` owns betting, two-draw hands, holds, the separate high/low deck,
+      win collection and shared-wallet cash-out. The native physical controls, screen,
+      card art, balances and sounds present authoritative state even with the host outside
+      the town LOD. All bindings/assets and payout multipliers live in `videoPoker`.
+      Receipts prevent repeat debits/payouts; control leases prevent concurrent hands.
+      Abandoning/rejoining keeps the existing hand and secret double. Teardown settles
+      once and refunds machine balances, with native-bank handoff if cash is imprecise.
+      **Two-player check:** join mid-hand with the host outside town; hold/redraw together;
+      collect a win, then cash out; double low/high including seven and the ≥500 automatic
+      collection; retry a payment; reconnect during a hand/double; end the session and play
+      the native machine again. Verify money conservation and native achievements.
+- [x] R1.4 `Systems/HockeyGames` — the betting half fixed 2026-07-28 (**v88**,
+      `HockeyBettingState` 160 / `HockeyBettingSync`): matchup ids, odds, round result and
+      `KurPaWins` are host-broadcast, so every payout-deciding input agrees. Scoped by dump
+      evidence: `Runkosarja :: Data`'s ints are *loop scratch* of the season sim — the
+      standings table lives in ES2 array save keys (`UTPairs`/`UTResults`/…) that no FSM
+      variable exposes, so the wall table stays per-client (display-only residual; carrying
+      it would need ES2-level sync, out of scope). Where the bet payout *button* lives (if
+      any) is an R3.1b question, same class as the scrap payout.
+- [x] R1.5 `Systems/ScrapMetalPrice` — the *price* half fixed 2026-07-27 (**v86**,
+      `WorldScalarsState` 104 / `WorldScalarsSync`): the host's daily `ScrapPriceMKkg` +
+      `Change` are broadcast and guests' own re-rolls get stomped. Still open: the
+      `GarbageTrigger` selling *payout* is a money-gain button — same class as the lottery
+      win (R2.21), needs a catalogued rule from the fresh dump (R3.1b).
+- [x] R1.6 `Sheets/DebtLetter` — implemented 2026-09-05 (**v94**, 170–172),
+      two-player verification pending. `WelfareSync.DebtLetter` supplies host quotes
+      and acknowledged shared-cash payments through `DebtPaymentLedger`. Installed
+      build 23268598 establishes the exact calculation: `Rent/Debt` × the sheet's
+      `Interest` (default 1.29), then `Cost1` (59) and `Cost2` (864), with native float
+      precision. The bank prime rate is unrelated. Catalogued actions/variables are
+      validated before replacing the calculation and payment actions on both peers.
+      Payments compare the displayed quote revision, validate proximity to `Rent/Letter`,
+      debit shared cash, clear rent debt and hide the envelope once, even with the
+      host's sheet inactive. Revision changes and cached receipts prevent stale or
+      concurrent duplicate debits. The Letter reference survives eviction's mailbox
+      relocation; payment does not undo eviction. Disconnect closes pending UI and
+      restores native actions; binding failure disables payment while welfare continues.
+      **Two-player check:** open the bill with the host away; pay concurrently; test
+      insufficient funds then another press after adding cash; change rent debt while
+      the bill is open and confirm the stale quote is declined; retry/reconnect; pay
+      after the mailbox moves on eviction; Escape while payment is pending; disconnect
+      and pay a later letter in singleplayer. Check cash, debt and envelope convergence.
+- [x] R1.7 `Database/Keys::PlayerKeys` — fixed 2026-07-27 (**v86**, rides
+      `WorldScalarsState`): `UncleStage`, the GIFU key bool and `ConlineNMBRint` (the
+      randomly-generated phone number — now identical on every client) are host-broadcast;
+      guests write them back. Physical key items ride the normal item sync.
+- [x] R1.8 Non-project vehicle cabin climate — fixed 2026-07-27. Dump-verified the premise
+      first: only THREE vehicles carry a `CarTemp*` cabin sim (SORBET, CORRIS, and the taxi
+      `JOBS/TAXIJOB/MACHTWAGEN/Simulation/CarTempTaxi`); GIFU/KEKMET/BACHGLOTZ/JONNEZ have no
+      CarTemp/HeaterUnit subtree, so they never diverged — nothing to sync. Added the taxi to
+      `VehicleClimateConfig` (path prefix + CarTemp marker; all bound var names verified
+      identical on the taxi FSMs). Taxi heater buttons have no `Set`/`Set angle` commit state —
+      `FireKnobCommitState` degrades to writing Setting/Angle vars only (knob visual may not
+      animate remotely; heat output itself is host-streamed via `HeaterUnit`).
 
 **R2 — Synced but wrong** (shipped code that silently does nothing, or the wrong thing)
 - [x] R2.1 **`VenttiSync` guest hooks are observers, not suppressors** — fixed 2026-07-24.
@@ -164,23 +245,37 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       `Win car`/`Lose car`/`Win house`/`Lose house`. Verified against the decompiled
       `PlayMaker.dll`: `Fsm.Active` gates on `owner.enabled` and `Fsm.ProcessEvent`
       early-returns when inactive, so a disabled FSM cannot be driven by Update, a targeted
-      `SendEvent`, a global transition, or a broadcast. Slots deliberately NOT suppressed
-      (nothing durable; cutting `Buttons/Start :: Use` would freeze the reels *and* kill the
-      host's replay path) — rationale is in the `GamblingSync` docstring.
+      `SendEvent`, a global transition, or a broadcast. Slots now gate every local money
+      control before native mutation and use seeded animation only (v92, R2.12 below).
       Also fixed alongside: the duplicate-hook latch in both classes (`HooksInstalled` was
       all-or-nothing, so one un-Awake FSM made the 5 s probe re-prepend hooks to already-hooked
       states → N duplicate intents per press), and `FleaSaleSync`'s suppression leak (it
       disabled `Sell` and never restored, so a player who guested once could not sell at the
       flea market again *even in singleplayer* until they restarted the game).
-- [ ] R2.1b Slot reels visibly flicker on a guest: the host's 1 Hz keep-alive rewrites reel
-      symbols mid-spin. Fix by parking the state and applying on the next idle tick — needs a
-      reliable "is this machine mid-spin" test, which the current dump cannot supply (R3.1b).
-- [ ] R2.2 Moose killed by a *guest* never dies for anyone else — `NpcTransform` `FlagDead`
-      is only ever set in the host's `UpdateHostMovers`; there is no guest→host death report.
-      The guest sees a corpse while the host keeps streaming a live pose.
-- [ ] R2.3 Appliance house-fire never propagates — `FlagFire` samples
-      `Simulation::Data.ActiveStateName == "Fire"`, a one-frame transient in a continuous
-      polling loop that rests elsewhere, so it is almost never true. Ignition stays per-client.
+- [x] R2.1b Slot keepalives rewriting reels mid-spin — fixed 2026-09-05 using the
+      installed asset's action data. Guest retains only the newest state until **both**
+      machines are idle; the verified idle states are `Wait player` / `Wait button`.
+      `Reset game` is still a mutating state and is treated as busy. Pending state survives
+      until a later idle tick, even without another packet. **Two-player check:** spin on
+      a guest during host keepalives and confirm symbols/locks settle without mid-spin jumps.
+- [x] R2.2 Moose killed by a *guest* never dies for anyone else — fixed 2026-07-27
+      (protocol **v82**, `NpcDeathReport` 110). Guest polls its mover corpses (1 s) and
+      reports; host validates fresh reporter pose ≤60 m of its own copy, then replays the
+      vanilla `Mesh/Collider :: CarHit` death entry (`State 2`) so the game's own death
+      actions run host-side and `FlagDead` streams to everyone. Host is idempotent and the
+      guest re-sends every 3 s until FlagDead echoes — no send latch (class-A safe). Also
+      fixed alongside: a mover that dies while its stream is idle (at rest) now emits a
+      one-shot death announce, so at-rest kills reach guests too.
+- [x] R2.3 Appliance house-fire never propagates — fixed 2026-07-27 (**v85**). `FlagFire`
+      sampled `ActiveStateName == "Fire"`, a one-frame transient, so it was almost never
+      true. The dump shows the actual ignition commits are the per-plate `Start fire{,2,3,4}`
+      states (`Fire N --FIRE--> Start fire N`); the host now edge-hooks all four via
+      `FsmHook.OnStateEnter`, bumps a wrapping `FireCount` (+ `FirePlate`) on
+      `ApplianceState`, and guests replay exactly that plate's commit state once per bump —
+      role checked at fire time so a guest's replayed entry can't echo. First received count
+      only seeds the guest baseline (no re-igniting fires that predate the join). Residuals:
+      extinguishing/burn-out still runs per-client, and a fire actively burning at join time
+      is not re-ignited for the joiner — both documented, both smaller wrongs than the gap.
 - [x] R2.4a Vehicle late-join was climate-only — fixed 2026-07-24. The join snapshot called
       `BuildJoinClimateSnapshots()`, so a late joiner started with whatever engine/fuel/gear/
       damage/tire state its *own* save held. It now sends `BuildJoinVehicleSnapshots()`, which
@@ -204,22 +299,37 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       `StockRadio0/ButtonsRadio/Volume :: Knob` by path, the one FSM carrying both `Tune` and
       `Volume`. Wire field `byte Channel` → `float Tune`, unquantized (the per-station windows
       are not knowable from a dump without action data).
-- [ ] R2.6 Guest-initiated sleep is ungated — `PlayerSleepHook.Probe` bails on `!IsHost`, so
-      only the host hooks `SleepTrigger`. A sleeping guest skips its own clock (then gets
-      snapped back by `TimeSync`) and fires time-gated FSMs locally.
-- [ ] R2.7 Ice race broadcasts no standings (in-code known limitation; the guest→host path
-      exists but there is no `ObserveHost` counterpart as rally has).
-- [ ] R2.8 Taxi fare is lost for guests — but **not** for the reason it looks like. Adding a
-      `JOBS/TAXIJOB/Customer1/TaxiWalker/.../PayMoney` controls rule *alone is a no-op*:
-      (a) the host rejects the intent because `IsGuestNear` measures against the host's copy
-      of the customer, whose pose is unsynced (the customer is not in `NpcTrafficSync`
-      `MoverDefs`), and (b) the replayed button pays the *host's* `TaxiWalker::Logic` `Cost`,
-      which is also unsynced. `TaxiFunctions::Payments` (what `TaxiJobSync` streams today) is
-      the employment payday FSM, not the per-ride fare — fix that docstring too. Needs all
-      three parts: catalog rule + customer `ScriptedMoverDef` + `Cost`/`Paid` on the wire.
-- [ ] R2.9 `JOBS/Farm/Farmer` is a walking, position-unsynced NPC, so the farm `PayMoney`
-      rule added in round 2 may also be dropped by the same proximity gate as R2.8. Same
-      question for the hitchhiker rule, whose `Timer.Money` the host overwrites every 20 s.
+- [x] R2.6 Guest-initiated sleep is ungated — fixed 2026-07-27. `PlayerSleepHook` now probes
+      on both roles and decides at fire time (the hook outlives a session, so role is resolved
+      live via `SessionManager.Instance`). Host keeps the consent flow; a guest entering
+      `Confirm` is bounced straight back to `State 3` (Confirm's own "didn't confirm" route) with
+      a rate-limited chat hint to ask the host. Vanilla sleep still works when disconnected
+      (`PlayerCount == 0` guard).
+- [x] R2.7 Ice race broadcasts no standings for host-driven races — fixed 2026-07-28 (no
+      wire change; the state messages existed, only host records were never produced).
+      `IceRaceSync.ObserveHost` mirrors `RallySync.ObserveHostStage`: the same FSM edges the
+      guest path reports feed `TryAdvance` directly, with the host's own pose plumbed via
+      the new `ItemWorldSync.TryGetLocalPlayerPosition` (the missing piece the old
+      known-limitation comment named). Mode detection uses the exact local pose — stricter
+      input than the shipped guest path's network pose; still on the playtest list like all
+      of §1b.
+- [x] R2.8 Taxi fare is lost for guests — fixed 2026-07-28 (**v87**), all three parts:
+      (1) `Customer1/TaxiWalker` is now a host-authoritative `ScriptedMoverDef` (Logic
+      frozen on guests, pose streamed), so the customer's enter/exit/fare logic is
+      single-sourced on the host — its Cost accrues off the guest's *vehicle-synced* taxi —
+      and the PayMoney press passes the host's proximity gate; (2) the hand PayMoney button
+      is a catalogued control like the other round-2 job payouts; (3) `TaxiJobState` gained
+      `FareCost` so the guest's frozen meter displays the fare the host will charge. The
+      `Payments`-is-the-payday-FSM docstring corrected in the same change.
+- [x] R2.9 `JOBS/Farm/Farmer` proximity gate — fixed 2026-07-28. The farmer's Walker
+      (which carries the Logic walking AI and the hand-bone PayMoney button — same
+      static-root/moving-child shape as the hitchhiker) is now a `ScriptedMoverDef`, so
+      the guest's farmer stands where the host's does and the payday press passes the
+      host's proximity gate. Self-limiting if the transform choice were wrong (a still
+      mover sends one final and the guest AI is restored). The hitchhiker half needed no
+      change: its pose was already streamed, and the host overwriting `Timer.Money` is
+      the *correct* host-authoritative flow — a guest's replayed payday press pays the
+      host's amount.
 - [ ] R2.10 Rally opponent cars run per-client — **do not "fix" this by streaming them.**
       Unlike ICERACE (16 opponents partitioned into four disjoint per-venue sets), RALLY has
       exactly **one** fleet, `RACES/RALLY/RallyCars/RALLYCAR{1,2,3}`, multiplexed across all
@@ -236,13 +346,28 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       only flips a flag or writes an ES2 key, the guest keeps a stale title. The guest's world
       stays self-consistent (its resolver is off), but the two peers do not agree about
       ownership. Needs real action data (R3.1b) plus a wire field.
-- [ ] R2.12 **The host-side intent replay is probably already inert.** `Fsm.Active` requires
+- [ ] R2.12 **Inactive-host gambling settlement.** Slot machines implemented 2026-09-05
+      (**v92**); Ventti remains open. `GamblingSync` now uses a host-owned
+      `SlotMachineLedger` even when the host's machine/LOD is inactive. Inserted credit
+      (`AddedMoney`), accumulated cash-out funds (`Winnings`) and last payout (`Win`)
+      are separate: the old wire sent only Win and could not reproduce cash-out.
+      Controls are leased to one player for 15 s of inactivity; both host and guest
+      buttons queue authenticated/validated requests with cached acknowledgments.
+      The host draws the native weighted reels and settles through the shared wallet.
+      Peers animate the predetermined raw stops without charging again; held reels
+      stay fixed, wildcard payout rewrites never replace the transmitted raw stops.
+      Early completion retries, host timeout, disconnect and cleanup settle each
+      round once; cleanup restores hooks/RNG and stops suspended presentation.
+      Catalog bindings include the ≥900 mk native cash-out achievement.
+      **Still verify in game:** host far from machine, simultaneous players, two machines,
+      accumulated multi-win cash-out, held reels, LOD changes during a spin, reconnect,
+      achievement/button audio/material feedback, and session end during a spin.
+      **Remaining Ventti problem:** `Fsm.Active` requires
       `owner.gameObject.active` (confirmed in the decompiled DLL), and all four
       `GAME/Gamestuff/*` FSMs dump at `active=False` — that subtree is likely only active on
       the client whose player has a game open. So `FsmHook.FireRemoteEntry` from
       `TryAcceptIntent` hits an inactive FSM and does nothing unless the host is *also* sitting
-      at the table. Applies to all seven `GamblingSync` forcing paths too, and `ActionCashout`
-      additionally pays out the host's own never-spun credit meter. R2.1 did not create this —
+      at the table. R2.1 did not create this —
       it makes it visible (a guest now gets an inert table instead of a divergent one). The
       real destination is a lease/settlement model: lease the device to one player at a time
       and settle through the wallet, rather than puppeting the host's FSMs.
@@ -252,6 +377,138 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       is then fed into `Credit`, a float field. `V3` is hardcoded 0 despite PROTOCOL.md
       documenting it as an outcome code. Display-only while R2.1's lockdown holds; fix as part
       of R2.12 (needs a version bump).
+
+**Round 3 (2026-07-27) — full class-A/B/C/D/E sweep over the v57–v81 subsystems** (they
+were written *after* the 2026-07-20 sweeps, so those lessons had never been checked here;
+class B and D came back clean everywhere, the rest did not):
+
+- [x] R2.14 **Vehicle damage/condition: cross-owner sequence blackout, join gap, wheel
+      drift** — fixed 2026-07-27 (**v82**). (a) Receivers deduped `VehicleDamage`/
+      `VehicleCondition` sequences per *vehicle* while every client counts per *sender*, so
+      each ownership handoff had every receiver rejecting the new owner's low counter for
+      minutes (`LastDamageSequenceOwner`/`LastConditionSequenceOwner` rebase, mirroring
+      `ItemWorldSync`'s `LastRemoteSequenceOwner`). (b) Neither message was in the join
+      snapshot despite the R2.4a comment claiming so — a parked seized car stayed healthy for
+      late joiners forever (no owner to keepalive it); the host now snapshots its best-known
+      mask (`Live ∪ Applied`) + live condition FSM reads for every vehicle. (c)
+      `ApplyWheelDiscrete` diffed against apply *bookkeeping* instead of the wheel FSM's
+      actual state, so a locally-drifted (or save-borne) flat could never be healed by
+      keepalives — now diffs `ReadWheelState`. Also: a fresh claimer now seeds
+      `LiveDamageMask` from `AppliedDamageMask` (no more mask-0 "un-breaking" + re-claim
+      re-fire storm).
+- [x] R2.15 **WantedSync guest crimes were erased** — fixed 2026-07-27. Reports latched
+      `_reportedUpTo` at *send* with no re-send; a transiently rejected report (host FSM not
+      bound yet) was then made unrecoverable by `Apply` overwriting the local counter *and*
+      re-baselining. Evidence now lives in a pending-delta accumulator the broadcast cannot
+      stomp; the host queues reports that arrive before its FSM binds (reliable channel +
+      queue = exact-once without an ack protocol); first observation seeds the baseline so a
+      save's pre-existing counters are not replayed as fresh crimes.
+- [x] R2.16 **JailSync guest-offender inversion** — fixed 2026-07-27 (**v83**,
+      `JailState` + `JailedPlayerId`). The countdown runs only on the jailed client (the
+      file's own doc said so), yet the host keepalived its idle `DaysLeft` = 0 over the
+      jailed guest every ≤20 s. Now the jailed client owns the record and reports it; the
+      host adopts (30 s TTL) + relays; the jailed client ignores broadcasts about itself.
+- [x] R2.17 **Gambling/HeatSource intent latches keyed per player only** — fixed
+      2026-07-27. Guests count intents per *machine/source*, so after using machine A,
+      machine B's fresh low counter read as stale and the second slot machine (or a second
+      stove) went permanently dead for that guest. Latches now key (player, machine).
+- [x] R2.18 **RepairShopSync shared one guest-intent latch + one pending-order slot across
+      all guests** — fixed 2026-07-27; per-player dicts mirroring `MailOrderSync` (guest B's
+      first Fleetari order was silently rejected while guest A had ever ordered, and
+      concurrent confirms evicted each other).
+- [x] R2.19 **Per-player host latches survived reconnects** (systemic, 14 subsystems) —
+      fixed 2026-07-27. A rejoining guest keeps its PlayerId but restarts every counter, so
+      each subsystem's stale latch rejected everything it sent as "stale" until it
+      out-counted its previous life. Every handshake admission now calls
+      `WorldSyncManager.OnPlayerAdmitted` → `ForgetPlayer` on all per-player dedup state
+      (wanted, jail, gambling, ventti, fleaSale, repairShop, mailOrders, heat, police,
+      rally, iceRace, homeStereo, purchases, item spawns, passenger seats).
+- [x] R2.20 **Kilju: a guest could not brew** — fixed 2026-07-27. Guest brew edits streamed
+      only for *held* buckets; a bucket resting on the floor is never motion-claimed, so the
+      host's 3 s keepalive reverted every lid flip. A local lid flip (the one purely
+      player-driven flag — the floats advance by per-client simulation and must NOT trigger
+      claims) on an unowned resting bucket now claims it via
+      `ItemWorldSync.TryClaimForInteraction`; the at-rest release hands it back. Receivers
+      that own a bucket now also ignore remote `BrewState` for it.
+- [x] R2.21 **A guest's lottery-ticket win pays nothing** (previously unrecorded) — the
+      LOTTO half + both ticket-dispense buttons fixed 2026-07-28 via catalog rules (no wire
+      change; the handshake catalog hash gates mismatches). The win check turns out to be a
+      real fixed-path button: `Voittous/Lotto/LotteryTicket :: Use` (`Wait button 2 --USE-->
+      State 5` on the docked ticket) — now a catalogued buy, so a guest's check replays
+      host-side against the host's own (synced) draw numbers and the payout rides
+      `WalletState`, exactly the `PriceMoneyRace` pattern. Also catalogued:
+      `Voittous/Lotto/BuyLotto` + `Voittous/Megaveto/BuyMegaveto` (`Wait button --USE-->
+      State 1` ticket dispensers — host-routed is correct whether they charge or only
+      spawn; a host-side spawn materializes via item sync). **Still open (megaveto half):**
+      the megaveto CHECK has no button — `Megaveto :: Data` is driven by external
+      `CHECKMEGAVETO`/`BANK`/`CASH` events whose senders are invisible without global
+      transitions → fresh dump (R3.1b).
+- [x] R2.22 **A repeat phone call with the same Topic may never broadcast** — fixed
+      2026-07-28. The ringing object deactivates once a call ends (`Disable phone`
+      terminals under `FunctionsDisable`), so the host now re-arms `_lastTopic` whenever
+      the phone object is inactive — safe regardless of whether vanilla clears `Topic`.
+      Known residual (pre-existing, unchanged): a guest whose own phone object is idle when
+      the event arrives fires `SendEvent` at an inactive FSM (inert, R2.12 class); making
+      that ring for real needs the activation flow from the fresh dump.
+- [x] R2.23 **Engine repairs never cleared damage; SEIZE/CAMFAIL rerolled it on peers** —
+      implemented 2026-09-05 (**v91**), in-game verification pending. Installed action
+      data maps all 14 concrete failures to the currently fitted `db_*` parts' `Data/Wear`.
+      These bindings live in the catalog's `vehicleDamage` section, with fixed wire slots.
+      The wire now carries current wear plus a known-parts mask, so replacements clear
+      failure bits and delayed bindings retry. SEIZE/CAMFAIL are random selectors, now
+      retired as durable bits; non-owner damage states are gated before actions run.
+      Parked cars broadcast from the host. Joins and targeted vehicle resyncs carry healthy
+      parts and tire condition too. Hooks are removed on disconnect/scene teardown, and
+      exceptions disable only that vehicle's damage sync. **Still verify with two players:**
+      identical concrete outcomes from SEIZE/CAMFAIL; break/replace/rejoin with host and
+      guest drivers; late part binding; visual breakoff after a snapshot; no hook buildup
+      after reconnect. The separate vehicle CRC gap (R2.4b) remains open.
+
+**Round 3 self-review (2026-07-28)** — an adversarial agent pass over everything round 3
+itself wrote (v82–v88); 13 findings, 10 fixed the same day:
+
+- [x] Kilju lid-flip was deterministically lost over Steam: the claim rides the unreliable
+      channel, `BrewState` the reliable one, and the receive pump drains reliable FIRST —
+      the host rejected the one-shot state before the claim registered. `TryAcceptGuestState`
+      now accepts `RemoteOwner == NoOwner` (the vehicle damage/condition precedent).
+- [x] JailSync could adopt a jailed guest's record but never RELAY it: `JAIL/Functions` is
+      inactive until an arrest, `GameObject.Find` can't see inactive objects, and the
+      broadcast was gated on Ready. Locate now scans `FindObjectsOfTypeAll`, and a live
+      guest record broadcasts/snapshots without needing the host's own FSM. Two
+      concurrently-jailed players also no longer stomp each other (a serving client ignores
+      foreign jail broadcasts).
+- [x] PhoneSync could never make a guest's idle phone ring (same inactive-object Find gap +
+      SendEvent at a deactivated FSM is a silent no-op): Locate scans all FSMs, Apply
+      activates the ringing object before writing Topic. Whether the conversation routes
+      fully vanilla needs R3.1b action data — but ringing at all is strictly better than
+      never.
+- [x] Per-ITEM same-sender sequence latches survived a rejoin (the OnPlayerAdmitted reset
+      only covered per-player dicts): a crashed-and-rejoined guest's fresh counters were
+      stale-dropped per item on EVERY client. `ItemWorldSync.ForgetPlayerItemSequences`
+      downgrades all six latch families to the owner-change sentinel, and OnPlayerAdmitted
+      now also runs on guests when the relayed `PlayerSpawn` arrives.
+- [x] Scripted movers lacked the sequence-reset escape rigidbody NPCs have (a late joiner
+      meeting a >32767-packet moose stream dropped it, corpse announcements included) —
+      `StaleStreak` fallback added; dead movers are also now in the join snapshot (the
+      one-shot death announce predates a late joiner).
+- [x] Moose death-report radius 60→150 m (validation runs against the reporter's CURRENT
+      pose; by the 3 s retry a highway-speed car had left the radius → permanent rejection).
+- [x] WorldScalars Ready is all-of-three (a partial bind broadcast UncleStage=0 over real
+      progression; 0 is a valid value so no field guard can help) + PrimeInterest/Conline
+      joined the change predicate.
+- [x] Kilju/FluidContainer pending-state now clears on level change (path-derived ids
+      repeat after a reload).
+- [x] R2.24 **A guest's own oven fire was invisible to the host** — fixed 2026-07-28
+      (**v89**, `ApplianceFireReport` 161). The guest's `Simulation::Data` rolls its own
+      `FireHazard` RNG even over synced heats; a guest ignition is now reported (paced 30 s
+      per oven, per-player seq with rejoin reset) and the host replays the plate's commit
+      state, single-sourcing the house fire — the moose-report pattern. The guest's replay
+      of a HOST ignition is suppressed from re-reporting (1 s echo window around
+      `ReplayIgnition`).
+- Accepted residuals (documented, not bugs to fix): a crime incremented in the same frame a
+      host broadcast applies can be missed (sub-frame window); a SleepTrigger variant
+      without "State 3" would hint-but-not-block a guest (all dump variants have it);
+      `PaidAmount`/`Weekly`/`KMsDriven` ride keepalives only (delayed, never lost).
 
 **R3 — Tooling debt blocking the above**
 - [x] R3.1a Dumper emits `globalTransitions` (2026-07-24, tools 0.2.0). Per-state
@@ -264,6 +521,18 @@ Work this list the same way as §1. **Priority order — the top group corrupts 
       like `SaleTable::Logic`'s `RENT` lands. Needs the game running, so it is a **human
       step**: launch with WinterMP.Tools deployed, press F9, commit the new dump.
       **Do this before R2.1/R2.3** — both hinge on questions only a richer dump can answer.
+      2026-07-27, tools **0.3.0**: the dump now also carries a top-level `globalVariables`
+      section (PlayMakerGlobals names + scalar values) — the fresh dump will additionally
+      answer *which global is the bank balance* (R1.1) and make global bindings checkable
+      by `tools/check_fsm_bindings.py`.
+      **2026-09-05:** `tools/extract_fsm_assets.py` can now decode the installed Unity 5
+      assets offline, including typed globals, global transitions, action field names,
+      scalar arguments and referenced scene objects. This removes the *static-evidence*
+      blocker for banking, debt-letter calculation, gambling and damage mapping. It is
+      not a runtime dump: initialization, save-loaded values and multiplayer effects still
+      require the game. `check_fsm_bindings.py --globals <extract.json>` now checks literal
+      global bindings separately from local variables (a local `Money` can no longer hide
+      a missing global `Money`). See `docs/BUILDING.md` for reproduction.
 
 ---
 

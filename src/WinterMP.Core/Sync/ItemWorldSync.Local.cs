@@ -237,6 +237,23 @@ namespace WinterMP.Core.Sync
             return true;
         }
 
+        /// <summary>
+        /// A subsystem observed a local player interaction on an unowned resting item
+        /// (e.g. a brew-bucket lid flip). Claim it so the interaction streams instead of
+        /// being overwritten by the host's keepalive; the normal at-rest release hands
+        /// ownership back once the interaction is over.
+        /// </summary>
+        public bool TryClaimForInteraction(SessionManager session, SyncedItem item)
+        {
+            if (item.LocallyOwned) return true;
+            if (item.Body == null || item.RemoteOwner != WorldSyncIds.NoOwner) return false;
+
+            float now = Time.unscaledTime;
+            if (!CanClaim(item, item.Body.transform.position, now)) return false;
+            ClaimItem(session, item, item.Body, now);
+            return true;
+        }
+
         private void ClaimItem(SessionManager session, SyncedItem item, Rigidbody body, float now)
         {
             ReleaseRemoteCargo(item, body, now, seedVelocity: false);
@@ -258,6 +275,16 @@ namespace WinterMP.Core.Sync
                 ReleaseRemoteCargoForVehicle(item.Id, now, seedVelocity: true);
 
             item.RemoteEngineUntil = -999f;
+
+            // Preserve unknown parts across handoff; live fitted-part reads supersede
+            // this fallback as soon as their Data FSMs bind.
+            if (item.IsVehicle)
+            {
+                item.LiveDamageMask |= item.AppliedDamageMask;
+                item.LastSentDamage = null;
+                item.PendingDamage = null;
+                item.NextDamageTickAt = 0f;
+            }
 
             item.LocallyOwned = true;
             item.LastMovedAt = now;

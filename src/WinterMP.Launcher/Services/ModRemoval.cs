@@ -6,6 +6,7 @@ namespace WinterMP.Launcher.Services
     {
         public static string RemoveFromGame(string gameDir)
         {
+            GameLauncher.RequireGameClosed();
             string modDir = Path.Combine(gameDir, "BepInEx", "plugins", "WinterMP");
             if (!Directory.Exists(modDir))
                 return $"{Branding.ProductName} is not installed.";

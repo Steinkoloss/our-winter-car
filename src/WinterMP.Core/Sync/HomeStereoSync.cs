@@ -24,6 +24,9 @@ namespace WinterMP.Core.Sync
 
         private readonly Dictionary<byte, ushort> _lastIntentSequence = new Dictionary<byte, ushort>();
         private PlayMakerFSM? _volumeFsm;
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _lastIntentSequence.Remove(playerId);
         private PlayMakerFSM? _bassFsm;
         private PlayMakerFSM? _radioFsm;
         private PlayMakerFSM? _channelFsm;

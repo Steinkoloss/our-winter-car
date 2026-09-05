@@ -48,6 +48,17 @@ namespace WinterMP.Core.Sync
             // (movement) is host-authoritative and identical; the crime it registers feeds 4.1.
             // The pub fighter (HUMANS/FighterPub) already streams via the HUMANS/ rigidbody path.
             new ScriptedMoverDef("SOCCER/Janitor/Reijo", "Move"),
+            // Farm-job farmer (R2.9): the PayMoney button rides his hand, so with per-client
+            // wandering the host's proximity gate rejects a guest's payday press. Same shape
+            // as the hitchhiker — static root, walking child carrying the Logic AI. If the
+            // root turned out to be the mover instead, this self-limits: a still transform
+            // sends one final and the guest AI is restored.
+            new ScriptedMoverDef("JOBS/Farm/Farmer/Walker", "Logic"),
+            // Taxi customer (R2.8): host-authoritative rider. With its Logic live only on
+            // the host, the fare Cost accrues there off the guest's (vehicle-synced) taxi,
+            // the enter/exit decisions are single-sourced, and the fare press passes the
+            // host's PayMoney proximity gate. Same static-root/moving-child shape again.
+            new ScriptedMoverDef("JOBS/TAXIJOB/Customer1/TaxiWalker", "Logic"),
         };
         private readonly Dictionary<uint, ScriptedMover> _movers = new Dictionary<uint, ScriptedMover>();
 
@@ -201,7 +212,7 @@ namespace WinterMP.Core.Sync
             else
             {
                 UpdateGuest(now);
-                UpdateGuestMovers(now);
+                UpdateGuestMovers(session, now);
             }
         }
 
@@ -522,6 +533,19 @@ namespace WinterMP.Core.Sync
 
                 try
                 {
+                    // A mover that dies while at rest (stream already ended) would otherwise
+                    // never emit FlagDead — push one packet so every guest gets the corpse.
+                    if (!mover.DeadAnnounced && now >= mover.NextDeathCheckAt)
+                    {
+                        mover.NextDeathCheckAt = now + 1f;
+                        if (IsMoverDead(mover))
+                        {
+                            mover.DeadAnnounced = true;
+                            SendMoverTransform(session, mover, final: !mover.HostStreaming);
+                            continue;
+                        }
+                    }
+
                     Vector3 pos = t.position;
                     if ((pos - mover.LastPosition).sqrMagnitude > MoveThresholdSqr)
                     {
@@ -551,11 +575,32 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        private void UpdateGuestMovers(float now)
+        private void UpdateGuestMovers(SessionManager session, float now)
         {
             foreach (var mover in _movers.Values)
             {
-                if (mover.Transform == null || !mover.GuestRemoteActive) continue;
+                if (mover.Transform == null) continue;
+
+                // Guest kill report (R2.2): the CarHit FSM is deliberately left live on
+                // guests, so this client's car can kill its local copy while the host keeps
+                // streaming a live pose. Re-send until the host's FlagDead echoes back —
+                // the host side is idempotent, so there is no send-latch to lose.
+                if (!mover.HostConfirmedDead && now >= mover.NextDeathCheckAt)
+                {
+                    mover.NextDeathCheckAt = now + 1f;
+                    if (IsMoverDead(mover) && now >= mover.NextDeathReportAt)
+                    {
+                        mover.NextDeathReportAt = now + 3f;
+                        session.SendWorldMessage(new NpcDeathReport
+                        {
+                            NetId = mover.NetId,
+                            PlayerId = session.LocalPlayerId,
+                            Sequence = ++mover.OutDeathSequence,
+                        }, Channel.ReliableOrdered);
+                    }
+                }
+
+                if (!mover.GuestRemoteActive) continue;
 
                 try
                 {
@@ -612,10 +657,18 @@ namespace WinterMP.Core.Sync
 
             if (ItemTransformPolicy.IsStaleSequence(mover.LastRemoteSequence, message.Sequence))
             {
-                if (!message.IsFinal)
-                    ConnectionQuality.Instance.NoteUnreliableDropped();
-                return;
+                // Same reset escape the rigidbody NPCs have: a sustained backward run means
+                // the sender's counter restarted (host restart; a joiner meeting a
+                // >32767-packet stream) — accept and rebase instead of ghosting the mover
+                // (and its FlagDead) until the counter wraps.
+                if (++mover.StaleStreak < SequenceResetStreak)
+                {
+                    if (!message.IsFinal)
+                        ConnectionQuality.Instance.NoteUnreliableDropped();
+                    return;
+                }
             }
+            mover.StaleStreak = 0;
 
             if (!message.IsFinal)
                 ConnectionQuality.Instance.NoteUnreliableReceived();
@@ -626,13 +679,17 @@ namespace WinterMP.Core.Sync
 
             // Host says this animal died — activate our own corpse ragdoll so the moose is
             // dead everywhere, not only on the hitting client. Idempotent.
-            if ((message.Flags & NpcTransform.FlagDead) != 0 && !mover.DeadApplied)
+            if ((message.Flags & NpcTransform.FlagDead) != 0)
             {
-                var dead = FindDeadChild(mover);
-                if (dead != null)
+                mover.HostConfirmedDead = true;
+                if (!mover.DeadApplied)
                 {
-                    try { dead.gameObject.SetActive(true); mover.DeadApplied = true; }
-                    catch { }
+                    var dead = FindDeadChild(mover);
+                    if (dead != null)
+                    {
+                        try { dead.gameObject.SetActive(true); mover.DeadApplied = true; }
+                        catch { }
+                    }
                 }
             }
 
@@ -660,6 +717,114 @@ namespace WinterMP.Core.Sync
             mover.TargetRotation = rotation;
             mover.LastRemoteAt = Time.unscaledTime;
             mover.GuestRemoteActive = true;
+        }
+
+        /// <summary>
+        /// Host, join snapshot: movers that are already dead. The live stream's FlagDead and
+        /// the at-rest announce are one-shots a late joiner never saw — without this it gets
+        /// a live, locally-wandering moose while the host has a corpse.
+        /// </summary>
+        public IEnumerable<NpcTransform> BuildDeadMoverSnapshots()
+        {
+            foreach (var mover in _movers.Values)
+            {
+                if (mover.Transform == null || !IsMoverDead(mover)) continue;
+                yield return new NpcTransform
+                {
+                    NetId = mover.NetId,
+                    Sequence = ++mover.OutSequence,
+                    Flags = (byte)(NpcTransform.FlagFinal | NpcTransform.FlagDead),
+                    Position = mover.Transform.position.ToNet(),
+                    Rotation = mover.Transform.rotation.ToNet(),
+                };
+            }
+        }
+
+        // Reporter must be near the host's copy of the animal. Generous on purpose: the
+        // validation runs against the reporter's CURRENT pose, and if the first report
+        // races a stale pose the retries only come every 3 s — by then a car at highway
+        // speed has carried the reporter far past the corpse.
+        private const float DeathReportMaxDistance = 150f;
+        private const string CarHitFsmName = "CarHit";
+        private const string CarHitDeathState = "State 2";
+
+        /// <summary>
+        /// Host: a guest's local copy of this mover died (its car hit the moose). Validate,
+        /// then replay the vanilla CarHit death entry on our authoritative copy so the
+        /// game's own death actions run here and FlagDead streams to everyone. Idempotent —
+        /// the reporter re-sends until it sees FlagDead, so a transient failure self-heals.
+        /// </summary>
+        public bool OnHostDeathReport(SessionManager session, NpcDeathReport message)
+        {
+            if (!_movers.TryGetValue(message.NetId, out var mover) || mover.Transform == null) return false;
+
+            try
+            {
+                if (IsMoverDead(mover)) return true;
+
+                if (!TryGetFreshPlayerPose(session, message.PlayerId, out Vector3 reporter)) return false;
+                if ((reporter - mover.Transform.position).sqrMagnitude
+                    > DeathReportMaxDistance * DeathReportMaxDistance) return false;
+
+                var carHit = FindCarHitFsm(mover);
+                if (carHit == null || !FsmHook.EnsureRemoteEntry(carHit, CarHitDeathState))
+                {
+                    WinterMPPlugin.Log.LogWarning(
+                        $"WorldSync: cannot replay mover death on '{mover.Path}' (no {CarHitFsmName} entry).");
+                    return false;
+                }
+
+                var world = WorldSyncManager.Instance;
+                if (world != null) world.ApplyingRemote = true;
+                try { FsmHook.FireRemoteEntry(carHit, CarHitDeathState); }
+                finally { if (world != null) world.ApplyingRemote = false; }
+
+                // The ragdoll child may only exist from this frame on — re-probe.
+                mover.DeadProbed = false;
+                WinterMPPlugin.Log.LogInfo(
+                    $"WorldSync: player {message.PlayerId} killed '{mover.Path}' — death replayed on host.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug($"WorldSync: mover death report '{mover.Path}': {e.Message}");
+                return false;
+            }
+        }
+
+        private static PlayMakerFSM? FindCarHitFsm(ScriptedMover mover)
+        {
+            if (mover.CarHitFsm != null) return mover.CarHitFsm;
+            if (mover.Transform == null) return null;
+            try
+            {
+                foreach (var fsm in mover.Transform.GetComponentsInChildren<PlayMakerFSM>(true))
+                {
+                    if (fsm != null && fsm.FsmName == CarHitFsmName)
+                    {
+                        mover.CarHitFsm = fsm;
+                        break;
+                    }
+                }
+            }
+            catch { }
+            return mover.CarHitFsm;
+        }
+
+        private static bool TryGetFreshPlayerPose(SessionManager session, byte playerId, out Vector3 position)
+        {
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId != playerId) continue;
+                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > 2f)
+                    break;
+                position = player.Position;
+                return true;
+            }
+
+            position = Vector3.zero;
+            return false;
         }
 
         // A moose is dead once its "dead moose(xxxxx)" ragdoll child exists and is active.
@@ -746,6 +911,14 @@ namespace WinterMP.Core.Sync
             public Transform? DeadChild;
             public bool DeadProbed;
             public bool DeadApplied;
+            // Guest → host kill report (R2.2) + host at-rest death announce (v82).
+            public ushort OutDeathSequence;
+            public float NextDeathCheckAt;
+            public float NextDeathReportAt;
+            public bool HostConfirmedDead;
+            public bool DeadAnnounced;
+            public PlayMakerFSM? CarHitFsm;
+            public int StaleStreak;
         }
 
         private static bool IsNpcTrafficPath(string path)

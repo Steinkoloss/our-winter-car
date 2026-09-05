@@ -12,13 +12,16 @@ namespace WinterMP.Launcher.Services
                 "WinterMP", "diagnostics");
             Directory.CreateDirectory(outDir);
 
-            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fffffff");
             string zipPath = Path.Combine(outDir, $"wintermp-diag-{stamp}.zip");
 
             using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
             {
                 AddText(zip, "launcher-log.txt", launcherLog);
                 AddText(zip, "launcher-version.txt", ModPayload.LauncherVersion);
+                TryAddFile(zip, Path.Combine(ModPayload.PayloadDir, "wintermp-compat.json"), "bundled-compat.json");
+                foreach (string name in new[] { "last-install.log", "last-update.log" })
+                    TryAddFile(zip, Path.Combine(PlatformEnv.AppDataDir(), name), name);
 
                 if (game != null)
                 {
@@ -34,6 +37,8 @@ namespace WinterMP.Launcher.Services
                     TryAddFile(zip, Path.Combine(game.GameDir, "BepInEx", "config", "BepInEx.cfg"), "BepInEx.cfg");
                     TryAddFile(zip, Path.Combine(game.GameDir, "BepInEx", "plugins", "WinterMP", "WinterMP.Core.dll"), "WinterMP.Core.dll");
                     TryAddFile(zip, Path.Combine(game.GameDir, "BepInEx", "plugins", "WinterMP", "sync-catalog.json"), "sync-catalog.json");
+                    TryAddFile(zip, Path.Combine(game.GameDir, "BepInEx", "plugins", "WinterMP", "wintermp-compat.json"), "installed-compat.json");
+                    TryAddFile(zip, Path.Combine(game.GameDir, "BepInEx", "config", FastBootConfigSeed.ConfigFileName), "FastBoot.cfg");
                     TryAddFile(zip, Path.Combine(winterMpDir, "diagnostics.log"), "WinterMP-diagnostics.log");
                     TryAddFile(zip, Path.Combine(winterMpDir, "sync-events.log"), "WinterMP-sync-events.log");
                     TryAddFile(zip, Path.Combine(winterMpDir, "boot-trace.log"), "WinterMP-boot-trace.log");
@@ -54,7 +59,16 @@ namespace WinterMP.Launcher.Services
         private static void TryAddFile(ZipArchive zip, string path, string entryName)
         {
             if (!File.Exists(path)) return;
-            zip.CreateEntryFromFile(path, entryName, CompressionLevel.Optimal);
+            try
+            {
+                using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var output = zip.CreateEntry(entryName, CompressionLevel.Optimal).Open();
+                input.CopyTo(output);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                AddText(zip, entryName + ".unavailable.txt", e.Message);
+            }
         }
 
         /// <summary>Tail of sync-events.log when the in-game ring buffer was not flushed (F7).</summary>

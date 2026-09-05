@@ -1,5 +1,8 @@
+using System;
+using System.Collections.Generic;
+using HutongGames.PlayMaker;
 using UnityEngine;
-using WinterMP.Core.Diagnostics;
+using WinterMP.Core.Catalog;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
@@ -8,164 +11,239 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class VehicleWorldSync
     {
-        // Bit index -> the breakage event on the PartBreakages "Damages" FSM. Applying a mask
-        // fires the event; detecting a break reads the fired event (Fsm.LastTransition).
-        private static readonly string[] DamageEvents =
-        {
-            "BEARING1", "BEARING2", "BEARING3", "BEARING4", "BEARING5",
-            "CRANKSHAFT", "HEADGASKET", "PISTON1", "PISTON2", "PISTON3", "PISTON4",
-            "OILPAN", "TIMINGBELT", "SEIZE", "BLOCK", "CAMFAIL",
-        };
-
         private const float DamageKeepAliveSeconds = 15f;
+        private readonly Dictionary<FsmState, FsmHookAction> _damageHooks = new Dictionary<FsmState, FsmHookAction>();
 
-        /// <summary>
-        /// Engine part-breakage is owner-authoritative (COVERAGE-ROADMAP 2.1). The
-        /// <c>PartBreakages</c> FSM rolls per-client, so a non-owner is suppressed (Chance=0)
-        /// and instead applies the owner's broadcast mask; the owner detects its own breaks
-        /// and broadcasts the accumulated mask on change + keepalive.
-        /// </summary>
         public void UpdateVehicleDamage(SessionManager session)
         {
             if (session.PlayerCount == 0) return;
             float now = Time.unscaledTime;
-
             foreach (var item in _items.Items.Values)
             {
-                if (!item.IsVehicle || item.Body == null) continue;
-                EnsureVehicleSystemsProbe(item);
-                if (item.PartBreakagesFsm == null) continue;
-
-                if (item.LocallyOwned)
-                {
-                    EnsureDamageHooks(item);
-                    HostOrOwnerBroadcastDamage(session, item, now);
-                }
-                else if (item.RemoteOwner != WorldSyncIds.NoOwner)
-                {
-                    // Not ours right now — never let the local RNG roll a divergent break.
-                    SuppressLocalRoll(item);
-                }
+                if (!item.IsVehicle || item.Body == null || item.DamageSyncDisabled) continue;
+                try { UpdateDamage(session, item, now); }
+                catch (Exception e) { DisableDamageSync(item, e); }
             }
         }
 
-        private static void SuppressLocalRoll(SyncedItem item)
+        private void UpdateDamage(SessionManager session, SyncedItem item, float now)
         {
-            try { if (item.PartBreakageChanceVar != null) item.PartBreakageChanceVar.Value = 0f; }
-            catch { /* best-effort */ }
+            EnsureVehicleSystemsProbe(item);
+            if (item.PartBreakagesFsm == null) return;
+            EnsureDamageHooks(item);
+            if (IsDamageAuthority(session, item))
+            {
+                item.PendingDamage = null;
+                if (now < item.NextDamageTickAt) return;
+                item.NextDamageTickAt = now + 0.5f;
+                var state = ReadDamageState(item, session.LocalPlayerId);
+                item.LiveDamageMask = state.DamageMask;
+                item.AppliedDamageMask = state.DamageMask;
+                bool keepAlive = now >= item.NextDamageKeepAliveAt;
+                if (!keepAlive && item.LastSentDamage != null
+                    && VehicleDamagePolicy.SameCondition(item.LastSentDamage, state)) return;
+                item.NextDamageKeepAliveAt = now + DamageKeepAliveSeconds;
+                item.LastSentDamage = state;
+                session.SendWorldMessage(state, Channel.ReliableOrdered);
+            }
+            else if (item.PendingDamage != null)
+                ApplyDamageValues(item, item.PendingDamage);
         }
 
-        // Hook every state; when a breakage global transition lands, LastTransition names the
-        // event. Only an owner's own roll advances the live mask (a non-owner applying a
-        // remote break also enters these states but is guarded out below).
+        private static bool IsDamageAuthority(SessionManager? session, SyncedItem item)
+        {
+            if (session == null || (session.State != SessionState.Hosting && session.State != SessionState.Connected))
+                return true;
+            return item.LocallyOwned || (session.IsHost && item.RemoteOwner == WorldSyncIds.NoOwner);
+        }
+
         private void EnsureDamageHooks(SyncedItem item)
         {
-            if (item.DamageHooksInstalled || item.PartBreakagesFsm == null) return;
-
-            var states = item.PartBreakagesFsm.Fsm != null ? item.PartBreakagesFsm.Fsm.States : null;
+            var bindings = SyncCatalog.VehicleDamage;
+            if (item.DamageHooksInstalled || item.PartBreakagesFsm == null || bindings == null) return;
+            if (!FsmHook.EnsureRemoteEntry(item.PartBreakagesFsm, bindings.IdleState)) return;
+            var states = item.PartBreakagesFsm.Fsm.States;
             if (states == null) return;
-
             bool all = true;
             foreach (var state in states)
             {
-                if (state == null) continue;
-                var capturedItem = item;
-                if (!FsmHook.OnStateEnter(item.PartBreakagesFsm, state.Name, () => OnDamageStateEntered(capturedItem)))
+                if (state == null || state.Name == bindings.IdleState || _damageHooks.ContainsKey(state)) continue;
+                uint id = item.Id;
+                var fsm = item.PartBreakagesFsm;
+                var hook = new FsmHookAction(() =>
+                {
+                    // Resolve the current item after reconnect instead of retaining an
+                    // old ownership flag in a hook that survives the session.
+                    if (!_items.Items.TryGetValue(id, out var current) || current.PartBreakagesFsm != fsm) return;
+                    if (!current.ApplyingRemoteDamage && !IsDamageAuthority(SessionManager.Instance, current))
+                        FsmHook.FireRemoteEntry(fsm, bindings.IdleState);
+                });
+                try
+                {
+                    var actions = state.Actions ?? new FsmStateAction[0];
+                    var expanded = new FsmStateAction[actions.Length + 1];
+                    expanded[0] = hook;
+                    Array.Copy(actions, 0, expanded, 1, actions.Length);
+                    state.Actions = expanded;
+                    _damageHooks.Add(state, hook);
+                }
+                catch (Exception)
+                {
+                    // Inactive, uninitialized FSMs cannot materialize ActionData yet.
+                    // Retry instead of disabling the whole vehicle on a late bind.
                     all = false;
+                }
             }
             item.DamageHooksInstalled = all;
         }
 
-        private void OnDamageStateEntered(SyncedItem item)
+        private static FsmFloat? FindDamageWear(SyncedItem item, int bit)
         {
-            // Only the owner's authoritative roll counts. A non-owner reaches these states
-            // only while replaying the owner's mask, which must not echo back.
-            if (!item.LocallyOwned || item.PartBreakagesFsm == null) return;
+            var bindings = SyncCatalog.VehicleDamage;
+            if (item.PartBreakagesFsm == null || bindings == null || bindings.PartVariables[bit].Length == 0) return null;
+            if (item.DamagePartReferences == null)
+                item.DamagePartReferences = new FsmGameObject?[VehicleDamage.PartSlots];
+            var reference = item.DamagePartReferences[bit];
+            if (reference == null)
+            {
+                reference = item.PartBreakagesFsm.FsmVariables.FindFsmGameObject(bindings.PartVariables[bit]);
+                item.DamagePartReferences[bit] = reference;
+            }
+            // Do not cache the target's Wear: a replacement changes reference.Value.
+            var target = reference != null ? reference.Value : null;
+            if (target == null) return null;
+            foreach (var fsm in target.GetComponents<PlayMakerFSM>())
+                if (fsm != null && fsm.FsmName == bindings.PartFsmName)
+                    return fsm.FsmVariables.FindFsmFloat(bindings.WearVariable);
+            return null;
+        }
 
-            string eventName;
+        private static VehicleDamage ReadDamageState(SyncedItem item, byte owner)
+        {
+            var state = new VehicleDamage
+            {
+                VehicleId = item.Id, OwnerPlayerId = owner, Sequence = ++item.OutDamageSequence,
+            };
+            uint broken = 0;
+            for (int bit = 0; bit < VehicleDamage.PartSlots; bit++)
+            {
+                var wear = FindDamageWear(item, bit);
+                if (wear == null || float.IsNaN(wear.Value) || float.IsInfinity(wear.Value)) continue;
+                state.KnownPartsMask |= 1u << bit;
+                state.Wear[bit] = wear.Value;
+                if (wear.Value <= 0f) broken |= 1u << bit;
+            }
+            state.DamageMask = VehicleDamagePolicy.Reconcile(item.LiveDamageMask | item.AppliedDamageMask,
+                state.KnownPartsMask, broken);
+            return state;
+        }
+
+        internal VehicleDamage? TryBuildDamageSnapshot(SyncedItem item, byte owner)
+        {
+            if (item.DamageSyncDisabled || item.Body == null) return null;
             try
             {
-                var last = item.PartBreakagesFsm.Fsm != null ? item.PartBreakagesFsm.Fsm.LastTransition : null;
-                eventName = last != null ? last.EventName : null;
+                EnsureVehicleSystemsProbe(item);
+                if (item.PartBreakagesFsm == null) return null;
+                // Snapshot reads must not advance the periodic change baseline.
+                return ReadDamageState(item, owner);
             }
-            catch { return; }
-
-            int bit = IndexOfDamageEvent(eventName);
-            if (bit < 0) return;
-            item.LiveDamageMask |= 1u << bit;
+            catch (Exception e) { DisableDamageSync(item, e); return null; }
         }
 
-        private void HostOrOwnerBroadcastDamage(SessionManager session, SyncedItem item, float now)
-        {
-            bool keepAlive = now >= item.NextDamageKeepAliveAt;
-            bool changed = !item.HasSentDamage || item.LastSentDamageMask != item.LiveDamageMask;
-            if (!changed && !keepAlive) return;
-            if (now < item.NextDamageTickAt && !changed) return;
-
-            item.NextDamageTickAt = now + 0.5f;
-            if (keepAlive) item.NextDamageKeepAliveAt = now + DamageKeepAliveSeconds;
-            item.HasSentDamage = true;
-            item.LastSentDamageMask = item.LiveDamageMask;
-
-            session.SendWorldMessage(new VehicleDamage
-            {
-                VehicleId = item.Id,
-                OwnerPlayerId = session.LocalPlayerId,
-                DamageMask = item.LiveDamageMask,
-                Sequence = ++item.OutDamageSequence,
-            }, Channel.ReliableOrdered);
-        }
-
-        /// <summary>Host gate: only the authenticated current owner may drive a vehicle's damage.</summary>
         public bool TryAcceptGuestVehicleDamage(VehicleDamage message, byte playerId)
         {
-            if (message.OwnerPlayerId != playerId
-                || !_items.Items.TryGetValue(message.VehicleId, out var item)
-                || !item.IsVehicle)
-                return false;
-            if (item.RemoteOwner != playerId && item.RemoteOwner != WorldSyncIds.NoOwner) return false;
-            return true;
+            if (!VehicleDamagePolicy.IsValid(message) || message.OwnerPlayerId != playerId
+                || !_items.Items.TryGetValue(message.VehicleId, out var item) || !item.IsVehicle
+                || item.LocallyOwned || item.DamageSyncDisabled) return false;
+            return item.RemoteOwner == playerId || item.RemoteOwner == WorldSyncIds.NoOwner;
         }
 
-        /// <summary>Apply an owner's breakage mask onto a locally non-owned vehicle.</summary>
         public void ApplyVehicleDamage(VehicleDamage message)
         {
-            if (!_items.Items.TryGetValue(message.VehicleId, out var item) || !item.IsVehicle || item.Body == null)
-                return;
-            EnsureVehicleSystemsProbe(item);
-            if (item.PartBreakagesFsm == null) return;
-            if (item.LocallyOwned) return; // we're authoritative for our own car
-
-            // Drop stale/duplicate sequences.
-            ushort diff = (ushort)(message.Sequence - item.LastDamageSequence);
-            if (item.LastDamageSequence != 0 && (diff == 0 || diff > short.MaxValue)) return;
-            item.LastDamageSequence = message.Sequence;
-
-            SuppressLocalRoll(item);
-
-            uint fresh = message.DamageMask & ~item.AppliedDamageMask;
-            item.AppliedDamageMask = message.DamageMask;
-            if (fresh == 0) return;
-
-            for (int bit = 0; bit < DamageEvents.Length; bit++)
+            if (!VehicleDamagePolicy.IsValid(message)
+                || !_items.Items.TryGetValue(message.VehicleId, out var item) || !item.IsVehicle
+                || item.Body == null || item.LocallyOwned || item.DamageSyncDisabled) return;
+            if (item.HasDamageSequence && message.OwnerPlayerId == item.LastDamageSequenceOwner)
             {
-                if ((fresh & (1u << bit)) == 0) continue;
-                try { item.PartBreakagesFsm.SendEvent(DamageEvents[bit]); }
-                catch (System.Exception e)
-                {
-                    WinterMPPlugin.Log.LogDebug($"VehicleWorldSync: damage event {DamageEvents[bit]} failed on {item.Path}: {e.Message}");
-                }
+                ushort difference = (ushort)(message.Sequence - item.LastDamageSequence);
+                if (difference == 0 || difference > short.MaxValue) return;
             }
-
-            SyncEventLog.Record("vehicle-damage", $"{item.Id:X8} mask {message.DamageMask:X}");
+            item.HasDamageSequence = true;
+            item.LastDamageSequenceOwner = message.OwnerPlayerId;
+            item.LastDamageSequence = message.Sequence;
+            item.PendingDamage = message;
+            item.LiveDamageMask = message.DamageMask;
+            try
+            {
+                EnsureVehicleSystemsProbe(item);
+                EnsureDamageHooks(item);
+                ApplyDamageValues(item, message);
+            }
+            catch (Exception e) { DisableDamageSync(item, e); }
         }
 
-        private static int IndexOfDamageEvent(string? eventName)
+        private static void ApplyDamageValues(SyncedItem item, VehicleDamage message)
         {
-            if (string.IsNullOrEmpty(eventName)) return -1;
-            for (int i = 0; i < DamageEvents.Length; i++)
-                if (DamageEvents[i] == eventName) return i;
-            return -1;
+            var bindings = SyncCatalog.VehicleDamage;
+            if (item.PartBreakagesFsm == null || item.LocallyOwned || bindings == null) return;
+            for (int bit = 0; bit < VehicleDamage.PartSlots; bit++)
+            {
+                uint flag = 1u << bit;
+                if ((message.KnownPartsMask & flag) == 0) continue;
+                var wear = FindDamageWear(item, bit);
+                if (wear == null) continue; // retained message retries after a late/replacement bind
+                bool broken = (message.DamageMask & flag) != 0;
+                bool replay = broken && ((item.AppliedDamageMask & flag) == 0 || (item.AppliedDamageParts & flag) == 0);
+                wear.Value = message.Wear[bit];
+                if (replay)
+                {
+                    if (!item.DamageHooksInstalled || !item.PartBreakagesFsm.Fsm.Active) continue;
+                    item.ApplyingRemoteDamage = true;
+                    try { item.PartBreakagesFsm.SendEvent(bindings.Events[bit]); }
+                    finally { item.ApplyingRemoteDamage = false; }
+                    // Vanilla sets Wear to zero while replaying breakage; preserve
+                    // the exact authoritative value (which can already be negative).
+                    wear.Value = message.Wear[bit];
+                }
+                item.AppliedDamageMask = VehicleDamagePolicy.Reconcile(item.AppliedDamageMask, flag, message.DamageMask);
+                item.AppliedDamageParts |= flag;
+            }
+        }
+
+        private static void DisableDamageSync(SyncedItem item, Exception error)
+        {
+            item.DamageSyncDisabled = true;
+            item.PendingDamage = null;
+            WinterMPPlugin.Log.LogError("VehicleWorldSync: damage sync disabled for '" + item.Path + "': " + error);
+        }
+
+        internal void ClearDamageHooks()
+        {
+            foreach (var entry in _damageHooks)
+            {
+                try
+                {
+                    var actions = new List<FsmStateAction>(entry.Key.Actions);
+                    actions.Remove(entry.Value);
+                    entry.Key.Actions = actions.ToArray();
+                }
+                catch (Exception e)
+                {
+                    WinterMPPlugin.Log.LogDebug("VehicleWorldSync: damage hook cleanup: " + e.Message);
+                }
+            }
+            _damageHooks.Clear();
+            foreach (var item in _items.Items.Values)
+            {
+                item.DamageHooksInstalled = false;
+                item.DamageSyncDisabled = false;
+                item.PendingDamage = null;
+                item.LastSentDamage = null;
+                item.HasDamageSequence = false;
+                item.AppliedDamageParts = 0;
+                item.NextDamageTickAt = 0f;
+            }
         }
     }
 }

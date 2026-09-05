@@ -18,6 +18,7 @@ namespace WinterMP.Launcher
         private UpdateCheckResult? _pendingUpdate;
         private bool _updateBusy;
         private bool _installInProgress;
+        private bool _launchInProgress;
         private DateTime _lastAutoInstallAttempt = DateTime.MinValue;
         private readonly DispatcherTimer _statusTimer;
         private readonly DispatcherTimer _updateTimer;
@@ -32,6 +33,9 @@ namespace WinterMP.Launcher
 
             Title = $"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}";
             SubtitleText.Text = $"Host or join via Steam · protocol v{ModMeta.ProtocolVersion}";
+            var package = CompatManifest.Load();
+            if (package?.ReleaseChannel == "test")
+                SubtitleText.Text = $"Tester release · My Winter Car {package.GameVersion}";
             AppendLog($"{Branding.LauncherWindowTitle} {ModPayload.LauncherVersion}");
 
             // Launcher self-update (Inno installer) only makes sense on Windows.
@@ -158,7 +162,7 @@ namespace WinterMP.Launcher
             bool showBanner = _pendingUpdate.AnyUpdateAvailable;
             _updateStatusText = _pendingUpdate.AnyUpdateAvailable
                 ? _pendingUpdate.StatusSummary
-                : $"Up to date ({_pendingUpdate.Tag})";
+                : $"Installed {ModMeta.ModVersion} · latest public release {_pendingUpdate.Tag}";
 
             UpdateBannerPanel.IsVisible = showBanner;
             if (!showBanner) return;
@@ -317,14 +321,16 @@ namespace WinterMP.Launcher
             var bepStatus = BepInExInstaller.GetStatus(_game.GameDir);
             string? modVersion = BepInExInstaller.GetInstalledModVersion(_game.GameDir);
 
-            if (modVersion != null && modVersion != ModMeta.ModVersion)
-                ShowWarning("Installed mod differs from launcher bundle — use Update mod in the banner.");
+            if (BepInExInstaller.NeedsBundledRepair(_game.GameDir))
+                ShowWarning(_settings.AutoInstallEnabled ? "Installing the bundled mod when the game is closed."
+                    : "Mod removed. Use Settings → Install / Repair to enable multiplayer again.");
 
             bool playable = bepStatus == BepInExStatus.Ready && modVersion != null;
-            HostButton.IsEnabled = playable && !_installInProgress;
-            JoinButton.IsEnabled = playable && !_installInProgress;
+            bool gameRunning = GameLauncher.IsGameRunning();
+            HostButton.IsEnabled = playable && !_installInProgress && !_launchInProgress && !gameRunning;
+            JoinButton.IsEnabled = HostButton.IsEnabled;
 
-            if (playable && !_fastBootProfileSeeded)
+            if (playable && !_fastBootProfileSeeded && !gameRunning)
             {
                 _fastBootProfileSeeded = true;
                 FastBootConfigSeed.ApplyProductionProfile(_game.GameDir);
@@ -336,7 +342,7 @@ namespace WinterMP.Launcher
             if (!BepInExInstaller.VendorPackagePresent())
                 ShowWarning("BepInEx package missing from launcher (vendor folder). Reinstall from GitHub.");
 
-            if (!BepInExInstaller.IsFullyInstalled(_game.GameDir) && !_installInProgress)
+            if (_settings.AutoInstallEnabled && !BepInExInstaller.IsFullyInstalled(_game.GameDir) && !_installInProgress)
                 ShowWarning("Mod not installed yet — installing automatically when possible.");
 
             ApplyUpdateUi();
@@ -355,6 +361,24 @@ namespace WinterMP.Launcher
         {
             var dialog = new InfoWindow();
             dialog.ApplySnapshot(BuildInfoSnapshot());
+            dialog.ExportDiagnosticsRequested += async () =>
+            {
+                try
+                {
+                    var game = _game;
+                    string log = _log.ToString();
+                    string path = await Task.Run(() => DiagnosticsService.CreateBundle(game, log));
+                    AppendLog($"Diagnostics exported: {path}");
+                    PlatformEnv.OpenFolder(Path.GetDirectoryName(path)!);
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"Diagnostics export failed: {ex.Message}");
+                    await MessageBoxManager.GetMessageBoxStandard("Diagnostics", ex.Message, ButtonEnum.Ok, MsBoxIcon.Warning)
+                        .ShowWindowDialogAsync(dialog);
+                }
+            };
+            dialog.TesterGuideRequested += () => PlatformEnv.OpenFolder(Path.Combine(AppContext.BaseDirectory, "TESTING.md"));
             _openInfoWindow = dialog;
             dialog.Closed += (_, _) => _openInfoWindow = null;
             dialog.ShowDialog<bool?>(this);
@@ -362,8 +386,8 @@ namespace WinterMP.Launcher
 
         private void TryAutoInstallIfNeeded()
         {
-            if (_installInProgress || _updateBusy || _game == null) return;
-            if (BepInExInstaller.IsFullyInstalled(_game.GameDir)) return;
+            if (!_settings.AutoInstallEnabled || _installInProgress || _updateBusy || _launchInProgress || _game == null || GameLauncher.IsGameRunning()) return;
+            if (!BepInExInstaller.NeedsBundledRepair(_game.GameDir)) return;
             if (!ModPayload.PayloadPresent() || !BepInExInstaller.VendorPackagePresent()) return;
             if ((DateTime.UtcNow - _lastAutoInstallAttempt).TotalSeconds < 30) return;
 
@@ -543,42 +567,30 @@ namespace WinterMP.Launcher
 
         private async void HostButton_Click(object? sender, RoutedEventArgs e)
         {
-            if (_game == null) return;
+            if (_game == null || _launchInProgress) return;
             if (!await PromptForUpdateAsync(required: false)) return;
             if (!EnsureReadyForLaunch()) return;
 
             try
             {
-                string launchLog = DoLaunch("-wintermp host -wintermp-fast");
-                AppendLog($"{launchLog} (save backup in background…)");
-
-                _ = Task.Run(() => SaveBackupService.CreateBackup())
-                    .ContinueWith(t =>
-                    {
-                        Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            if (t.IsFaulted)
-                            {
-                                AppendLog($"Save backup failed: {t.Exception?.GetBaseException().Message}");
-                                return;
-                            }
-
-                            string? backup = t.Result;
-                            AppendLog(backup != null
-                                ? $"Save backed up: {backup}"
-                                : "No save yet — hosting without backup.");
-                        });
-                    }, TaskScheduler.Default);
+                _launchInProgress = true;
+                RefreshStatus();
+                GameLauncher.RequireGameClosed();
+                AppendLog("Backing up your save before hosting…");
+                string? backup = await Task.Run(() => SaveBackupService.CreateBackup());
+                AppendLog(backup != null ? $"Save backed up: {backup}" : "No existing save to back up.");
+                AppendLog(DoLaunch("-wintermp host -wintermp-fast"));
             }
             catch (Exception ex)
             {
                 AppendLog($"Host launch failed: {ex.Message}");
             }
+            finally { _launchInProgress = false; RefreshStatus(); }
         }
 
         private async void JoinButton_Click(object? sender, RoutedEventArgs e)
         {
-            if (_game == null) return;
+            if (_game == null || _launchInProgress) return;
             if (!await PromptForUpdateAsync(required: false)) return;
             if (!EnsureReadyForLaunch()) return;
 
@@ -595,7 +607,7 @@ namespace WinterMP.Launcher
         private bool EnsureReadyForLaunch()
         {
             RefreshStatus();
-            if (_game != null && BepInExInstaller.IsFullyInstalled(_game.GameDir)) return true;
+            if (_game != null && !BepInExInstaller.NeedsBundledRepair(_game.GameDir)) return true;
 
             AppendLog("Installing BepInEx and mod before launch…");
             if (!TryInstallMod(out string? error))

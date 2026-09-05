@@ -6,8 +6,11 @@ namespace WinterMP.Core.Sync
 {
     /// <summary>
     /// Hooks the game's <c>SleepTrigger :: Activate</c> FSM (catalog dump
-    /// <c>dump-23268598.json</c>, path * /Sleep/SleepTrigger) so multi-player sleep
-    /// requires guest consent before time skip (PLAN.md §4.4).
+    /// <c>dump-23268598.json</c>, path * /Sleep/SleepTrigger). On the host,
+    /// multi-player sleep requires guest consent before time skip (PLAN.md §4.4).
+    /// On a guest the whole flow is blocked at Confirm: time is host-owned, and a
+    /// locally-running sleep loop would fire every time-gated FSM (mail, jobs,
+    /// interest) on the guest before TimeSync snaps the clock back.
     /// </summary>
     internal sealed class PlayerSleepHook
     {
@@ -34,7 +37,7 @@ namespace WinterMP.Core.Sync
 
         public void Probe(SessionManager session)
         {
-            if (session == null || !session.IsHost) return;
+            if (session == null) return;
             if (Time.unscaledTime < _nextProbeAt) return;
             _nextProbeAt = Time.unscaledTime + 3f;
 
@@ -49,10 +52,10 @@ namespace WinterMP.Core.Sync
             }
 
             for (int i = 0; i < fsms.Length; i++)
-                TryHookSleepActivate(fsms[i], session);
+                TryHookSleepActivate(fsms[i]);
         }
 
-        private void TryHookSleepActivate(PlayMakerFSM fsm, SessionManager session)
+        private void TryHookSleepActivate(PlayMakerFSM fsm)
         {
             if (fsm == null || _hooked.Contains(fsm)) return;
             if (fsm.FsmName != ActivateFsmName) return;
@@ -80,7 +83,7 @@ namespace WinterMP.Core.Sync
                 string stateName = ConsentTriggerStates[s];
                 if (!FsmHook.HasState(fsm, stateName)) continue;
 
-                if (FsmHook.OnStateEnter(fsm, stateName, () => OnConsentStateEntered(fsm, session, stateName)))
+                if (FsmHook.OnStateEnter(fsm, stateName, () => OnConsentStateEntered(fsm, stateName)))
                     hookedAny = true;
             }
 
@@ -89,7 +92,7 @@ namespace WinterMP.Core.Sync
                 string stateName = PostSleepSyncStates[s];
                 if (!FsmHook.HasState(fsm, stateName)) continue;
 
-                if (FsmHook.OnStateEnter(fsm, stateName, () => OnPostSleepStateEntered(session)))
+                if (FsmHook.OnStateEnter(fsm, stateName, OnPostSleepStateEntered))
                     hookedAny = true;
             }
 
@@ -100,9 +103,18 @@ namespace WinterMP.Core.Sync
                 "SleepConsent: hooked Activate sleep FSM at " + path + ".");
         }
 
-        private static void OnConsentStateEntered(PlayMakerFSM fsm, SessionManager session, string stateName)
+        private static void OnConsentStateEntered(PlayMakerFSM fsm, string stateName)
         {
-            if (session.PlayerCount == 0) return;
+            // Resolve live: the hook outlives a session, and the same machine may host
+            // the next one — role must be decided at fire time, not install time.
+            var session = SessionManager.Instance;
+            if (session == null || session.PlayerCount == 0) return;
+
+            if (!session.IsHost)
+            {
+                GuestBlockSleep(fsm, session);
+                return;
+            }
 
             var manager = SleepConsentManager.Instance;
             if (manager == null) return;
@@ -113,9 +125,34 @@ namespace WinterMP.Core.Sync
                 manager.OnHostSleepAttempt(fsm, stateName);
         }
 
-        private static void OnPostSleepStateEntered(SessionManager session)
+        private static float _nextGuestHintAt;
+
+        /// <summary>Guest: leave the sleep flow via Confirm's own "didn't confirm" route (State 3).</summary>
+        private static void GuestBlockSleep(PlayMakerFSM fsm, SessionManager session)
         {
-            if (session.PlayerCount == 0) return;
+            if (FsmHook.EnsureRemoteEntry(fsm, "State 3"))
+            {
+                try
+                {
+                    FsmHook.FireRemoteEntry(fsm, "State 3");
+                }
+                catch
+                {
+                    // FSM may be tearing down.
+                }
+            }
+
+            if (Time.unscaledTime >= _nextGuestHintAt)
+            {
+                _nextGuestHintAt = Time.unscaledTime + 10f;
+                session.AddSystemChat("* Only the host can start sleep — ask the host to go to bed.");
+            }
+        }
+
+        private static void OnPostSleepStateEntered()
+        {
+            var session = SessionManager.Instance;
+            if (session == null || session.PlayerCount == 0 || !session.IsHost) return;
             SleepConsentManager.Instance?.OnHostSleepCompleted();
         }
     }

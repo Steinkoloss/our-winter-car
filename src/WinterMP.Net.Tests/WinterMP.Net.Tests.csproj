@@ -13,6 +13,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WinterMP.Net\WinterMP.Net.csproj" />
+    <!-- The catalog reader is engine-independent; exercise the actual Core source
+         without pulling Unity/PlayMaker into CI. -->
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.cs" Link="Catalog\SyncCatalogJson.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Gambling.cs" Link="Catalog\SyncCatalogJson.Gambling.cs" />
+    <None Include="..\..\catalog\sync-catalog.json" Link="sync-catalog.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

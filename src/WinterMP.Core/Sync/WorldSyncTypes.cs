@@ -58,8 +58,15 @@ namespace WinterMP.Core.Sync
     public float LastSentBrewAlcohol = float.NaN;
     public byte LastSentBrewFlags;
     public ushort OutBrewSequence;
-    public byte LastRemoteBrewOwner;
+    // NoOwner sentinel matters: the host's LocalPlayerId IS 0, so a zero default would
+    // make the host's first BrewState take the same-owner dedup branch instead of the
+    // owner-change rebase (mirrors LastRemoteFluidOwner below).
+    public byte LastRemoteBrewOwner = WorldSyncIds.NoOwner;
     public ushort LastRemoteBrewSequence;
+    // Lid-flip detection for the guest interaction claim (KiljuSync): last flags THIS
+    // client observed/applied, so a remote-applied change never reads as a local act.
+    public byte ObservedBrewFlags;
+    public bool ObservedBrewSeeded;
     public ushort OutFluidSequence;
     public ushort LastRemoteFluidSequence;
     public byte LastRemoteFluidOwner = WorldSyncIds.NoOwner;
@@ -165,14 +172,22 @@ namespace WinterMP.Core.Sync
     public PlayMakerFSM? GaugeTachDataFsm;
     // Engine part-breakage (owner-authoritative; see VehicleWorldSync.Damage).
     public PlayMakerFSM? PartBreakagesFsm;
-    public HutongGames.PlayMaker.FsmFloat? PartBreakageChanceVar;
     public bool DamageHooksInstalled;
+    public bool DamageSyncDisabled;
+    public HutongGames.PlayMaker.FsmGameObject?[]? DamagePartReferences;
+    public bool ApplyingRemoteDamage;
+    public WinterMP.Net.Messages.VehicleDamage? LastSentDamage;
+    public WinterMP.Net.Messages.VehicleDamage? PendingDamage;
+    public uint AppliedDamageParts;
+    public bool HasDamageSequence;
     public uint LiveDamageMask;
-    public uint LastSentDamageMask;
     public uint AppliedDamageMask;
-    public bool HasSentDamage;
     public ushort OutDamageSequence;
     public ushort LastDamageSequence;
+    // Whose sequence space LastDamageSequence belongs to. Ownership is fluid; without
+    // the rebase a handoff leaves every receiver rejecting the new owner's low counter
+    // until it out-counts the previous owner's latch (minutes of silent blackout).
+    public byte LastDamageSequenceOwner = WorldSyncIds.NoOwner;
     public float NextDamageTickAt;
     public float NextDamageKeepAliveAt;
     // Drivetrain wear + per-wheel tire condition (owner-authoritative; VehicleWorldSync.Condition).
@@ -186,9 +201,9 @@ namespace WinterMP.Core.Sync
     public bool HasSentCondition;
     public ushort OutConditionSequence;
     public ushort LastConditionSequence;
+    public byte LastConditionSequenceOwner = WorldSyncIds.NoOwner;
     public byte LastCondPressure, LastCondDrivetrain, LastCondFlags;
     public byte LastCondHFL, LastCondHFR, LastCondHRL, LastCondHRR;
-    public byte AppliedCondFlags;
     public float NextConditionTickAt;
     public float NextConditionKeepAliveAt;
     public ushort OutVehicleStateSequence;

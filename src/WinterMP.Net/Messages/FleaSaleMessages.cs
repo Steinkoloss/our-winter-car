@@ -39,13 +39,15 @@ namespace WinterMP.Net.Messages
     }
 
     /// <summary>
-    /// Guest -> host: a flea sale-table action (rent the table, collect the money envelope).
-    /// The host validates fresh nearby pose + monotonic sequence and fires the real game
-    /// event on its authoritative table so the shared wallet is debited/credited once.
+    /// Guest -> host: a flea sale-table action. The host validates fresh nearby pose +
+    /// monotonic sequence and fires the real game event on its authoritative table so the
+    /// shared wallet is debited/credited once. Only the rent press uses this — envelope
+    /// collection rides the catalogued MoneyFlea control via FsmStateEnter.
     /// </summary>
     public sealed class FleaSaleIntent : IMessage
     {
         public const byte ActionRent = 0;
+        /// <summary>Reserved-unused (never reuse): collection needs no intent; hosts reject it.</summary>
         public const byte ActionCollect = 1;
 
         public byte Action;

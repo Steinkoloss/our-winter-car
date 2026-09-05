@@ -101,11 +101,8 @@ namespace WinterMP.Core.Sync
             try { _needsSync.Locate(); _needsSync.UpdateGuest(session); }
             catch (Exception e) { WinterMPPlugin.Log.LogWarning($"PlayerNeedsSync: {e.Message}"); }
 
-            if (session.IsHost)
-            {
-                try { _sleepHook.Probe(session); }
-                catch (Exception e) { WinterMPPlugin.Log.LogWarning($"PlayerSleepHook: {e.Message}"); }
-            }
+            try { _sleepHook.Probe(session); }
+            catch (Exception e) { WinterMPPlugin.Log.LogWarning($"PlayerSleepHook: {e.Message}"); }
 
             SendLocalTransform(session);
             UpdateAvatars(session);

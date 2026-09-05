@@ -46,6 +46,9 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<uint, Checkpoint> _checkpoints = new Dictionary<uint, Checkpoint>();
         private readonly Dictionary<byte, ushort> _lastIntentSequence = new Dictionary<byte, ushort>();
         private FsmString? _finePrice;
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _lastIntentSequence.Remove(playerId);
         private PoliceState? _active;
         private PoliceState? _pending;
         private float _nextScanAt;

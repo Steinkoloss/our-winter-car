@@ -41,47 +41,75 @@ namespace WinterMP.Launcher.Services
         /// <summary>Returns the backup path, or null when there is no save folder yet.</summary>
         public static string? CreateBackup()
         {
+            GameLauncher.RequireGameClosed();
             if (SaveDir is not { } saveDir || !Directory.Exists(saveDir)) return null;
+            return CreateBackup(saveDir, BackupDir);
+        }
 
-            Directory.CreateDirectory(BackupDir);
-            // ZipFile.CreateFromDirectory opens the target with FileMode.CreateNew and throws if
-            // it exists. Two backups in the same second (manual Backup then Host, or restore's
-            // safety backup) would otherwise crash and skip the pre-host save snapshot, so make
-            // the name unique.
-            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            string target = Path.Combine(BackupDir, $"save-{stamp}.zip");
-            for (int n = 1; File.Exists(target); n++)
-                target = Path.Combine(BackupDir, $"save-{stamp}-{n}.zip");
-            ZipFile.CreateFromDirectory(saveDir, target, CompressionLevel.Fastest, includeBaseDirectory: false);
-
-            PruneOldBackups();
+        internal static string CreateBackup(string saveDir, string backupDir)
+        {
+            Directory.CreateDirectory(backupDir);
+            string stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff");
+            string target = Path.Combine(backupDir, $"save-{stamp}-{Guid.NewGuid():N}.zip");
+            string partial = target + ".partial";
+            try
+            {
+                ZipFile.CreateFromDirectory(saveDir, partial, CompressionLevel.Fastest, includeBaseDirectory: false);
+                File.Move(partial, target);
+            }
+            finally { if (File.Exists(partial)) File.Delete(partial); }
+            PruneOldBackups(backupDir);
             return target;
         }
 
         public static string RestoreBackup(string zipPath)
         {
-            if (!File.Exists(zipPath))
-                throw new FileNotFoundException("Backup file not found.", zipPath);
-
+            GameLauncher.RequireGameClosed();
             if (SaveDir is not { } saveDir)
                 throw new InvalidOperationException(
                     "Could not locate the My Winter Car save folder. Launch the game once so its (Proton) save folder exists.");
+            return RestoreBackup(zipPath, saveDir, BackupDir);
+        }
 
-            if (!Directory.Exists(saveDir))
-                Directory.CreateDirectory(saveDir);
-
-            string? safety = CreateBackup();
-            string safetyNote = safety != null
-                ? $"Current save backed up to {Path.GetFileName(safety)} before restore."
-                : "No existing save to back up before restore.";
-
-            foreach (string file in Directory.GetFiles(saveDir, "*", SearchOption.AllDirectories))
-                File.Delete(file);
-            foreach (string dir in Directory.GetDirectories(saveDir))
-                Directory.Delete(dir, recursive: true);
-
-            ZipFile.ExtractToDirectory(zipPath, saveDir, overwriteFiles: true);
-            return $"Restored save from {Path.GetFileName(zipPath)}. {safetyNote}";
+        internal static string RestoreBackup(string zipPath, string saveDir, string backupDir)
+        {
+            if (!File.Exists(zipPath)) throw new FileNotFoundException("Backup file not found.", zipPath);
+            string parent = Path.GetDirectoryName(Path.GetFullPath(saveDir))!;
+            string transaction = Path.Combine(parent, ".wintermp-restore-" + Guid.NewGuid().ToString("N"));
+            string staged = Path.Combine(transaction, "new");
+            string previous = Path.Combine(transaction, "previous");
+            Directory.CreateDirectory(staged);
+            bool moved = false, committed = false;
+            try
+            {
+                // Validate/extract before touching the live save or pruning backups.
+                // In particular, the selected oldest backup may be pruned by the safety backup.
+                ZipFile.ExtractToDirectory(zipPath, staged);
+                if (Directory.GetFiles(staged, "*", SearchOption.AllDirectories).Length == 0)
+                    throw new InvalidDataException("The backup contains no save files.");
+                string? safety = Directory.Exists(saveDir) ? CreateBackup(saveDir, backupDir) : null;
+                if (Directory.Exists(saveDir))
+                {
+                    Directory.Move(saveDir, previous);
+                    moved = true;
+                }
+                try { Directory.Move(staged, saveDir); }
+                catch
+                {
+                    if (moved) Directory.Move(previous, saveDir);
+                    moved = false;
+                    throw;
+                }
+                committed = true;
+                string safetyNote = safety != null ? $"Previous save backed up to {Path.GetFileName(safety)}."
+                    : "No previous save to back up.";
+                return $"Restored save from {Path.GetFileName(zipPath)}. {safetyNote}";
+            }
+            finally
+            {
+                if (!moved || committed)
+                    try { Directory.Delete(transaction, recursive: true); } catch { }
+            }
         }
 
         public static void OpenBackupFolder()
@@ -90,9 +118,9 @@ namespace WinterMP.Launcher.Services
             Platform.Current.OpenInShell(BackupDir);
         }
 
-        private static void PruneOldBackups()
+        private static void PruneOldBackups(string backupDir)
         {
-            var files = new DirectoryInfo(BackupDir).GetFiles("save-*.zip");
+            var files = new DirectoryInfo(backupDir).GetFiles("save-*.zip");
             if (files.Length <= MaxBackups) return;
 
             // Oldest-first by name (timestamp-encoded), matching ListBackups — see note there.

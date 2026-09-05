@@ -39,4 +39,35 @@ namespace WinterMP.Net.Messages
             Rotation = reader.ReadQuaternion();
         }
     }
+
+    /// <summary>
+    /// Guest → host (v82): the sender's local copy of a streamed animal died (its car hit
+    /// the moose, whose CarHit FSM is deliberately left live on guests). The host validates
+    /// the reporter is near its own copy, then replays the vanilla death entry so the kill
+    /// becomes authoritative and <see cref="NpcTransform.FlagDead"/> streams to everyone.
+    /// Idempotent on the host (an already-dead mover ignores it), so the guest re-sends
+    /// every few seconds until it sees FlagDead echoed — no ack latch to lose.
+    /// </summary>
+    public sealed class NpcDeathReport : IMessage
+    {
+        public uint NetId;
+        public byte PlayerId;
+        public ushort Sequence;
+
+        public MessageId Id => MessageId.NpcDeathReport;
+
+        public void Write(NetWriter writer)
+        {
+            writer.WriteUInt32(NetId);
+            writer.WriteByte(PlayerId);
+            writer.WriteUInt16(Sequence);
+        }
+
+        public void Read(NetReader reader)
+        {
+            NetId = reader.ReadUInt32();
+            PlayerId = reader.ReadByte();
+            Sequence = reader.ReadUInt16();
+        }
+    }
 }

@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WinterMP.Launcher\WinterMP.Launcher.csproj" />
+    <ProjectReference Include="..\WinterMP.Net\WinterMP.Net.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using HutongGames.PlayMaker;
 using UnityEngine;
+using WinterMP.Core.Catalog;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
@@ -8,487 +10,340 @@ using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.Sync
 {
-    /// <summary>
-    /// Shared slot machines (pub + Peräpörtti station) as host-owned world state
-    /// (COVERAGE-ROADMAP 1.1). Stake, reel RNG and cashout all mutate the single shared
-    /// wallet, so per-client play desyncs: each peer rolls its own reels and the host's
-    /// ~2 s <see cref="WalletState"/> erases a guest's local win. Here the <b>host</b> is
-    /// authoritative — a guest's button press is relayed as a <see cref="GamblingIntent"/>,
-    /// the host forces the matching button state on its own FSM (so the real
-    /// stake/RNG/payout runs against the host wallet), and the resolved reels/credit
-    /// broadcast back via <see cref="GamblingState"/> while the money rides WalletState.
-    ///
-    /// Mirrors <see cref="HeatSourceSync"/> (anyone-triggers intent + host scalar-state
-    /// broadcast). All FSM/var lookups are best-effort and crash-contained.
-    ///
-    /// <b>R2.1 — read before "fixing" the guest hooks.</b> Like <see cref="VenttiSync"/>, the
-    /// guest hooks here are observers, so a guest's machine also spins locally on local RNG.
-    /// That is left alone <i>on purpose</i>. Ventti needed a hard cut because it stakes the
-    /// Satsuma and a wrong outcome is permanent; a slot machine mutates nothing durable —
-    /// reels/credit/locks are overwritten by <see cref="GamblingState"/> and money rides
-    /// <see cref="WalletState"/> (host to guest, absolute). Slots are transiently wrong, never
-    /// permanently wrong. Disabling <c>Buttons/Start :: Use</c> would also be actively harmful:
-    /// it fuses the input surface with the spin chain and renders the machine, so cutting it
-    /// would freeze the reels, stop the guest emitting intents at all, and — since
-    /// <c>Fsm.Active</c> gates on <c>owner.enabled</c> — also kill the host's own replay path.
-    /// </summary>
-    internal sealed class GamblingSync
+    /// <summary>Host slot ledgers with leased controls and deterministic local reel presentation.</summary>
+    internal sealed partial class GamblingSync
     {
-        private const float ProbeIntervalSeconds = 5f;
-        private const float HostTickSeconds = 1f;
-        private const float KeepAliveSeconds = 20f;
-        private const float IntentCooldownSeconds = 0.4f;
-        private const float IntentPlayerPoseMaxAgeSeconds = 2f;
-        private const float IntentPlayerMaxDistance = 6f;
-
-        // Button -> the FSM state that its USE press transitions into. Forcing this state on
-        // the host (via FsmHook.FireRemoteEntry) runs the button's real actions (add credit,
-        // roll, pay out) without a local player aiming at it.
-        private const string StatePay = "Check money";
-        private const string StateBet = "Compare";
-        private const string StateStart = "Check added";
-        private const string StateCashout = "State 2";
-        private const string StateLock = "State 1";
-
         private sealed class Machine
         {
             public uint Id;
-            public string ContainerPath = string.Empty;
-            public bool LoggedFound;
-            public Transform? Anchor;
-
-            public PlayMakerFSM? PayMoney;   // Buttons/PayMoney :: Use
-            public PlayMakerFSM? Bet;        // Buttons/Bet :: Use
-            public PlayMakerFSM? Start;      // Buttons/Start :: Use  (reel RNG + payout)
-            public PlayMakerFSM? Cashout;    // Buttons/Cashout :: Use
-            public PlayMakerFSM? Lock1;      // LockButtos/LockRoll1 :: Use
-            public PlayMakerFSM? Lock2;
-            public PlayMakerFSM? Lock3;
-
-            // Cached authoritative vars (from the Start FSM unless noted).
-            public FsmFloat? Credit;         // AddedMoney
-            public FsmFloat? Winnings;       // Win
-            public FsmFloat? BetLevel;       // Bet FSM :: Bet
-            public FsmBool? Roll1Locked;
-            public FsmBool? Roll2Locked;
-            public FsmBool? Roll3Locked;
-            public FsmString? Reel1;         // Roll1
-            public FsmString? Reel2;         // Roll2
-            public FsmString? Reel3;         // Roll3
-
-            public bool HostEntriesReady;
-            public bool HooksInstalled;
-            // Per-hook latches: HooksInstalled is all-or-nothing, so one not-yet-Awake FSM
-            // made the 5 s probe re-prepend a hook to every already-hooked state — N probes
-            // meant N duplicate intents per press.
-            public bool HookedPay, HookedBet, HookedStart, HookedCashout;
-            public bool HookedLock1, HookedLock2, HookedLock3;
-            public float NextIntentAt;
-            public ushort OutIntentSequence;
-
-            // Change detection.
-            public bool HasLast;
-            public byte LastFlags;
-            public ushort LastCredit;
-            public byte LastBet;
-            public byte LastR1, LastR2, LastR3;
-            public int LastPayout;
-
-            public bool AnyFsm => Start != null || PayMoney != null || Cashout != null;
+            public string Path = "";
+            public Transform? Root;
+            public readonly PlayMakerFSM?[] Buttons = new PlayMakerFSM?[7];
+            public PlayMakerFSM? Start => Buttons[SlotMachineIntent.Spin];
+            public FsmFloat? Credit, Winnings, LastWin, Bet;
+            public FsmBool? CanHold;
+            public FsmInt? Roll;
+            public readonly FsmString?[] Reels = new FsmString?[3];
+            public readonly FsmBool?[] Holds = new FsmBool?[3];
+            public readonly FsmGameObject?[] ReelObjects = new FsmGameObject?[3];
+            public readonly TextMesh?[] Texts = new TextMesh?[4];
+            public readonly List<InstalledHook> Hooks = new List<InstalledHook>();
+            public readonly List<RandomAction> RandomActions = new List<RandomAction>();
+            public readonly Queue<SlotMachineIntent> Pending = new Queue<SlotMachineIntent>();
+            public readonly Dictionary<byte, float> RequestTimes = new Dictionary<byte, float>();
+            public SlotMachineLedger? Ledger;
+            public SlotMachineState? View, Animation;
+            public bool HooksReady, Failed, Animating, HasRevision, HasPresentedRound;
+            public uint PresentedRound;
+            public ushort OutSequence;
+            public float RetryAt, InputAt, BroadcastAt;
         }
 
-        private readonly List<Machine> _machines = new List<Machine>();
-        private readonly Dictionary<uint, Machine> _byId = new Dictionary<uint, Machine>();
-        private readonly Dictionary<byte, ushort> _lastIntentSequences = new Dictionary<byte, ushort>();
-        private bool _built;
-        private float _nextProbeAt;
-        private float _nextHostTickAt;
-        private float _nextKeepAliveAt;
-
-        public void Clear()
+        private sealed class InstalledHook
         {
-            _machines.Clear();
-            _byId.Clear();
-            _lastIntentSequences.Clear();
-            _built = false;
-            _nextProbeAt = 0f;
-            _nextHostTickAt = 0f;
-            _nextKeepAliveAt = 0f;
+            public FsmState State = null!;
+            public FsmStateAction Action = null!;
         }
+
+        private sealed class RandomAction
+        {
+            public FsmStateAction Action = null!;
+            public bool Enabled;
+        }
+
+        private readonly Dictionary<uint, Machine> _machines = new Dictionary<uint, Machine>();
+        private readonly System.Random _random = new System.Random();
+        private SlotMachineData? _config;
+        private FsmFloat? _cash, _statsIn, _statsOut;
+        private float _probeAt;
+        private bool _clearing, _discoveryFailed;
 
         public void Update(SessionManager session)
         {
             if (session.PlayerCount == 0) return;
             EnsureBuilt();
-
-            if (Time.unscaledTime >= _nextProbeAt)
+            if (_config == null) return;
+            if (Time.unscaledTime >= _probeAt)
             {
-                _nextProbeAt = Time.unscaledTime + ProbeIntervalSeconds;
-                for (int i = 0; i < _machines.Count; i++) LocateMachine(_machines[i]);
+                _probeAt = Time.unscaledTime + 5f;
+                try { Locate(); }
+                catch (Exception e) { WinterMPPlugin.Log.LogWarning("Slot discovery will retry: " + e.Message); }
             }
-
-            if (!session.IsHost) return;
-            if (Time.unscaledTime < _nextHostTickAt) return;
-            _nextHostTickAt = Time.unscaledTime + HostTickSeconds;
-
-            bool keepAlive = Time.unscaledTime >= _nextKeepAliveAt;
-            if (keepAlive) _nextKeepAliveAt = Time.unscaledTime + KeepAliveSeconds;
-
-            for (int i = 0; i < _machines.Count; i++)
-                HostBroadcastIfChanged(session, _machines[i], keepAlive);
-        }
-
-        /// <summary>Host: re-broadcast every machine on the next tick (slot state isn't in the join snapshot).</summary>
-        public void ForceBroadcast()
-        {
-            _nextHostTickAt = 0f;
-            _nextKeepAliveAt = 0f;
-        }
-
-        // ---- Guest: apply host state -----------------------------------------
-
-        public void OnRemoteState(GamblingState message)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || session.IsHost) return;
-            if (message.Kind != GamblingState.KindSlot) return;
-
-            EnsureBuilt();
-            if (!_byId.TryGetValue(message.MachineId, out var machine)) return;
-            LocateMachine(machine);
-
-            try
+            foreach (var machine in _machines.Values)
             {
-                WriteFloat(machine.Credit, message.Credit);
-                WriteFloat(machine.BetLevel, message.Bet);
-                WriteFloat(machine.Winnings, message.Payout);
-                WriteReel(machine.Reel1, message.V1);
-                WriteReel(machine.Reel2, message.V2);
-                WriteReel(machine.Reel3, message.V3);
-                WriteBool(machine.Roll1Locked, (message.Flags & GamblingState.FlagReel1Locked) != 0);
-                WriteBool(machine.Roll2Locked, (message.Flags & GamblingState.FlagReel2Locked) != 0);
-                WriteBool(machine.Roll3Locked, (message.Flags & GamblingState.FlagReel3Locked) != 0);
-            }
-            catch (System.Exception e)
-            {
-                WinterMPPlugin.Log.LogDebug("GamblingSync: apply failed for " + machine.ContainerPath + ": " + e.Message);
-            }
-        }
-
-        // ---- Host: apply a guest's anyone-triggers intent --------------------
-
-        public bool TryAcceptIntent(GamblingIntent intent)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || !session.IsHost) return false;
-
-            EnsureBuilt();
-            if (!_byId.TryGetValue(intent.MachineId, out var machine)) return false;
-            LocateMachine(machine);
-
-            if (machine.Anchor == null
-                || !TryGetActionTarget(machine, intent.Action, out var fsm, out var stateName)
-                || fsm == null
-                || !IsGuestNear(session, intent.PlayerId, machine.Anchor.position))
-            {
-                WinterMPPlugin.Log.LogWarning(
-                    $"GamblingSync: dropped invalid or distant intent {intent.MachineId:X8} action {intent.Action} from player {intent.PlayerId}.");
-                return false;
-            }
-
-            if (_lastIntentSequences.TryGetValue(intent.PlayerId, out ushort previous))
-            {
-                ushort difference = (ushort)(intent.Sequence - previous);
-                if (difference == 0 || difference > short.MaxValue)
+                if (machine.Failed) continue;
+                try
                 {
-                    WinterMPPlugin.Log.LogWarning(
-                        $"GamblingSync: dropped stale intent sequence {intent.Sequence} from player {intent.PlayerId}.");
-                    return false;
+                    BindVariables(machine);
+                    if (machine.Start != null && machine.Start.Fsm.Active) InstallHooks(machine);
+                    if (session.IsHost)
+                    {
+                        EnsureLedger(machine);
+                        if (machine.Ledger != null)
+                        {
+                            bool changed = machine.Ledger.Advance(Time.unscaledTime);
+                            if (changed || Time.unscaledTime >= machine.BroadcastAt) Broadcast(session, machine);
+                        }
+                    }
+                    if (machine.Pending.Count > 0 && Time.unscaledTime >= machine.RetryAt)
+                    {
+                        machine.RetryAt = Time.unscaledTime + 1f;
+                        var request = machine.Pending.Peek();
+                        if (session.IsHost) OnIntent(request);
+                        else session.SendWorldMessage(request, Channel.ReliableOrdered);
+                    }
+                    ApplyPresentation(machine);
                 }
+                catch (Exception e) { Disable(machine, e); }
             }
-
-            _lastIntentSequences[intent.PlayerId] = intent.Sequence;
-            FsmHook.EnsureRemoteEntry(fsm, stateName);
-            FsmHook.FireRemoteEntry(fsm, stateName);
-            SyncEventLog.Record("gamble-intent", $"{intent.MachineId:X8} action {intent.Action} player {intent.PlayerId}");
-
-            // The wallet moved — force the next slot broadcast promptly. WalletSync already
-            // broadcasts a >=epsilon money change on its own next tick (no manual notify needed).
-            _nextHostTickAt = 0f;
-            return true;
         }
-
-        // ---- Host broadcast ---------------------------------------------------
-
-        private void HostBroadcastIfChanged(SessionManager session, Machine machine, bool keepAlive)
-        {
-            if (!machine.AnyFsm) return;
-
-            byte flags = 0, bet, r1, r2, r3;
-            ushort credit;
-            int payout;
-
-            try
-            {
-                if (ReadBool(machine.Roll1Locked)) flags |= GamblingState.FlagReel1Locked;
-                if (ReadBool(machine.Roll2Locked)) flags |= GamblingState.FlagReel2Locked;
-                if (ReadBool(machine.Roll3Locked)) flags |= GamblingState.FlagReel3Locked;
-                if (IsSpinning(machine)) flags |= GamblingState.FlagActive;
-
-                credit = ClampUShort(ReadFloat(machine.Credit));
-                bet = ClampByte(ReadFloat(machine.BetLevel));
-                payout = (int)ReadFloat(machine.Winnings);
-                r1 = ReadReel(machine.Reel1);
-                r2 = ReadReel(machine.Reel2);
-                r3 = ReadReel(machine.Reel3);
-            }
-            catch (System.Exception e)
-            {
-                WinterMPPlugin.Log.LogDebug("GamblingSync: read failed for " + machine.ContainerPath + ": " + e.Message);
-                return;
-            }
-
-            bool changed = !machine.HasLast
-                || machine.LastFlags != flags
-                || machine.LastCredit != credit
-                || machine.LastBet != bet
-                || machine.LastR1 != r1 || machine.LastR2 != r2 || machine.LastR3 != r3
-                || machine.LastPayout != payout;
-
-            if (!changed && !keepAlive) return;
-
-            machine.HasLast = true;
-            machine.LastFlags = flags;
-            machine.LastCredit = credit;
-            machine.LastBet = bet;
-            machine.LastR1 = r1; machine.LastR2 = r2; machine.LastR3 = r3;
-            machine.LastPayout = payout;
-
-            session.SendWorldMessage(
-                new GamblingState
-                {
-                    MachineId = machine.Id,
-                    Kind = GamblingState.KindSlot,
-                    Flags = flags,
-                    Credit = credit,
-                    Bet = bet,
-                    V1 = r1,
-                    V2 = r2,
-                    V3 = r3,
-                    Payout = payout,
-                },
-                Channel.ReliableOrdered);
-        }
-
-        // ---- Discovery --------------------------------------------------------
 
         private void EnsureBuilt()
         {
-            if (_built) return;
-            _built = true;
-            Add("STORE_AREA/Stuff/LOD/GFX_Pub/SlotMachinePub");
-            Add("PERAPORTTI/Building/LOD100/SlotMachine");
-        }
-
-        private void Add(string containerPath)
-        {
-            var machine = new Machine
-            {
-                Id = StableHash.Fnv1a32(containerPath),
-                ContainerPath = containerPath,
-            };
-            _machines.Add(machine);
-            _byId[machine.Id] = machine;
-        }
-
-        private void LocateMachine(Machine machine)
-        {
-            GameObject? container;
-            try { container = GameObject.Find(machine.ContainerPath); }
-            catch { return; }
-            if (container == null) return;
-
-            var root = container.transform;
-            machine.Anchor = root;
-
-            if (machine.PayMoney == null) machine.PayMoney = FindChildFsm(root, "Buttons/PayMoney", "Use");
-            if (machine.Bet == null) machine.Bet = FindChildFsm(root, "Buttons/Bet", "Use");
-            if (machine.Start == null) machine.Start = FindChildFsm(root, "Buttons/Start", "Use");
-            if (machine.Cashout == null) machine.Cashout = FindChildFsm(root, "Buttons/Cashout", "Use");
-            if (machine.Lock1 == null) machine.Lock1 = FindChildFsm(root, "LockButtos/LockRoll1", "Use");
-            if (machine.Lock2 == null) machine.Lock2 = FindChildFsm(root, "LockButtos/LockRoll2", "Use");
-            if (machine.Lock3 == null) machine.Lock3 = FindChildFsm(root, "LockButtos/LockRoll3", "Use");
-
-            if (machine.Start != null)
-            {
-                var v = machine.Start.FsmVariables;
-                if (machine.Credit == null) machine.Credit = v.FindFsmFloat("AddedMoney");
-                if (machine.Winnings == null) machine.Winnings = v.FindFsmFloat("Win");
-                if (machine.Roll1Locked == null) machine.Roll1Locked = v.FindFsmBool("Roll1Locked");
-                if (machine.Roll2Locked == null) machine.Roll2Locked = v.FindFsmBool("Roll2Locked");
-                if (machine.Roll3Locked == null) machine.Roll3Locked = v.FindFsmBool("Roll3Locked");
-                if (machine.Reel1 == null) machine.Reel1 = v.FindFsmString("Roll1");
-                if (machine.Reel2 == null) machine.Reel2 = v.FindFsmString("Roll2");
-                if (machine.Reel3 == null) machine.Reel3 = v.FindFsmString("Roll3");
-            }
-
-            if (machine.BetLevel == null && machine.Bet != null)
-                machine.BetLevel = machine.Bet.FsmVariables.FindFsmFloat("Bet");
-
-            if (!machine.LoggedFound && machine.AnyFsm)
-            {
-                machine.LoggedFound = true;
-                WinterMPPlugin.Log.LogInfo($"GamblingSync: located slot machine '{machine.ContainerPath}' (id {machine.Id:X8}).");
-            }
-
-            var session = SessionManager.Instance;
-            if (session == null) return;
-            if (session.IsHost) EnsureHostEntries(machine);
-            else InstallGuestHooks(machine);
-        }
-
-        // Host: pre-register the synthetic MP_* transitions so a relayed intent can force
-        // each button's action state regardless of where the FSM currently sits.
-        private void EnsureHostEntries(Machine machine)
-        {
-            if (machine.HostEntriesReady) return;
-            bool all = true;
-            all &= EnsureEntry(machine.PayMoney, StatePay);
-            all &= EnsureEntry(machine.Bet, StateBet);
-            all &= EnsureEntry(machine.Start, StateStart);
-            all &= EnsureEntry(machine.Cashout, StateCashout);
-            all &= EnsureEntry(machine.Lock1, StateLock);
-            all &= EnsureEntry(machine.Lock2, StateLock);
-            all &= EnsureEntry(machine.Lock3, StateLock);
-            machine.HostEntriesReady = all;
-        }
-
-        private static bool EnsureEntry(PlayMakerFSM? fsm, string stateName)
-        {
-            if (fsm == null) return false;
-            try { return FsmHook.EnsureRemoteEntry(fsm, stateName); }
-            catch { return false; }
-        }
-
-        // Guest: relay the local button press to the host as an intent.
-        private void InstallGuestHooks(Machine machine)
-        {
-            if (machine.HooksInstalled) return;
-            bool all = true;
-            all &= HookOnce(machine.PayMoney, StatePay, machine, GamblingIntent.ActionPay, ref machine.HookedPay);
-            all &= HookOnce(machine.Bet, StateBet, machine, GamblingIntent.ActionBet, ref machine.HookedBet);
-            all &= HookOnce(machine.Start, StateStart, machine, GamblingIntent.ActionStart, ref machine.HookedStart);
-            all &= HookOnce(machine.Cashout, StateCashout, machine, GamblingIntent.ActionCashout, ref machine.HookedCashout);
-            all &= HookOnce(machine.Lock1, StateLock, machine, GamblingIntent.ActionLock1, ref machine.HookedLock1);
-            all &= HookOnce(machine.Lock2, StateLock, machine, GamblingIntent.ActionLock2, ref machine.HookedLock2);
-            all &= HookOnce(machine.Lock3, StateLock, machine, GamblingIntent.ActionLock3, ref machine.HookedLock3);
-            machine.HooksInstalled = all;
-        }
-
-        private bool HookOnce(PlayMakerFSM? fsm, string stateName, Machine machine, byte action, ref bool installed)
-        {
-            if (installed) return true;
-            if (fsm == null) return false;
-            var captured = machine;
-            var capturedAction = action;
-            installed = FsmHook.OnStateEnter(fsm, stateName, () => EmitIntent(captured, capturedAction));
-            return installed;
-        }
-
-        private void EmitIntent(Machine machine, byte action)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || session.IsHost || session.PlayerCount == 0) return;
-            if (Time.unscaledTime < machine.NextIntentAt) return;
-            machine.NextIntentAt = Time.unscaledTime + IntentCooldownSeconds;
-
-            session.SendWorldMessage(
-                new GamblingIntent
-                {
-                    MachineId = machine.Id,
-                    Action = action,
-                    PlayerId = session.LocalPlayerId,
-                    Sequence = ++machine.OutIntentSequence,
-                },
-                Channel.ReliableOrdered);
-            SyncEventLog.Record("gamble-intent-out", $"{machine.Id:X8} action {action}");
-        }
-
-        private static bool TryGetActionTarget(Machine machine, byte action, out PlayMakerFSM? fsm, out string stateName)
-        {
-            switch (action)
-            {
-                case GamblingIntent.ActionPay: fsm = machine.PayMoney; stateName = StatePay; return true;
-                case GamblingIntent.ActionBet: fsm = machine.Bet; stateName = StateBet; return true;
-                case GamblingIntent.ActionStart: fsm = machine.Start; stateName = StateStart; return true;
-                case GamblingIntent.ActionCashout: fsm = machine.Cashout; stateName = StateCashout; return true;
-                case GamblingIntent.ActionLock1: fsm = machine.Lock1; stateName = StateLock; return true;
-                case GamblingIntent.ActionLock2: fsm = machine.Lock2; stateName = StateLock; return true;
-                case GamblingIntent.ActionLock3: fsm = machine.Lock3; stateName = StateLock; return true;
-                default: fsm = null; stateName = string.Empty; return false;
-            }
-        }
-
-        private static bool IsSpinning(Machine machine)
-        {
-            if (machine.Start == null) return false;
+            if (_config != null || _discoveryFailed) return;
             try
             {
-                string s = machine.Start.ActiveStateName;
-                return !string.IsNullOrEmpty(s) && s != "Wait player" && s != "Wait button" && s != "Reset game";
-            }
-            catch { return false; }
-        }
-
-        private static PlayMakerFSM? FindChildFsm(Transform root, string childPath, string fsmName)
-        {
-            try
-            {
-                var child = root.Find(childPath);
-                if (child == null) return null;
-                foreach (var fsm in child.GetComponents<PlayMakerFSM>())
+                SyncCatalog.EnsureLoaded();
+                var config = SyncCatalog.SlotMachines;
+                if (config == null) return;
+                foreach (string path in config.Paths)
                 {
-                    if (fsm != null && fsm.FsmName == fsmName) return fsm;
+                    uint id = StableHash.Fnv1a32(path);
+                    _machines.Add(id, new Machine { Id = id, Path = path });
                 }
-                return null;
+                _config = config;
             }
-            catch { return null; }
+            catch (Exception e)
+            {
+                _discoveryFailed = true;
+                _machines.Clear();
+                WinterMPPlugin.Log.LogError("Slot sync unavailable: " + e);
+            }
         }
 
-        private static bool IsGuestNear(SessionManager session, byte playerId, Vector3 targetPosition)
+        private void EnsureLedger(Machine machine)
         {
-            float now = Time.unscaledTime;
+            if (machine.Ledger != null || _config == null || machine.Credit == null || machine.Winnings == null
+                || machine.Bet == null || machine.LastWin == null || machine.CanHold == null) return;
+            // Let a solo spin already underway when hosting began finish naturally.
+            // Inactive scene objects can be read without activating the host's UI.
+            if (NativeSpinning(machine)) return;
+            int bet = ReadAmount(machine.Bet);
+            if (bet < 1 || bet > 5) throw new InvalidOperationException("Invalid slot bet.");
+            var initial = new SlotMachineState
+            {
+                MachineId = machine.Id, Credit = ReadAmount(machine.Credit), Winnings = ReadAmount(machine.Winnings),
+                Bet = (byte)bet, LastWin = ReadAmount(machine.LastWin), CanHold = machine.CanHold.Value,
+                Reel1 = ReadReel(machine.Reels[0]), Reel2 = ReadReel(machine.Reels[1]), Reel3 = ReadReel(machine.Reels[2]),
+            };
+            for (int i = 0; i < 3; i++)
+                if (machine.Holds[i] != null && machine.Holds[i]!.Value) initial.HoldMask |= (byte)(1 << i);
+            machine.Ledger = new SlotMachineLedger(initial, _config.Reels, _config.Payouts, _random.Next);
+        }
+
+        public void OnIntent(SlotMachineIntent request)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) return;
+            EnsureBuilt();
+            if (!_machines.TryGetValue(request.MachineId, out var machine) || machine.Failed) return;
+            try
+            {
+                float now = Time.unscaledTime;
+                if (machine.RequestTimes.TryGetValue(request.PlayerId, out float next) && now < next) return;
+                machine.RequestTimes[request.PlayerId] = now + 0.1f;
+                EnsureLedger(machine);
+                if (machine.Ledger == null || _cash == null) return;
+                bool repeated = machine.Ledger.TryGetReceipt(request, out byte result, out int cashDelta);
+                if (!repeated)
+                {
+                    if (machine.Root == null || !TryPlayerPosition(session, request.PlayerId, out var position)) return;
+                    float before = _cash.Value;
+                    bool nearby = (position - machine.Root.position).sqrMagnitude <= 36f;
+                    result = machine.Ledger.Apply(request, before, now, nearby, out float cash);
+                    machine.Ledger.TryGetReceipt(request, out _, out cashDelta);
+                    _cash.Value = cash;
+                    if (result == SlotMachineResult.Accepted && cash != before)
+                    {
+                        if (cash < before && _statsIn != null) _statsIn.Value += before - cash;
+                        if (cash > before && _statsOut != null) _statsOut.Value += cash - before;
+                    }
+                    SyncEventLog.Record("slot-action", machine.Id.ToString("X8") + " player " + request.PlayerId
+                        + " seq " + request.Sequence + " action " + request.Action + " result " + result);
+                }
+                if (result == SlotMachineResult.Retry || result == SlotMachineResult.Stale) return;
+                Broadcast(session, machine);
+                var wallet = WorldSyncManager.Instance?.BuildWalletState();
+                if (wallet != null) session.SendWorldMessage(wallet, Channel.ReliableOrdered);
+                var receipt = new SlotMachineResult
+                {
+                    MachineId = request.MachineId, PlayerId = request.PlayerId,
+                    Sequence = request.Sequence, Result = result, CashDelta = cashDelta,
+                };
+                session.SendWorldMessage(receipt, Channel.ReliableOrdered);
+                if (request.PlayerId == session.LocalPlayerId) OnResult(receipt);
+            }
+            catch (Exception e) { Disable(machine, e); }
+        }
+
+        public void OnState(SlotMachineState state)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || session.IsHost || !SlotMachineLedger.IsValid(state)) return;
+            EnsureBuilt();
+            if (!_machines.TryGetValue(state.MachineId, out var machine) || machine.Failed) return;
+            if (machine.HasRevision && machine.View != null)
+            {
+                uint delta = state.Revision - machine.View.Revision;
+                if (delta == 0 || delta > int.MaxValue) return;
+            }
+            machine.HasRevision = true;
+            machine.View = state;
+        }
+
+        public void OnResult(SlotMachineResult result)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || result.PlayerId != session.LocalPlayerId
+                || !_machines.TryGetValue(result.MachineId, out var machine) || machine.Pending.Count == 0
+                || machine.Pending.Peek().Sequence != result.Sequence || result.Result > SlotMachineResult.Distant) return;
+            machine.Pending.Dequeue();
+            machine.RetryAt = 0f;
+            if (result.Result == SlotMachineResult.Accepted) ApplyCashoutAchievement(result.CashDelta);
+            if (result.Result != SlotMachineResult.Accepted)
+                session.AddSystemChat(result.Result == SlotMachineResult.Busy
+                    ? "* Slot machine is busy. Wait for the current player or spin to finish."
+                    : result.Result == SlotMachineResult.Funds
+                        ? "* Not enough available money for that slot-machine action."
+                        : "* Slot-machine action declined. The machine has been refreshed.");
+        }
+
+        private void Queue(Machine machine, byte action, uint round = 0)
+        {
+            var session = SessionManager.Instance;
+            if (_clearing || machine.Failed || !machine.HooksReady || session == null
+                || (session.State != SessionState.Hosting && session.State != SessionState.Connected)) return;
+            if (action != SlotMachineIntent.Finish)
+            {
+                if (Time.unscaledTime < machine.InputAt) return;
+                machine.InputAt = Time.unscaledTime + 0.15f;
+            }
+            if (machine.Pending.Count >= 16) return;
+            machine.Pending.Enqueue(new SlotMachineIntent
+            {
+                MachineId = machine.Id, PlayerId = session.LocalPlayerId, Action = action,
+                Sequence = ++machine.OutSequence, Round = round,
+            });
+            if (machine.Pending.Count == 1) machine.RetryAt = 0f;
+        }
+
+        private void Broadcast(SessionManager session, Machine machine)
+        {
+            if (machine.Ledger == null) return;
+            var state = machine.Ledger.Snapshot();
+            machine.View = state;
+            machine.BroadcastAt = Time.unscaledTime + 5f;
+            session.SendWorldMessage(state, Channel.ReliableOrdered);
+        }
+
+        public void ForceBroadcast()
+        {
+            foreach (var machine in _machines.Values) machine.BroadcastAt = 0f;
+        }
+
+        public void ForgetPlayer(byte playerId)
+        {
+            foreach (var machine in _machines.Values)
+            {
+                machine.Ledger?.ForgetPlayer(playerId);
+                machine.RequestTimes.Remove(playerId);
+                machine.BroadcastAt = 0f;
+            }
+        }
+
+        internal static bool TryPlayerPosition(SessionManager session, byte id, out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (id == session.LocalPlayerId)
+            {
+                var world = WorldSyncManager.Instance;
+                if (world == null) return false;
+                world.FindLocalPlayer();
+                if (world.LocalPlayer == null) return false;
+                position = world.LocalPlayer.position;
+                return true;
+            }
             foreach (var player in session.Players)
             {
-                if (player.PlayerId != playerId) continue;
-                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > IntentPlayerPoseMaxAgeSeconds)
-                    return false;
-                return (player.Position - targetPosition).sqrMagnitude
-                    <= IntentPlayerMaxDistance * IntentPlayerMaxDistance;
+                if (player.PlayerId != id) continue;
+                if (player.IsDead || player.LastTransformTime <= 0f || Time.unscaledTime - player.LastTransformTime > 2f) return false;
+                position = player.Position;
+                return true;
             }
             return false;
         }
 
-        // ---- var helpers ------------------------------------------------------
-
-        private static bool ReadBool(FsmBool? v) => v != null && v.Value;
-        private static float ReadFloat(FsmFloat? v) => v != null ? v.Value : 0f;
-        private static void WriteBool(FsmBool? v, bool value) { if (v != null) v.Value = value; }
-        private static void WriteFloat(FsmFloat? v, float value) { if (v != null) v.Value = value; }
-
-        // Reel symbols read as short digit strings ("0".."9"); carry them as a byte.
-        private static byte ReadReel(FsmString? v)
+        private static int ReadAmount(FsmFloat value)
         {
-            if (v == null || string.IsNullOrEmpty(v.Value)) return 0;
-            return int.TryParse(v.Value, out int n) ? (byte)Mathf.Clamp(n, 0, 255) : (byte)0;
+            float amount = value.Value;
+            if (!BankTransferPolicy.IsFinite(amount) || amount < 0 || amount > SlotMachineLedger.MaximumBalance || amount != (int)amount)
+                throw new InvalidOperationException("Invalid slot balance " + value.Name + ".");
+            return (int)amount;
         }
 
-        private static void WriteReel(FsmString? v, byte symbol)
+        private static byte ReadReel(FsmString? value)
         {
-            if (v != null) v.Value = symbol.ToString();
+            if (value == null || string.IsNullOrEmpty(value.Value)) return 0;
+            if (!byte.TryParse(value.Value, out byte symbol) || symbol > 9)
+                throw new InvalidOperationException("Invalid slot reel.");
+            return symbol;
         }
 
-        private static byte ClampByte(float value) => (byte)Mathf.Clamp(value, 0f, 255f);
-        private static ushort ClampUShort(float value) => (ushort)Mathf.Clamp(value, 0f, 65535f);
+        private void Disable(Machine machine, Exception error)
+        {
+            if (machine.Failed) return;
+            machine.Failed = true;
+            WinterMPPlugin.Log.LogError("Slot sync disabled for '" + machine.Path + "': " + error);
+            try
+            {
+                machine.Ledger?.FinishSession();
+                if (machine.Ledger != null) machine.View = machine.Ledger.Snapshot();
+                StopAnimation(machine);
+                WriteValues(machine);
+            }
+            catch (Exception e) { WinterMPPlugin.Log.LogDebug("Slot recovery: " + e.Message); }
+        }
+
+        public void Clear()
+        {
+            _clearing = true;
+            foreach (var machine in _machines.Values)
+            {
+                try
+                {
+                    machine.Ledger?.FinishSession();
+                    if (machine.Ledger != null) machine.View = machine.Ledger.Snapshot();
+                    StopAnimation(machine);
+                    WriteValues(machine);
+                }
+                catch (Exception e) { WinterMPPlugin.Log.LogDebug("Slot cleanup: " + e.Message); }
+                foreach (var hook in machine.Hooks)
+                {
+                    try
+                    {
+                        var actions = new List<FsmStateAction>(hook.State.Actions);
+                        actions.Remove(hook.Action);
+                        hook.State.Actions = actions.ToArray();
+                    }
+                    catch (Exception e) { WinterMPPlugin.Log.LogDebug("Slot hook cleanup: " + e.Message); }
+                }
+                foreach (var action in machine.RandomActions) action.Action.Enabled = action.Enabled;
+            }
+            _machines.Clear();
+            _config = null;
+            _cash = _statsIn = _statsOut = null;
+            _probeAt = 0f;
+            _clearing = _discoveryFailed = false;
+        }
     }
 }

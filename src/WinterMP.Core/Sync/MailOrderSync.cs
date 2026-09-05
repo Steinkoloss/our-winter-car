@@ -57,6 +57,13 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<byte, MailOrderState> _pending = new Dictionary<byte, MailOrderState>();
         private readonly Dictionary<byte, PendingIntent> _pendingIntents = new Dictionary<byte, PendingIntent>();
         private readonly Dictionary<byte, ushort> _lastGuestIntentSequences = new Dictionary<byte, ushort>();
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop its stale state.</summary>
+        public void ForgetPlayer(byte playerId)
+        {
+            _lastGuestIntentSequences.Remove(playerId);
+            _pendingIntents.Remove(playerId);
+        }
         private float _nextScanAt;
         private float _nextSendAt;
         private ushort _outIntentSequence;

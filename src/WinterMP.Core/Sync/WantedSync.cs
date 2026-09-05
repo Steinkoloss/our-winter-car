@@ -14,7 +14,11 @@ namespace WinterMP.Core.Sync
     /// disagrees on how wanted it is. The <b>host</b> owns the group wanted level: it
     /// broadcasts the counters + sentence on change + join; a guest whose local counter rises
     /// (it committed a crime) reports the delta via <see cref="CrimeReport"/>, which the host
-    /// adds to its authoritative counter — so a guest's crime is never erased by the broadcast.
+    /// adds to its authoritative counter. Guest evidence lives in a pending-delta accumulator
+    /// that the host broadcast cannot stomp (the synced counter is both crime source and sync
+    /// target, so a naive "report the counter" design erased unaccepted crimes on the next
+    /// broadcast); the host queues reports that arrive before its FSM binds, so the reliable
+    /// channel makes delivery exact-once without a resend/ack loop.
     /// Foundation for arrest/jail (4.2) and pursuit (4.4).
     /// </summary>
     internal sealed class WantedSync
@@ -41,10 +45,19 @@ namespace WinterMP.Core.Sync
         private readonly int[] _lastSent = new int[7];
         private byte _lastFlags;
 
-        // Guest-side: local value already reported to the host per reportable counter.
-        private readonly int[] _reportedUpTo = new int[ReportableCount];
+        // Guest-side crime evidence, decoupled from the synced counter: _pendingDelta is what
+        // we still owe the host, _lastObservedLocal is the counter value we last diffed
+        // against. Apply() re-baselines the observation but never touches the pending delta,
+        // so a host broadcast can no longer erase an unreported crime.
+        private readonly int[] _pendingDelta = new int[ReportableCount];
+        private readonly int[] _lastObservedLocal = new int[ReportableCount];
+        private bool _observedSeeded;
         private ushort _outReportSequence;
         private readonly Dictionary<byte, ushort> _lastReportSequences = new Dictionary<byte, ushort>();
+        // Host-side: reports that arrived before the PlayerWanted FSM bound (session start)
+        // are parked, not rejected — the sender does not re-send (reliable channel).
+        private const int MaxQueuedReports = 64;
+        private readonly List<CrimeReport> _queuedReports = new List<CrimeReport>();
 
         private static readonly string[] CounterVars =
         {
@@ -65,9 +78,15 @@ namespace WinterMP.Core.Sync
             _hasLast = false;
             _lastFlags = 0;
             for (int i = 0; i < _lastSent.Length; i++) _lastSent[i] = 0;
-            for (int i = 0; i < _reportedUpTo.Length; i++) _reportedUpTo[i] = 0;
+            for (int i = 0; i < _pendingDelta.Length; i++) _pendingDelta[i] = 0;
+            for (int i = 0; i < _lastObservedLocal.Length; i++) _lastObservedLocal[i] = 0;
+            _observedSeeded = false;
             _lastReportSequences.Clear();
+            _queuedReports.Clear();
         }
+
+        /// <summary>Host: a player (re)joined — its report counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _lastReportSequences.Remove(playerId);
 
         public void Update(SessionManager session)
         {
@@ -77,6 +96,7 @@ namespace WinterMP.Core.Sync
 
             if (session.IsHost)
             {
+                DrainQueuedReports();
                 if (Time.unscaledTime < _nextHostTickAt) return;
                 _nextHostTickAt = Time.unscaledTime + HostTickSeconds;
                 bool keepAlive = Time.unscaledTime >= _nextKeepAliveAt;
@@ -99,13 +119,26 @@ namespace WinterMP.Core.Sync
 
         private void ReportLocalCrimes(SessionManager session)
         {
-            for (byte i = 0; i < ReportableCount; i++)
+            // Accrue evidence: only a RISE of the local counter is a crime we committed.
+            // The first observation seeds the baseline instead — a save that already holds
+            // counters must not be replayed to the host as fresh crimes.
+            for (int i = 0; i < ReportableCount; i++)
             {
                 int local = _counters[i] != null ? _counters[i]!.Value : 0;
-                int delta = local - _reportedUpTo[i];
-                if (delta <= 0) continue;
-                if (delta > MaxCrimeDelta) delta = MaxCrimeDelta;
-                _reportedUpTo[i] = local;
+                if (_observedSeeded)
+                {
+                    int rise = local - _lastObservedLocal[i];
+                    if (rise > 0) _pendingDelta[i] += rise;
+                }
+                _lastObservedLocal[i] = local;
+            }
+            if (!_observedSeeded) { _observedSeeded = true; return; }
+
+            for (byte i = 0; i < ReportableCount; i++)
+            {
+                if (_pendingDelta[i] <= 0) continue;
+                int delta = Mathf.Min(_pendingDelta[i], MaxCrimeDelta);
+                _pendingDelta[i] -= delta;
 
                 session.SendWorldMessage(new CrimeReport
                 {
@@ -141,8 +174,10 @@ namespace WinterMP.Core.Sync
                 for (int i = 0; i < _counters.Length; i++)
                     if (_counters[i] != null) _counters[i]!.Value = Mathf.Max(0, values[i]);
                 if (_cousin != null) _cousin.Value = (message.Flags & WantedState.FlagCousin) != 0;
-                // Re-baseline what we've reported so future local rises re-diff against the host.
-                for (int i = 0; i < ReportableCount; i++) _reportedUpTo[i] = values[i];
+                // The stomp itself must not read as a local change — but pending (unreported)
+                // deltas stay: they are evidence the host has not incorporated yet.
+                for (int i = 0; i < ReportableCount; i++) _lastObservedLocal[i] = values[i];
+                _observedSeeded = true;
             }
             catch (System.Exception e)
             {
@@ -156,8 +191,7 @@ namespace WinterMP.Core.Sync
         {
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return false;
-            Locate();
-            if (!Ready || message.CrimeType >= ReportableCount || message.Delta <= 0 || message.Delta > MaxCrimeDelta)
+            if (message.CrimeType >= ReportableCount || message.Delta <= 0 || message.Delta > MaxCrimeDelta)
                 return false;
 
             if (_lastReportSequences.TryGetValue(message.PlayerId, out ushort previous))
@@ -167,6 +201,21 @@ namespace WinterMP.Core.Sync
             }
             _lastReportSequences[message.PlayerId] = message.Sequence;
 
+            Locate();
+            if (!TryApplyReport(message))
+            {
+                // Not appliable yet (FSM unbound / tearing down). The guest already spent
+                // this delta and will not re-send — park it instead of dropping the crime.
+                if (_queuedReports.Count < MaxQueuedReports) _queuedReports.Add(message);
+                else WinterMPPlugin.Log.LogWarning("WantedSync: crime-report queue full, dropping report.");
+            }
+
+            return true;
+        }
+
+        private bool TryApplyReport(CrimeReport message)
+        {
+            if (!Ready) return false;
             var counter = _counters[message.CrimeType];
             if (counter == null) return false;
             try { counter.Value = Mathf.Max(0, counter.Value + message.Delta); }
@@ -175,6 +224,21 @@ namespace WinterMP.Core.Sync
             SyncEventLog.Record("crime-accept", $"player {message.PlayerId} type {message.CrimeType} +{message.Delta}");
             _nextHostTickAt = 0f; // broadcast promptly
             return true;
+        }
+
+        private void DrainQueuedReports()
+        {
+            if (_queuedReports.Count == 0 || !Ready) return;
+            for (int i = 0; i < _queuedReports.Count; i++)
+            {
+                if (!TryApplyReport(_queuedReports[i]))
+                {
+                    // Still not appliable — keep the tail for the next tick.
+                    _queuedReports.RemoveRange(0, i);
+                    return;
+                }
+            }
+            _queuedReports.Clear();
         }
 
         // ---- Host broadcast --------------------------------------------------

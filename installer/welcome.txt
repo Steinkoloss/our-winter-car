@@ -1,5 +1,9 @@
 Our Winter Car adds co-op multiplayer to My Winter Car.
 
+Tester release 0.1.31: targets My Winter Car v.260516-01 (Steam build 23268598).
+Use the same package on every PC. Back up your save and read TESTING.md first.
+Two-player gameplay validation is still in progress.
+
 This installer will:
 1. Install the Our Winter Car launcher
 2. Find My Winter Car via Steam and install BepInEx + the mod

@@ -96,17 +96,20 @@ namespace WinterMP.Core.Sync
                 climate.OwnerPlayerId = ownerPlayerId;
                 yield return climate;
             }
+
+            var damage = TryBuildDamageSnapshot(item, ownerPlayerId);
+            if (damage != null) yield return damage;
+
+            var condition = TryBuildConditionSnapshot(item, ownerPlayerId);
+            if (condition != null) yield return condition;
         }
 
-        // The join snapshot used to carry climate ONLY, so a late joiner started with a car
-        // whose engine/fuel/gear/damage/tire state was whatever its own save happened to hold.
-        // Nothing corrected it afterwards either: ComputeVehicleCrc folds only flags+fuel, so
-        // a parked damaged car checksums identical on both peers and never triggers the
-        // targeted resync that would have carried the rest. Send the same full set the resync
-        // path already builds.
+        // Joins and targeted repairs need the same complete state, including healthy
+        // parts: a zero damage mask must correct breakage inherited from a guest's save.
         internal IEnumerable<IMessage> BuildJoinVehicleSnapshots()
         {
-            return BuildVehicleResyncMessages();
+            foreach (var message in BuildVehicleResyncMessages())
+                yield return message;
         }
 
         internal bool TryReadVehicleChecksum(SyncedItem item, out byte flags, out ushort rpm, out byte fuel,

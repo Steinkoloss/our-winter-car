@@ -209,6 +209,9 @@ namespace WinterMP.Core.Sync
             foreach (var vehicle in _vehicles.BuildJoinVehicleSnapshots())
                 yield return vehicle;
 
+            foreach (var deadMover in _npcTraffic.BuildDeadMoverSnapshots())
+                yield return deadMover;
+
             // After the item snapshot (adoption relies on the joiner having seen the
             // host-known id set first): re-send this session's spill manifests so a
             // late joiner materializes container-spawned items it can't ever scan.
@@ -244,9 +247,20 @@ namespace WinterMP.Core.Sync
             if (taxiJob != null)
                 yield return taxiJob;
 
+            var worldScalars = _worldScalars.BuildSnapshot();
+            if (worldScalars != null)
+                yield return worldScalars;
+
+            var hockey = _hockey.BuildSnapshot();
+            if (hockey != null)
+                yield return hockey;
+
             var welfare = _welfare.BuildSnapshot();
             if (welfare != null)
                 yield return welfare;
+            var debtLetter = _welfare.BuildDebtSnapshot();
+            if (debtLetter != null)
+                yield return debtLetter;
 
             var hitchhiker = _hitchhiker.BuildSnapshot();
             if (hitchhiker != null)

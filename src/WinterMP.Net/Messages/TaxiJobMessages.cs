@@ -19,6 +19,8 @@ namespace WinterMP.Net.Messages
         public float Money;
         public float KMsDriven;
         public byte Flags;
+        /// <summary>Live per-ride fare (`Customer1/TaxiWalker :: Logic` Cost). Appended v87.</summary>
+        public float FareCost;
 
         public bool Employed => (Flags & FlagEmployed) != 0;
 
@@ -31,6 +33,7 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(Money);
             writer.WriteSingle(KMsDriven);
             writer.WriteByte(Flags);
+            writer.WriteSingle(FareCost);
         }
 
         public void Read(NetReader reader)
@@ -40,6 +43,7 @@ namespace WinterMP.Net.Messages
             Money = reader.ReadSingle();
             KMsDriven = reader.ReadSingle();
             Flags = reader.ReadByte();
+            FareCost = reader.ReadSingle();
         }
     }
 }

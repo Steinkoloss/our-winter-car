@@ -65,7 +65,7 @@ namespace WinterMP.Launcher.Services
             if (!string.Equals(before, after, StringComparison.Ordinal))
             {
                 File.WriteAllText(path, after, Encoding.UTF8);
-                return "Applied FastBoot speed profile (fast Continue + ES2 whitelist hydrate).";
+                return "Applied FastBoot save-safe startup settings.";
             }
 
             return "FastBoot speed profile already set.";

@@ -51,5 +51,26 @@ namespace WinterMP.Tools
         }
 
         public static string? GetString(object? target, string name) => GetMember(target, name) as string;
+
+        public static object? GetStaticMember(Type? type, string name)
+        {
+            if (type == null) return null;
+            try
+            {
+                const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+
+                var property = type.GetProperty(name, flags);
+                if (property != null) return property.GetValue(null, null);
+
+                var field = type.GetField(name, flags);
+                if (field != null) return field.GetValue(null);
+            }
+            catch
+            {
+                // Same defensive contract as GetMember.
+            }
+
+            return null;
+        }
     }
 }

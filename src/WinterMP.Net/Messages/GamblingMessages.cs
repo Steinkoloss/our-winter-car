@@ -1,37 +1,34 @@
 namespace WinterMP.Net.Messages
 {
     /// <summary>
-    /// Host -> all: authoritative state of a shared gambling device (pub/station slot
-    /// machine, Ventti blackjack table). The stake, the RNG result and the payout all
-    /// mutate the single shared wallet, so the host owns them: it runs the spin/deal and
-    /// broadcasts the resolved reels/hand + credit + payout; guests display these and let
-    /// the wallet ride the normal <see cref="WalletState"/> stream (a guest win therefore
-    /// survives the next WalletState instead of flip-flopping). See GamblingSync/VenttiSync.
+    /// Host -> guests: legacy Ventti display state. Guest resolvers stay suppressed;
+    /// property transfers and inactive-host play remain incomplete (coverage R2.11–13).
+    /// Slot use of this layout is retired in v92; see SlotMachineState.
     /// </summary>
     public sealed class GamblingState : IMessage
     {
-        public const byte KindSlot = 0;
+        public const byte KindSlot = 0; // retired; never reuse
         public const byte KindVentti = 1;
 
         public const byte FlagReel1Locked = 1;
         public const byte FlagReel2Locked = 2;
         public const byte FlagReel3Locked = 4;
-        /// <summary>A spin/hand is in progress (slot spinning, or a Ventti hand is live).</summary>
+        /// <summary>A Ventti hand is live.</summary>
         public const byte FlagActive = 8;
 
         /// <summary>Stable scene-path hash of the device container (see PLAN §4.1).</summary>
         public uint MachineId;
         public byte Kind;
         public byte Flags;
-        /// <summary>Slot: inserted credit. Ventti: current bet on the table.</summary>
+        /// <summary>Ventti stake; currently clamped to a byte before assignment (R2.13).</summary>
         public float Credit;
-        /// <summary>Slot: bet level 1..5. Ventti: bet step index.</summary>
+        /// <summary>Ventti stake clamped to a byte.</summary>
         public byte Bet;
-        /// <summary>Slot: reel-1 symbol. Ventti: player hand total.</summary>
+        /// <summary>Ventti player hand total.</summary>
         public byte V1;
-        /// <summary>Slot: reel-2 symbol. Ventti: house hand total.</summary>
+        /// <summary>Ventti house hand total.</summary>
         public byte V2;
-        /// <summary>Slot: reel-3 symbol. Ventti: outcome code (0 none/1 player/2 house/3 push).</summary>
+        /// <summary>Reserved Ventti outcome; currently always zero.</summary>
         public byte V3;
         /// <summary>Last resolved winnings, mk (negative for a net loss on a resolved hand).</summary>
         public int Payout;
@@ -66,15 +63,12 @@ namespace WinterMP.Net.Messages
     }
 
     /// <summary>
-    /// Guest -> host: an anyone-triggers action on a shared gambling device. The host
-    /// validates id + fresh nearby pose + monotonic sequence, forces the matching button
-    /// state on its authoritative FSM (via <c>FsmHook.FireRemoteEntry</c>) so the real
-    /// stake/RNG/payout runs host-side, and the resulting <see cref="GamblingState"/> +
-    /// <see cref="WalletState"/> carry the outcome back.
+    /// Guest -> host: legacy Ventti controls. Validated intents replay a host FSM;
+    /// inactive table settlement remains R2.12. Slots use SlotMachineIntent in v92.
     /// </summary>
     public sealed class GamblingIntent : IMessage
     {
-        // Slot machine actions.
+        // Retired slot actions, reserved permanently. No v92 sender emits these.
         public const byte ActionPay = 0;
         public const byte ActionBet = 1;
         public const byte ActionStart = 2;

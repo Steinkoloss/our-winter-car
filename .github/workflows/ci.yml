@@ -41,3 +41,6 @@ jobs:
       # Guards the FastBoot production profile: the save-corrupting ES2 tiers must stay off.
       - name: Run launcher unit tests
         run: dotnet test src/WinterMP.Launcher.Tests/WinterMP.Launcher.Tests.csproj -c Release --no-restore --verbosity normal
+
+      - name: Verify FSM evidence tooling
+        run: python3 -m unittest discover -s tools/tests

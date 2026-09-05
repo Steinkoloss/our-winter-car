@@ -114,11 +114,15 @@ namespace WinterMP.Core.Catalog
 
     internal sealed class VehicleClimateConfig
     {
-        public string[] PathPrefixes = { "SORBET(190-200psi)/", "CORRIS/" };
+        // Every vehicle with a CarTemp* cabin-climate sim in the current build. The other
+        // drivables (JONNEZ/GIFU/JOKKIS/KEKMET/BACHGLOTZ) have no CarTemp/HeaterUnit
+        // subtree at all — nothing to sync there, so their absence here is deliberate.
+        public string[] PathPrefixes = { "SORBET(190-200psi)/", "CORRIS/", "JOBS/TAXIJOB/MACHTWAGEN/" };
         public string[] CarTempPathContains =
         {
             "/Simulation/CarTempSorbet",
             "/Simulation/CarTempCorris",
+            "/Simulation/CarTempTaxi",
         };
         public string[] HeaterPathContains = { "/HeaterUnit" };
 

@@ -27,6 +27,10 @@ namespace WinterMP.Core.Sync
             _items = items;
         }
 
+        /// <summary>Level change: path-derived item ids repeat after a reload, so a parked
+        /// pre-reload state must not apply to the re-registered item.</summary>
+        public void Clear() => _pending.Clear();
+
         public void Update(SessionManager session)
         {
             float now = Time.unscaledTime;

@@ -89,10 +89,12 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        private void OwnerBroadcastCondition(SessionManager session, SyncedItem item, float now)
+        /// <summary>Read the live condition values off the vehicle's FSMs (no baseline side effects).</summary>
+        private static bool TryReadCondition(SyncedItem item, out byte pressure, out byte drivetrain,
+            out byte flags, out byte hfl, out byte hfr, out byte hrl, out byte hrr)
         {
-            byte pressure, drivetrain, flags = 0;
-            byte hfl = 0, hfr = 0, hrl = 0, hrr = 0;
+            pressure = 0; drivetrain = 0; flags = 0;
+            hfl = 0; hfr = 0; hrl = 0; hrr = 0;
             try
             {
                 pressure = ClampByte((item.TirePressureVar != null ? item.TirePressureVar.Value : 0f) * TirePressureScale);
@@ -115,12 +117,43 @@ namespace WinterMP.Core.Sync
                         else if (state == "Rim friction") flags |= WheelRimFlags[i];
                     }
                 }
+                return true;
             }
             catch (System.Exception e)
             {
                 WinterMPPlugin.Log.LogDebug("VehicleWorldSync: condition read failed for " + item.Path + ": " + e.Message);
-                return;
+                return false;
             }
+        }
+
+        /// <summary>
+        /// Host, join snapshot: the vehicle's current condition regardless of ownership —
+        /// a parked car has no broadcaster, so this one-shot is a late joiner's only source.
+        /// </summary>
+        internal VehicleCondition? TryBuildConditionSnapshot(SyncedItem item, byte ownerPlayerId)
+        {
+            if (!item.IsVehicle || item.Body == null) return null;
+            EnsureConditionProbe(item);
+            if (item.TirePressureVar == null && item.WheelConditionFsms == null) return null;
+            if (!TryReadCondition(item, out byte pressure, out byte drivetrain, out byte flags,
+                    out byte hfl, out byte hfr, out byte hrl, out byte hrr)) return null;
+
+            return new VehicleCondition
+            {
+                VehicleId = item.Id,
+                OwnerPlayerId = ownerPlayerId,
+                Sequence = ++item.OutConditionSequence,
+                TirePressure = pressure,
+                DrivetrainDamage = drivetrain,
+                HealthFL = hfl, HealthFR = hfr, HealthRL = hrl, HealthRR = hrr,
+                Flags = flags,
+            };
+        }
+
+        private void OwnerBroadcastCondition(SessionManager session, SyncedItem item, float now)
+        {
+            if (!TryReadCondition(item, out byte pressure, out byte drivetrain, out byte flags,
+                    out byte hfl, out byte hfr, out byte hrl, out byte hrr)) return;
 
             bool keepAlive = now >= item.NextConditionKeepAliveAt;
             bool changed = !item.HasSentCondition
@@ -168,8 +201,13 @@ namespace WinterMP.Core.Sync
             if (item.LocallyOwned) return;
             EnsureConditionProbe(item);
 
-            ushort diff = (ushort)(message.Sequence - item.LastConditionSequence);
-            if (item.LastConditionSequence != 0 && (diff == 0 || diff > short.MaxValue)) return;
+            // Sequence dedup is per-sender; a different sender (handoff, host snapshot) rebases.
+            if (message.OwnerPlayerId == item.LastConditionSequenceOwner)
+            {
+                ushort diff = (ushort)(message.Sequence - item.LastConditionSequence);
+                if (item.LastConditionSequence != 0 && (diff == 0 || diff > short.MaxValue)) return;
+            }
+            item.LastConditionSequenceOwner = message.OwnerPlayerId;
             item.LastConditionSequence = message.Sequence;
 
             try
@@ -186,7 +224,6 @@ namespace WinterMP.Core.Sync
                         ApplyWheelDiscrete(item, i, message.Flags);
                     }
                 }
-                item.AppliedCondFlags = message.Flags;
             }
             catch (System.Exception e)
             {
@@ -201,8 +238,12 @@ namespace WinterMP.Core.Sync
 
             bool wantPuncture = (desiredFlags & WheelPunctureFlags[wheel]) != 0;
             bool wantRim = (desiredFlags & WheelRimFlags[wheel]) != 0;
-            bool hadPuncture = (item.AppliedCondFlags & WheelPunctureFlags[wheel]) != 0;
-            bool hadRim = (item.AppliedCondFlags & WheelRimFlags[wheel]) != 0;
+            // Diff against the wheel FSM's ACTUAL state, not our apply bookkeeping: a local
+            // FSM that drifted (or a joiner whose own save already has a flat) would satisfy
+            // stale bookkeeping and every keepalive would be a no-op — the drift never heals.
+            string current = ReadWheelState(fsm);
+            bool hadPuncture = current == "Flat friction";
+            bool hadRim = current == "Rim friction";
 
             try
             {

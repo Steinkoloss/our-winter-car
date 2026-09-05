@@ -6,7 +6,7 @@ using System.Text;
 namespace WinterMP.Core.Catalog
 {
     /// <summary>Minimal JSON reader for sync-catalog.json (objects, arrays, strings only).</summary>
-    internal static class SyncCatalogJson
+    internal static partial class SyncCatalogJson
     {
         public static SyncCatalogData Parse(string json)
         {
@@ -39,7 +39,101 @@ namespace WinterMP.Core.Catalog
                 data.Consumables = ParseConsumables(consumables);
             if (root.TryGetValue("vehicleClimate", out var climateObj) && climateObj is Dictionary<string, object?> climate)
                 data.VehicleClimate = ParseVehicleClimate(climate);
+            if (root.TryGetValue("banking", out var bankObj) && bankObj is Dictionary<string, object?> bank)
+                data.Banking = ParseBanking(bank);
+            if (root.TryGetValue("vehicleDamage", out var damageObj) && damageObj is Dictionary<string, object?> damage)
+                data.VehicleDamage = ParseVehicleDamage(damage);
+            if (root.TryGetValue("slotMachines", out var slotsObj) && slotsObj is Dictionary<string, object?> slots)
+                data.SlotMachines = ParseSlotMachines(slots);
+            if (root.TryGetValue("videoPoker", out var pokerObj) && pokerObj is Dictionary<string, object?> poker)
+                data.VideoPoker = ParsePoker(poker);
+            if (root.TryGetValue("debtLetter", out var debtObj) && debtObj is Dictionary<string, object?> debt)
+            {
+                data.DebtLetter = new DebtLetterData();
+                foreach (string key in DebtLetterData.RequiredBindings)
+                    data.DebtLetter.Bindings.Add(key, RequiredString(debt, key));
+            }
             return data;
+        }
+
+        private static string RequiredString(Dictionary<string, object?> obj, string key)
+        {
+            string value = GetString(obj, key);
+            if (value.Length == 0) throw new FormatException("Missing catalog binding: " + key);
+            return value;
+        }
+
+        private static BankingData ParseBanking(Dictionary<string, object?> obj)
+        {
+            var data = new BankingData
+            {
+                BankPath = RequiredString(obj, "bankPath"), BankFsm = RequiredString(obj, "bankFsm"),
+                AtmPath = RequiredString(obj, "atmPath"), AtmFsm = RequiredString(obj, "atmFsm"),
+                CashPath = RequiredString(obj, "cashPath"), CashFsm = RequiredString(obj, "cashFsm"),
+                CashGlobal = RequiredString(obj, "cashGlobal"), BankGlobal = RequiredString(obj, "bankGlobal"),
+                IncomeGlobal = RequiredString(obj, "incomeGlobal"),
+            };
+            if (!obj.TryGetValue("mutations", out var entries) || entries is not List<object?> mutations)
+                throw new FormatException("Banking mutations are required.");
+            foreach (var entry in mutations)
+            {
+                if (entry is not Dictionary<string, object?> mutation)
+                    throw new FormatException("Invalid banking mutation.");
+                var binding = new BankMutationData
+                {
+                    Target = RequiredString(mutation, "target"), State = RequiredString(mutation, "state"),
+                    ActionType = RequiredString(mutation, "actionType"),
+                    Balance = RequiredString(mutation, "balance"),
+                    AmountVariable = GetString(mutation, "amountVariable"),
+                    Direction = GetFloat(mutation, "direction", 0f),
+                };
+                if ((binding.Target != "atm" && binding.Target != "cash")
+                    || (binding.Balance != "cash" && binding.Balance != "bank")
+                    || (binding.Direction != 0 && binding.Direction != 1 && binding.Direction != -1)
+                    || (binding.Direction != 0 && binding.AmountVariable.Length == 0))
+                    throw new FormatException("Invalid banking transfer binding.");
+                foreach (var previous in data.Mutations)
+                    if (previous.Target == binding.Target && previous.State == binding.State)
+                        throw new FormatException("Duplicate banking mutation state.");
+                data.Mutations.Add(binding);
+            }
+            if (data.Mutations.Count == 0) throw new FormatException("Banking mutations cannot be empty.");
+            return data;
+        }
+
+        private static VehicleDamageData ParseVehicleDamage(Dictionary<string, object?> obj)
+        {
+            var data = new VehicleDamageData
+            {
+                ObjectName = RequiredString(obj, "objectName"), FsmName = RequiredString(obj, "fsmName"),
+                IdleState = RequiredString(obj, "idleState"), PartFsmName = RequiredString(obj, "partFsmName"),
+                WearVariable = RequiredString(obj, "wearVariable"),
+            };
+            ReadDamageSlots(obj, "events", data.Events);
+            ReadDamageSlots(obj, "partVariables", data.PartVariables);
+            if (data.Events.Count != 16 || data.PartVariables.Count != 16)
+                throw new FormatException("Vehicle damage requires 16 fixed protocol slots.");
+            for (int i = 0; i < 16; i++)
+            {
+                bool retired = i == 13 || i == 15;
+                if ((data.Events[i].Length == 0) != retired || (data.PartVariables[i].Length == 0) != retired)
+                    throw new FormatException("Vehicle damage slots 13/15 are retired; concrete slots require bindings.");
+                if (data.Events[i] == "SEIZE" || data.Events[i] == "CAMFAIL")
+                    throw new FormatException("Random damage selectors cannot be replay events.");
+            }
+            return data;
+        }
+
+        private static void ReadDamageSlots(Dictionary<string, object?> obj, string key, List<string> target)
+        {
+            if (!obj.TryGetValue(key, out var value) || value is not List<object?> slots)
+                throw new FormatException("Missing damage slots: " + key);
+            foreach (var slot in slots)
+            {
+                if (slot is not string text) throw new FormatException("Damage slots must be strings.");
+                // Empty retired slots must retain their protocol bit positions.
+                target.Add(text);
+            }
         }
 
         private static VehicleRegistrationData ParseVehicles(Dictionary<string, object?> obj)
@@ -470,6 +564,47 @@ namespace WinterMP.Core.Catalog
         public PickableRegistrationData? Pickables;
         public ConsumableData? Consumables;
         public VehicleClimateData? VehicleClimate;
+        public BankingData? Banking;
+        public VehicleDamageData? VehicleDamage;
+        public SlotMachineData? SlotMachines;
+        public PokerData? VideoPoker;
+        public DebtLetterData? DebtLetter;
+    }
+
+    internal sealed class DebtLetterData
+    {
+        public static readonly string[] RequiredBindings = {
+            "rentPath", "rentFsm", "rentDebt", "rentEnvelope", "sheetPath", "setupFsm", "calculateState",
+            "calculatedDebt", "originalText", "totalText", "interest", "cost1", "cost2",
+            "payPath", "payFsm", "requestState", "commitState", "idleState", "fundsState", "closeState",
+            "payTotal", "payDatabase", "payEnvelope", "paySheet",
+        };
+        public readonly Dictionary<string, string> Bindings = new Dictionary<string, string>();
+        public string this[string key] => Bindings[key];
+    }
+
+    internal sealed class BankingData
+    {
+        public string BankPath = string.Empty, BankFsm = string.Empty;
+        public string AtmPath = string.Empty, AtmFsm = string.Empty;
+        public string CashPath = string.Empty, CashFsm = string.Empty;
+        public string CashGlobal = string.Empty, BankGlobal = string.Empty, IncomeGlobal = string.Empty;
+        public readonly List<BankMutationData> Mutations = new List<BankMutationData>();
+    }
+
+    internal sealed class BankMutationData
+    {
+        public string Target = string.Empty, State = string.Empty, ActionType = string.Empty;
+        public string AmountVariable = string.Empty, Balance = string.Empty;
+        public float Direction;
+    }
+
+    internal sealed class VehicleDamageData
+    {
+        public string ObjectName = string.Empty, FsmName = string.Empty, IdleState = string.Empty;
+        public string PartFsmName = string.Empty, WearVariable = string.Empty;
+        public readonly List<string> Events = new List<string>();
+        public readonly List<string> PartVariables = new List<string>();
     }
 
     internal sealed class VehicleRegistrationData

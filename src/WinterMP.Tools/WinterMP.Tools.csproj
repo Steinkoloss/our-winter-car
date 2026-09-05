@@ -10,8 +10,9 @@
     <BepInExPluginName>WinterMP Tools</BepInExPluginName>
     <!-- Lands in every dump's meta.toolsVersion. Bump when the dump SCHEMA changes, so a
          stale dump is identifiable at a glance instead of silently missing fields.
-         0.2.0 = per-state actionTypes + FSM globalTransitions. -->
-    <Version>0.2.0</Version>
+         0.2.0 = per-state actionTypes + FSM globalTransitions.
+         0.3.0 = top-level globalVariables (PlayMakerGlobals names + scalar values). -->
+    <Version>0.3.0</Version>
     <MwcManaged>$(MwcGamePath)/mywintercar_Data/Managed</MwcManaged>
   </PropertyGroup>
 
@@ -38,7 +39,7 @@
   </ItemGroup>
 
   <Target Name="DeployToGame" AfterTargets="Build"
-          Condition="'$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)/BepInEx')">
+          Condition="'$(DeployToGame)' != 'false' AND '$(MwcGamePath)' != '' AND Exists('$(MwcGamePath)/BepInEx')">
     <Copy SourceFiles="$(TargetDir)WinterMP.Tools.dll"
           DestinationFolder="$(MwcGamePath)/BepInEx/plugins/WinterMP" SkipUnchangedFiles="true" />
     <Message Importance="high" Text="WinterMP.Tools deployed to $(MwcGamePath)/BepInEx/plugins/WinterMP" />

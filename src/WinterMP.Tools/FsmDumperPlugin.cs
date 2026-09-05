@@ -123,10 +123,11 @@ namespace WinterMP.Tools
             json.Key("trigger"); json.Value(trigger);
             json.Key("dumpedAtUtc"); json.Value(DateTime.UtcNow.ToString("o"));
             json.Key("toolsVersion"); json.Value(MyPluginInfo.PLUGIN_VERSION);
-            json.Key("schemaVersion"); json.Value(2L);
+            json.Key("schemaVersion"); json.Value(3L);
             json.EndObject();
 
             DumpFsms(json);
+            DumpGlobalVariables(json);
             DumpRigidbodies(json);
 
             json.EndObject();
@@ -275,6 +276,54 @@ namespace WinterMP.Tools
 
             json.EndArray();
             Log.LogInfo($"Dumped {dumped} FSMs.");
+        }
+
+        // Cash, the bank balance, and several economy scalars live in PlayMaker GLOBALS,
+        // which no per-FSM record carries — without this section a dump cannot answer
+        // "what is the bank balance variable actually called" (COVERAGE-ROADMAP R1.1) and
+        // global bindings stay unverifiable by tools/check_fsm_bindings.py. Scalar VALUES
+        // are included on purpose: a recognizable balance is what disambiguates
+        // similarly-named candidates.
+        private static void DumpGlobalVariables(JsonWriter json)
+        {
+            json.Key("globalVariables");
+            json.BeginObject();
+
+            var globalsType = ReflectionUtil.FindType("PlayMakerGlobals");
+            object? instance = ReflectionUtil.GetStaticMember(globalsType, "Instance");
+            object? variables = ReflectionUtil.GetMember(instance, "Variables");
+            if (variables == null)
+            {
+                json.EndObject();
+                Log.LogWarning("PlayMakerGlobals not found — global variables not dumped.");
+                return;
+            }
+
+            foreach (string arrayName in VariableArrayNames)
+            {
+                var namedVars = ReflectionUtil.GetMember(variables, arrayName) as IEnumerable;
+                if (namedVars == null) continue;
+
+                bool scalar = arrayName == "FloatVariables" || arrayName == "IntVariables"
+                    || arrayName == "BoolVariables" || arrayName == "StringVariables";
+
+                json.Key(arrayName);
+                json.BeginArray();
+                foreach (var namedVar in namedVars)
+                {
+                    json.BeginObject();
+                    json.Key("name"); json.Value(ReflectionUtil.GetString(namedVar, "Name"));
+                    if (scalar)
+                    {
+                        object? value = ReflectionUtil.GetMember(namedVar, "Value");
+                        json.Key("value"); json.Value(value != null ? value.ToString() : null);
+                    }
+                    json.EndObject();
+                }
+                json.EndArray();
+            }
+
+            json.EndObject();
         }
 
         private static string? ActionTypeName(object? action)

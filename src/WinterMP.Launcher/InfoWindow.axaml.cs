@@ -6,6 +6,8 @@ namespace WinterMP.Launcher
 {
     public partial class InfoWindow : Window
     {
+        public event Action? ExportDiagnosticsRequested;
+        public event Action? TesterGuideRequested;
         public InfoWindow()
         {
             InitializeComponent();
@@ -23,5 +25,7 @@ namespace WinterMP.Launcher
         }
 
         private void Done_Click(object? sender, RoutedEventArgs e) => Close(true);
+        private void ExportDiagnostics_Click(object? sender, RoutedEventArgs e) => ExportDiagnosticsRequested?.Invoke();
+        private void TesterGuide_Click(object? sender, RoutedEventArgs e) => TesterGuideRequested?.Invoke();
     }
 }

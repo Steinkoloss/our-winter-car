@@ -64,12 +64,14 @@ namespace WinterMP.Net.Tests
             foreach (var field in target.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (field.IsInitOnly) continue;
-                field.SetValue(target, MakeValue(field.FieldType, seed));
+                var existingArray = field.GetValue(target) as Array;
+                field.SetValue(target, MakeValue(field.FieldType, seed,
+                    existingArray != null && existingArray.Length > 0 ? existingArray.Length : 2));
                 seed += 7;
             }
         }
 
-        private static object MakeValue(Type t, int seed)
+        private static object MakeValue(Type t, int seed, int arrayLength = 2)
         {
             if (t == typeof(byte)) return (byte)(seed & 0x7F | 1);
             if (t == typeof(sbyte)) return (sbyte)(seed & 0x3F | 1);
@@ -83,7 +85,6 @@ namespace WinterMP.Net.Tests
             if (t == typeof(float)) return seed * 1.5f + 0.25f;
             if (t == typeof(double)) return seed * 1.5 + 0.25;
             if (t == typeof(string)) return "str" + seed;
-            if (t == typeof(byte[])) return new byte[] { (byte)seed, (byte)(seed + 1), (byte)(seed + 2) };
             if (t == typeof(NetVector3)) return new NetVector3(seed + 0.1f, seed + 0.2f, seed + 0.3f);
             if (t == typeof(NetQuaternion)) return new NetQuaternion(seed + 0.1f, seed + 0.2f, seed + 0.3f, seed + 0.4f);
             if (t.IsEnum)
@@ -92,15 +93,16 @@ namespace WinterMP.Net.Tests
                 // Prefer a non-zero defined value so a field that is written survives the trip.
                 foreach (var v in values)
                     if (Convert.ToInt64(v) != 0) return v;
-                return values.Length > 0 ? values.GetValue(0) : Activator.CreateInstance(t);
+                return (values.Length > 0 ? values.GetValue(0) : Activator.CreateInstance(t))
+                    ?? throw new InvalidOperationException("Cannot create enum " + t.Name);
             }
 
             if (t.IsArray)
             {
                 var elem = t.GetElementType()!;
-                var arr = Array.CreateInstance(elem, 2);
-                arr.SetValue(MakeValue(elem, seed), 0);
-                arr.SetValue(MakeValue(elem, seed + 100), 1);
+                var arr = Array.CreateInstance(elem, arrayLength);
+                for (int i = 0; i < arrayLength; i++)
+                    arr.SetValue(MakeValue(elem, seed + i * 100), i);
                 return arr;
             }
 

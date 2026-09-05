@@ -67,8 +67,40 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 | Ice-race registration/event/grid configuration | `Sync/IceRaceEventSync.cs` |
 | Ice-race result-board rows | `Sync/IceRaceResultsSync.cs` |
 | Time / weather | `Sync/TimeWeatherSync.cs` |
-| Shared wallet | `Sync/WalletSync.cs` |
+| Shared cash/bank/income + ATM transfers | `Sync/WalletSync.cs`, `.Banking.cs`; `WinterMP.Net/BankTransferPolicy.cs`; catalog `banking` |
 | Scene paths / net IDs | `Sync/ScenePath.cs` |
+
+## Coverage sprint (protocol v57–v88)
+
+| Concern | Files |
+|---------|--------|
+| Slot machines (host RNG + intents) | `Sync/GamblingSync.cs` |
+| Ventti card table (guest resolver suppressed) | `Sync/VenttiSync.cs` |
+| VideoPoker hands, holds, doubling and cash-out | `Sync/PokerSync.cs`, `.Presentation.cs`; `WinterMP.Net/PokerLedger.cs`; catalog `videoPoker` |
+| Pub/station slot accounting + local reel animation | `Sync/GamblingSync.cs`, `.Presentation.cs`; `WinterMP.Net/SlotMachineLedger.cs`; catalog `slotMachines` |
+| Electricity/phone bills → blackout | `Sync/UtilityBillSync.cs` |
+| National lottery draw numbers | `Sync/LotterySync.cs` (win-check/dispense buttons are catalog buys) |
+| Fleetari order capture-and-pair | `Sync/RepairShopSync.cs` |
+| Flea-market sale table | `Sync/FleaSaleSync.cs` |
+| Taxi job + per-ride fare meter | `Sync/TaxiJobSync.cs` (customer is a ScriptedMover in `NpcTrafficSync`) |
+| Kela + rent/eviction + housing benefit | `Sync/WelfareSync.cs` |
+| Debt-letter quotes and shared-cash payments | `Sync/WelfareSync.DebtLetter.cs`; `WinterMP.Net/DebtPaymentLedger.cs`; catalog `debtLetter` |
+| Hitchhiker variant/stage/payout | `Sync/HitchhikerSync.cs` |
+| Yard piss stains | `Sync/PissAreaSync.cs` |
+| Kilju brew (held or lid-flip-claimed buckets) | `Sync/KiljuSync.cs` |
+| In-car radio tune/volume | `Sync/CarRadioSync.cs` |
+| Oven/stove heats + edge-carried ignition | `Sync/ApplianceSync.cs` |
+| Incoming phone calls | `Sync/PhoneSync.cs` |
+| Wanted level + guest crime reports | `Sync/WantedSync.cs` |
+| Jail countdown (jailed client owns it) | `Sync/JailSync.cs` |
+| Police pursuit sirens/chase flags | `Sync/PursuitSync.cs` |
+| Rally results ledger | `Sync/RallyResultsSync.cs` |
+| JOKKIS banger race | `Sync/JokkisRaceSync.cs` |
+| Engine part wear, breakage and repair (owner-authoritative) | `Sync/VehicleWorldSync.Damage.cs`; `WinterMP.Net/VehicleDamagePolicy.cs`; catalog `vehicleDamage` |
+| Tire/drivetrain condition (owner-authoritative) | `Sync/VehicleWorldSync.Condition.cs` |
+| Scrap price / prime interest / player keys | `Sync/WorldScalarsSync.cs` |
+| Hockey betting round | `Sync/HockeyBettingSync.cs` |
+| Moose/hitchhiker/Reijo/farmer/taxi-customer movers + guest kill reports | `Sync/NpcTrafficSync.cs` |
 
 ## Long-tail player systems (M6)
 
@@ -95,8 +127,10 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 |---------|--------|
 | In-game debug overlay (TAB) | `UI/DebugOverlay.cs` |
 | Main menu join browser | `UI/MainMenuJoinBrowser.cs`, `UI/MainMenuUiFactory.cs`, `UI/MainMenuUiButton.cs` |
-| F9 catalog dump | `WinterMP.Tools/FsmDumperPlugin.cs` → `<game>/WinterMP/dumps/` |
+| F9 catalog dump (0.3.0: + PlayMaker globals) | `WinterMP.Tools/FsmDumperPlugin.cs` → `<game>/WinterMP/dumps/` |
 | Catalog curation scripts | `tools/extract_fsm_details.py`, `tools/analyze_catalog.py`, `tools/catalog_diff.py` |
+| Class-D binding audit (rerun after every dump) | `tools/check_fsm_bindings.py` — exit 0 = clean |
+| Offline Unity 5 FSM/action/global evidence | `tools/extract_fsm_assets.py` — reads installed assets; supplements the runtime F9 dump |
 
 ## Partial-class convention
 

@@ -36,6 +36,12 @@ namespace WinterMP.Launcher.Services
             if (!File.Exists(path))
                 return false;
 
+            if (steamBuildId == null || !VerifiedSteamBuildIds.Contains(steamBuildId))
+            {
+                message = "Resolution-dialog patch skipped: this game build has not been verified.";
+                return false;
+            }
+
             byte[] data = File.ReadAllBytes(path);
             if (data.Length < DisplayResolutionDialogOffset + 4)
             {
@@ -99,7 +105,24 @@ namespace WinterMP.Launcher.Services
                 return false;
             }
 
+            byte[] current = File.ReadAllBytes(path);
+            byte[] original = File.ReadAllBytes(backup);
+            if (current.Length != original.Length || original.Length < DisplayResolutionDialogOffset + 4)
+            {
+                message = "Game files changed since the resolution-dialog backup; leaving the current game files in place.";
+                return false;
+            }
+            for (int i = 0; i < current.Length; i++)
+            {
+                if (i >= DisplayResolutionDialogOffset && i < DisplayResolutionDialogOffset + 4) continue;
+                if (current[i] != original[i])
+                {
+                    message = "Game files changed since the resolution-dialog backup; leaving the current game files in place.";
+                    return false;
+                }
+            }
             File.Copy(backup, path, true);
+            File.Delete(backup);
             message = "Restored mywintercar_Data/mainData from .wintermp-original backup.";
             return true;
         }

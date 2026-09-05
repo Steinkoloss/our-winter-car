@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DIST="$ROOT/dist"
+DIST="${OWC_RELEASE_DIR:-$ROOT/dist}"
 WORK="$ROOT/build/ape"
 APEROOT="$WORK/aperoot"
 SRC="$ROOT/installer/ape/ourwintercar-installer.c"
@@ -45,10 +45,12 @@ mkdir -p "$APEROOT" "$DIST"
 # --- 1. mod DLLs (net35 payload) -----------------------------------------
 # Rebuild so a version bump can't leave a stale Core.dll in the payload.
 echo "==> Building mod payload (Core + FastBoot, Release)"
+if [[ -z "${OWC_WIN_PUBLISH_DIR:-}" || -z "${OWC_LINUX_PUBLISH_DIR:-}" ]]; then
 dotnet build "$ROOT/src/WinterMP.Core/WinterMP.Core.csproj" \
     -c Release -t:Rebuild -p:DeployToGame=false -v q /clp:ErrorsOnly
 dotnet build "$ROOT/src/WinterMP.FastBoot/WinterMP.FastBoot.csproj" \
     -c Release -p:DeployToGame=false -v q /clp:ErrorsOnly
+fi
 
 # --- 2. self-contained launchers for both OSes ---------------------------
 publish_launcher() {
@@ -58,8 +60,13 @@ publish_launcher() {
         -p:PublishSingleFile=false -p:DeployToGame=false -v q /clp:ErrorsOnly \
         -o "$dest"
 }
-publish_launcher win-x64   "$APEROOT/win"
-publish_launcher linux-x64 "$APEROOT/linux"
+if [[ -n "${OWC_WIN_PUBLISH_DIR:-}" && -n "${OWC_LINUX_PUBLISH_DIR:-}" ]]; then
+    cp -a "$OWC_WIN_PUBLISH_DIR" "$APEROOT/win"
+    cp -a "$OWC_LINUX_PUBLISH_DIR" "$APEROOT/linux"
+else
+    publish_launcher win-x64   "$APEROOT/win"
+    publish_launcher linux-x64 "$APEROOT/linux"
+fi
 
 # Sanity: the headless install path needs the payload + BepInEx vendor zip bundled.
 for os in win linux; do

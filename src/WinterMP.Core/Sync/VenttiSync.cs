@@ -77,6 +77,9 @@ namespace WinterMP.Core.Sync
 
         private readonly Dictionary<byte, ushort> _lastIntentSequences = new Dictionary<byte, ushort>();
         private bool _built;
+
+        /// <summary>Host: a player (re)joined — its intent counter restarted; drop the stale latch.</summary>
+        public void ForgetPlayer(byte playerId) => _lastIntentSequences.Remove(playerId);
         private float _nextProbeAt;
         private float _nextHostTickAt;
         private float _nextKeepAliveAt;

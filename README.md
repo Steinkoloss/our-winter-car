@@ -5,13 +5,14 @@
 (Windows: double-click; Linux: `sh ./OurWinterCar-Installer.com`). Windows-only
 `OurWinterCar-Setup.exe` and the Linux AppImage are also available.
 
-This thing is completely AI slopped with Fable 5 & Composer.
-Probably horrible!
-
+**Tester release 0.1.31:** targets My Winter Car **v.260516-01 / build 23268598**,
+protocol **94**. Read the [tester guide](docs/TESTING.md) and
+[release notes](docs/RELEASE-NOTES.md). Two-player gameplay validation is still pending.
 
 Full co-op conversion of [My Winter Car](https://store.steampowered.com/app/4164420/My_Winter_Car/):
 one player hosts with their savefile, friends join through the **Steam friends
-list** — shared money, shared world, everything synced.
+list** — shared money and world progression. Some systems remain unfinished;
+see the [coverage roadmap](docs/COVERAGE-ROADMAP.md).
 
 > **Status: alpha.** Steam lobby host/join works; world sync covers doors, bolts,
 > parts, shop, items, vehicles, climate, wallet, and time. See [PLAN.md](PLAN.md)
@@ -22,22 +23,23 @@ list** — shared money, shared world, everything synced.
 | Path | What it is |
 |---|---|
 | `PLAN.md` | Architecture, sync model, milestones, risks — read this first |
-| `src/WinterMP.Net` | Engine-independent protocol library (netstandard2.0, unit-tested) |
+| `src/WinterMP.Net` | Engine-independent protocol library (net35 + netstandard2.0, unit-tested) |
 | `src/WinterMP.Net.Tests` | xUnit tests for the protocol layer |
 | `src/WinterMP.Core` | The mod: BepInEx 5 plugin (session, Steam lobby/transport, overlay) |
 | `src/WinterMP.Tools` | Dev plugin: F9 dumps the FSM/object catalog for sync curation |
-| `src/WinterMP.Launcher` | Windows launcher: install/repair, save backups, host/join UX |
+| `src/WinterMP.Launcher` | Windows/Linux launcher: install/repair, save backups, host/join UX |
 | `catalog/` | Generated per-game-build sync catalogs (FSM descriptors) |
 | `protocol/` | Wire protocol specification |
 | `docs/BUILDING.md` | Build, deploy and dev-loop instructions |
 | `docs/PLAYERS.md` | Install, host, join, backups — player guide |
-| `libs/` | Drop-in for `Steamworks.NET.dll` (enables the Steam transport) |
+| `libs/` | Legacy dependency notes; Steam uses the game’s own embedded wrapper |
 
 ## Quick start (developers)
 
 ```powershell
-dotnet build          # builds everything; Steam transport only with libs/Steamworks.NET.dll
-dotnet test           # protocol unit tests
+dotnet build src/WinterMP.Net -c Release
+dotnet test src/WinterMP.Net.Tests
+dotnet test src/WinterMP.Launcher.Tests
 ```
 
 See [docs/BUILDING.md](docs/BUILDING.md) for game deployment and the in-game

@@ -1,13 +1,10 @@
 namespace WinterMP.Net.Messages
 {
     /// <summary>
-    /// Owner -> host -> peers: the accumulated engine part-breakage set of one vehicle.
-    /// The <c>PartBreakages :: Damages</c> FSM rolls its own <c>Chance</c> on every client,
-    /// so the shared car's engine seizes for one player and runs fine for another. Here the
-    /// vehicle <b>owner (driver)</b> is authoritative: non-owners zero their local roll and
-    /// apply this mask by firing the matching breakage event, so a part breaks once and both
-    /// peers + late joiners agree on the broken set. Re-sent on change + keepalive (a joiner
-    /// converges within the keepalive window). Bits are the breakage events on that FSM.
+    /// Current fitted engine-part condition, streamed by the owner through the host.
+    /// The host owns parked cars. Only concrete failures are replayed; SEIZE/CAMFAIL
+    /// are random selectors, not durable breakage. Known wear values also carry repairs
+    /// and clear old damage. Unbound slots preserve the previous condition.
     /// </summary>
     public sealed class VehicleDamage : IMessage
     {
@@ -27,20 +24,30 @@ namespace WinterMP.Net.Messages
         public const uint Seize = 1u << 13;
         public const uint Block = 1u << 14;
         public const uint Camfail = 1u << 15;
+        // Seize/Camfail are retired trigger bits: replaying either rerolls random
+        // damage. Their resulting concrete part failures occupy the other slots.
+        public const uint ConcretePartsMask = 0x5FFF;
+        public const int PartSlots = 16;
 
         public uint VehicleId;
         public byte OwnerPlayerId;
         public uint DamageMask;
         public ushort Sequence;
+        public uint KnownPartsMask;
+        public float[] Wear = new float[PartSlots];
 
         public MessageId Id => MessageId.VehicleDamage;
 
         public void Write(NetWriter writer)
         {
+            if (Wear == null || Wear.Length != PartSlots)
+                throw new ProtocolException("VehicleDamage requires 16 wear slots.");
             writer.WriteUInt32(VehicleId);
             writer.WriteByte(OwnerPlayerId);
             writer.WriteUInt32(DamageMask);
             writer.WriteUInt16(Sequence);
+            writer.WriteUInt32(KnownPartsMask);
+            for (int i = 0; i < PartSlots; i++) writer.WriteSingle(Wear[i]);
         }
 
         public void Read(NetReader reader)
@@ -49,6 +56,9 @@ namespace WinterMP.Net.Messages
             OwnerPlayerId = reader.ReadByte();
             DamageMask = reader.ReadUInt32();
             Sequence = reader.ReadUInt16();
+            KnownPartsMask = reader.ReadUInt32();
+            Wear = new float[PartSlots];
+            for (int i = 0; i < PartSlots; i++) Wear[i] = reader.ReadSingle();
         }
     }
 }

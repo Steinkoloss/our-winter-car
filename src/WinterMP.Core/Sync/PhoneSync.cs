@@ -56,6 +56,14 @@ namespace WinterMP.Core.Sync
             if (Time.unscaledTime < _nextPollAt) return;
             _nextPollAt = Time.unscaledTime + PollIntervalSeconds;
 
+            // Re-arm between calls: the ringing object is deactivated once a call ends
+            // ("Disable phone"), and the game may leave Topic holding the old string — a
+            // repeat call with the same topic would otherwise never re-edge.
+            bool phoneActive;
+            try { phoneActive = _ringing!.gameObject.activeInHierarchy; }
+            catch { phoneActive = false; }
+            if (!phoneActive) { _lastTopic = string.Empty; return; }
+
             string topic = _topic!.Value ?? string.Empty;
             if (string.IsNullOrEmpty(topic) || topic == _lastTopic) { _lastTopic = topic; return; }
             _lastTopic = topic;
@@ -78,8 +86,15 @@ namespace WinterMP.Core.Sync
 
             try
             {
+                // The ringing object is INACTIVE between calls, and a SendEvent at a
+                // deactivated FSM is a silent no-op — activate it first so the FSM runs its
+                // ring flow like the vanilla caller does. The topic transitions hang off the
+                // post-ANSWER state, which reads the Topic var we set; the SendEvent below is
+                // best-effort for builds where the topic events are global entries (the
+                // stale dump cannot show global transitions — verify with R3.1b).
+                if (_ringing != null && !_ringing.gameObject.activeInHierarchy)
+                    _ringing.gameObject.SetActive(true);
                 if (_topic != null) _topic.Value = message.Topic;
-                // Fire the matching ring event if the topic names one (JOKE1/FERNDALE/...).
                 if (!string.IsNullOrEmpty(message.Topic) && FsmHasEvent(_ringing!, message.Topic))
                     _ringing!.SendEvent(message.Topic);
             }
@@ -104,22 +119,33 @@ namespace WinterMP.Core.Sync
         private void Locate()
         {
             if (Ready) return;
-            foreach (var path in RingingPaths)
+            // The ringing objects are INACTIVE between calls and GameObject.Find cannot see
+            // inactive objects — without the full scan a guest whose phone isn't currently
+            // ringing never binds, and every relayed call event is dropped at !Ready.
+            try
             {
-                GameObject? go;
-                try { go = GameObject.Find(path); }
-                catch { continue; }
-                if (go == null) continue;
-                foreach (var fsm in go.GetComponents<PlayMakerFSM>())
+                var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
+                foreach (var obj in fsms)
                 {
+                    var fsm = obj as PlayMakerFSM;
                     if (fsm == null || fsm.FsmName != "Ring") continue;
+                    string path;
+                    try { path = ScenePath.Of(fsm.transform); }
+                    catch { continue; }
+                    bool known = false;
+                    foreach (var candidate in RingingPaths)
+                        if (path == candidate) { known = true; break; }
+                    if (!known) continue;
                     var topic = fsm.FsmVariables.FindFsmString("Topic");
                     if (topic == null) continue;
                     _ringing = fsm;
                     _topic = topic;
                     break;
                 }
-                if (Ready) break;
+            }
+            catch (System.Exception e)
+            {
+                WinterMPPlugin.Log.LogDebug("PhoneSync: locate failed: " + e.Message);
             }
             if (!_loggedFound && Ready)
             {

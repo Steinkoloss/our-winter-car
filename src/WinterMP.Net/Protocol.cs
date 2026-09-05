@@ -178,7 +178,50 @@ namespace WinterMP.Net
         //      old field bound null and the station never synced. The real tuner value is the
         //      "Tune" float on StockRadio0/ButtonsRadio/Volume :: Knob; its per-station
         //      windows are not knowable from the catalog dump, so it rides unquantized.
-        public const ushort Version = 81;
+        // v82: NpcDeathReport (110) — a guest whose car killed the moose reports it; the host
+        //      replays the CarHit death entry so FlagDead becomes authoritative for everyone
+        //      (before this, a guest kill left a corpse only on the killer's client).
+        // v83: JailState (142) gains JailedPlayerId and becomes two-way: the countdown runs
+        //      only on the jailed client, so that client reports it and the host adopts +
+        //      relays. Before this the host keepalived its own idle DaysLeft (0), stomping a
+        //      jailed guest's sentence within 20 s.
+        // v84: WelfareState (107) grows from Kela-only to the whole Systems/Expenses record:
+        //      rentDebt, rentPerWeek, asumistukiPerWeek + an Evicted flag. The weekly rent
+        //      debit and the KICKOUT eviction (furniture destruction) ran per-client; guests
+        //      now suppress their Rent/Livingsupport FSMs and replay the host's eviction.
+        // v85: ApplianceState (99) gains FireCount + FirePlate. Oven ignition commits in
+        //      one-frame "Start fire N" states a level-sample can never see (the old
+        //      FlagFire was almost always false) — the host now edge-hooks the commits and
+        //      guests replay the igniting plate's state when the count moves.
+        // v86: WorldScalarsState (104 — the range's virgin gap) mirrors the daily scrap
+        //      price, the bank prime interest rate, and Database/Keys progression
+        //      (UncleStage/GIFU/Conline number); each re-rolled or progressed per-client.
+        // v87: TaxiJobState (103) gains FareCost — the customer's per-ride meter. The
+        //      customer became a host-authoritative ScriptedMover in the same change, so
+        //      the fare accrues host-side off the guest's synced taxi and the PayMoney
+        //      press (now catalogued) passes the host's proximity gate.
+        // v88: HockeyBettingState (160, opening the economy-2 range) mirrors the hockey
+        //      betting round (matchup ids, odds, result, KurPaWins) — every payout-deciding
+        //      input of the per-client season sim. The standings TABLE stays per-client
+        //      (ES2 array save keys; no FSM variable carries it).
+        // v89: ApplianceFireReport (161) — a guest's own oven sim can roll an ignition
+        //      (FireHazard RNG is per-client even over synced heats); the guest reports it
+        //      and the host replays the plate's commit state, single-sourcing house fires
+        //      (the moose-kill report pattern).
+        // v90: WalletState appends optional bank balance + net income. Cash binds to
+        //      PlayerMoney. ATM transfers (162/163) are authenticated and acknowledged;
+        //      wallet resync checks all available economy balances.
+        // v91: VehicleDamage appends a known-parts mask and 16 current wear values.
+        //      Repair clears concrete damage; SEIZE/CAMFAIL selector bits are retired
+        //      so peers never reroll the owner's random outcome.
+        // v92: SlotMachineState/Result/Intent (164/165/166) replace the slot use of
+        //      93/94. Host ledgers keep credit and accumulated winnings separately,
+        //      lease controls, deduplicate settlements and draw weighted reel stops.
+        // v93: VideoPoker (167–169) uses host-owned decks, held-card redraws,
+        //      private high/low cards and acknowledged wallet settlements.
+        // v94: Debt-letter quotes and acknowledged payments (170–172) use the
+        //      host's rent debt and fees, including inactive/relocated envelopes.
+        public const ushort Version = 94;
     }
 
     /// <summary>

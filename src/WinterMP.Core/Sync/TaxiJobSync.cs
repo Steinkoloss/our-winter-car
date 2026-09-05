@@ -8,22 +8,30 @@ namespace WinterMP.Core.Sync
 {
     /// <summary>
     /// Shared taxi job (MACHTWAGEN) lifecycle as host-owned world state
-    /// (COVERAGE-ROADMAP 3.2). The job stage, employment and fare account run per-client, so
-    /// peers disagree on whether a job is active and what it paid. The taxi job belongs to the
-    /// world, so the <b>host</b> owns it: it reads <c>JOBS/TAXIJOB :: Logic</c> (JobStage) and
-    /// <c>TaxiFunctions :: Payments</c> (Employed / Money / KMsDriven) and broadcasts on change
-    /// + join; guests apply them. Fare payout reaches the shared wallet via the host's own
-    /// payment logic; the taxi vehicle streams through the normal vehicle path (2.4).
+    /// (COVERAGE-ROADMAP 3.2 + R2.8). The job stage, employment and accounts run per-client,
+    /// so peers disagree on whether a job is active and what it paid. The taxi job belongs to
+    /// the world, so the <b>host</b> owns it: it reads <c>JOBS/TAXIJOB :: Logic</c> (JobStage),
+    /// <c>TaxiFunctions :: Payments</c> (Employed / Money / KMsDriven — the *employment payday*
+    /// account, not the per-ride fare) and the customer's <c>TaxiWalker :: Logic</c> Cost (the
+    /// per-ride fare meter, v87) and broadcasts on change + join; guests apply them. The
+    /// customer itself is a host-authoritative ScriptedMover, so the fare press passes the
+    /// host's PayMoney proximity gate and pays the host's Cost into the shared wallet; the
+    /// taxi vehicle streams through the normal vehicle path (2.4).
     /// </summary>
     internal sealed class TaxiJobSync
     {
         private const string LogicPath = "JOBS/TAXIJOB";
+        private const string CustomerWalkerPath = "JOBS/TAXIJOB/Customer1/TaxiWalker";
         private const float ProbeIntervalSeconds = 5f;
         private const float HostTickSeconds = 2f;
         private const float KeepAliveSeconds = 20f;
 
         private PlayMakerFSM? _logic;      // JOBS/TAXIJOB :: Logic
         private PlayMakerFSM? _payments;   // TaxiFunctions :: Payments
+        // Per-ride fare meter on the (host-authoritative, ScriptedMover-streamed)
+        // customer. On guests that Logic FSM is frozen, so this synced value is what
+        // makes their meter read the fare the host will actually charge (R2.8).
+        private FsmFloat? _fareCost;
         private FsmInt? _jobStage;
         private FsmFloat? _money;
         private FsmFloat? _kms;
@@ -39,6 +47,7 @@ namespace WinterMP.Core.Sync
         private bool _hasLast;
         private int _lastStage;
         private int _lastMoney;
+        private int _lastFare;
         private byte _lastFlags;
 
         private bool Ready => _logic != null && _jobStage != null;
@@ -46,7 +55,7 @@ namespace WinterMP.Core.Sync
         public void Clear()
         {
             _logic = _payments = null;
-            _jobStage = null; _money = _kms = null; _employed = null;
+            _jobStage = null; _money = _kms = _fareCost = null; _employed = null;
             _loggedFound = false;
             _nextProbeAt = _nextHostTickAt = _nextKeepAliveAt = 0f;
             _outSequence = _lastRemoteSequence = 0;
@@ -94,6 +103,7 @@ namespace WinterMP.Core.Sync
                 if (_money != null) _money.Value = message.Money;
                 if (_kms != null) _kms.Value = message.KMsDriven;
                 if (_employed != null) _employed.Value = message.Employed;
+                if (_fareCost != null) _fareCost.Value = Mathf.Max(0f, message.FareCost);
             }
             catch (System.Exception e)
             {
@@ -109,12 +119,14 @@ namespace WinterMP.Core.Sync
             if (state == null) return;
 
             bool changed = !_hasLast || _lastStage != state.JobStage
-                || _lastMoney != Mathf.RoundToInt(state.Money) || _lastFlags != state.Flags;
+                || _lastMoney != Mathf.RoundToInt(state.Money) || _lastFlags != state.Flags
+                || _lastFare != Mathf.RoundToInt(state.FareCost);
             if (!changed && !keepAlive) return;
 
             _hasLast = true;
             _lastStage = state.JobStage;
             _lastMoney = Mathf.RoundToInt(state.Money);
+            _lastFare = Mathf.RoundToInt(state.FareCost);
             _lastFlags = state.Flags;
             session.SendWorldMessage(state, Channel.ReliableOrdered);
         }
@@ -131,12 +143,31 @@ namespace WinterMP.Core.Sync
                 Money = _money != null ? _money.Value : 0f,
                 KMsDriven = _kms != null ? _kms.Value : 0f,
                 Flags = flags,
+                FareCost = _fareCost != null ? _fareCost.Value : 0f,
             };
         }
 
         private void Locate()
         {
-            if (Ready && _payments != null) return;
+            if (Ready && _payments != null && _fareCost != null) return;
+
+            if (_fareCost == null)
+            {
+                GameObject? walker;
+                try { walker = GameObject.Find(CustomerWalkerPath); }
+                catch { walker = null; }
+                if (walker != null)
+                {
+                    foreach (var fsm in walker.GetComponents<PlayMakerFSM>())
+                    {
+                        if (fsm != null && fsm.FsmName == "Logic")
+                        {
+                            _fareCost = fsm.FsmVariables.FindFsmFloat("Cost");
+                            break;
+                        }
+                    }
+                }
+            }
 
             if (_logic == null)
             {

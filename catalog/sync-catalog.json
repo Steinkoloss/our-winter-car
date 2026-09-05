@@ -1,515 +1,1862 @@
 {
   "gameBuild": "curated",
+  "debtLetter": {
+    "rentPath": "Systems/Expenses",
+    "rentFsm": "Rent",
+    "rentDebt": "Debt",
+    "rentEnvelope": "Letter",
+    "sheetPath": "Sheets/DebtLetter",
+    "setupFsm": "Setup",
+    "calculateState": "Calculate",
+    "calculatedDebt": "Debt",
+    "originalText": "DebtOriginal",
+    "totalText": "DebtTotal",
+    "interest": "Interest",
+    "cost1": "Cost1",
+    "cost2": "Cost2",
+    "payPath": "Sheets/DebtLetter/Pay",
+    "payFsm": "Button",
+    "requestState": "Check money",
+    "commitState": "Date",
+    "idleState": "State 1",
+    "fundsState": "No money",
+    "closeState": "Close",
+    "payTotal": "Total",
+    "payDatabase": "DB",
+    "payEnvelope": "Envelope",
+    "paySheet": "ThisPaper"
+  },
+  "videoPoker": {
+    "path": "PERAPORTTI/Building/LOD100/VideoPoker",
+    "logicPath": "GameLogic/Rami-Pokeri",
+    "buttonPath": "GameLogic/Buttons",
+    "buttonFsm": "Use",
+    "inputState": "Button",
+    "inputAction": "SendEventByName",
+    "game": "Pokeri-Game",
+    "dealerFsm": "Dealer Setup",
+    "credit": "Pokeri-Money",
+    "creditFsm": "Money",
+    "creditVariable": "Money_int",
+    "winnings": "Pokeri-Money_Wins",
+    "winningsFsm": "Wins",
+    "winningsVariable": "Wins_int",
+    "bet": "Pokeri-Bet",
+    "betFsm": "Bet",
+    "betVariable": "bet_int",
+    "camera": "Camera",
+    "menu": "Pokeri-MainMenu",
+    "screen": "videopoker_mesh/Monitor/screen",
+    "doubleCard": "Pokeri-DoublingCard",
+    "doubleBack": "Pokeri-DoublingCard-Back",
+    "doublePanel": "Pokeri-Double",
+    "winMarker": "Pokeri-WinMarker",
+    "rankSuffix": "-Rank",
+    "suitSuffix": "-Suit",
+    "soundPath": "Pokeri-Soundbank",
+    "cardSound": "Pokeri-Card01",
+    "coinSound": "Pokeri-Coin",
+    "winSound": "Pokeri-Win",
+    "loseSound": "Pokeri-Lose",
+    "achievementGlobal": "Steam",
+    "achievementFsm": "Achi",
+    "cashoutAchievement": "POKER_MASTER",
+    "royalAchievement": "POKERIREETI",
+    "achievementThreshold": 900,
+    "buttons": [
+      "InsertCoin",
+      "Bet",
+      "Deal",
+      "Double",
+      "DoubleLow",
+      "DoubleHigh",
+      "Hold1",
+      "Hold2",
+      "Hold3",
+      "Hold4",
+      "Hold5",
+      "TakeWin"
+    ],
+    "cards": [
+      "Pokeri-Card1",
+      "Pokeri-Card2",
+      "Pokeri-Card3",
+      "Pokeri-Card4",
+      "Pokeri-Card5"
+    ],
+    "backs": [
+      "Pokeri-Card1-Back",
+      "Pokeri-Card2-Back",
+      "Pokeri-Card3-Back",
+      "Pokeri-Card4-Back",
+      "Pokeri-Card5-Back"
+    ],
+    "buttonMeshes": [
+      "button_bet",
+      "button_start",
+      "button_double",
+      "button_small",
+      "button_big",
+      "button_lock1",
+      "button_lock2",
+      "button_lock3",
+      "button_lock4",
+      "button_lock5",
+      "button_cash"
+    ],
+    "idleStates": [
+      "Bet 1",
+      "Bet 2",
+      "Bet 3",
+      "Bet 4",
+      "Bet 5",
+      "Game Over"
+    ],
+    "payouts": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      7,
+      10,
+      15,
+      30,
+      50
+    ],
+    "heldZ": -3.5,
+    "restZ": -4.2,
+    "markerX": -2.3,
+    "markerStartZ": -1,
+    "markerStepZ": 0.75,
+    "assets": [
+      {
+        "key": "screenGame",
+        "path": "Pokeri-MainMenu",
+        "fsm": "Menu",
+        "state": "Begin",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "screenIdle",
+        "path": "Pokeri-MainMenu",
+        "fsm": "Menu",
+        "state": "State 1",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "doubleOffer",
+        "path": "Pokeri-Game",
+        "fsm": "Check Straight",
+        "state": "STRAIGHT",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "doubleGuess",
+        "path": "Pokeri-Game",
+        "fsm": "Check Straight",
+        "state": "Double - Wait for Button",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "buttonOn",
+        "path": "Rami-Pokeri-Buttons/Pokeri-Buttons-Bet",
+        "fsm": "Button_Bet",
+        "state": "WaitForButton",
+        "action": "SetMaterial",
+        "field": "material"
+      },
+      {
+        "key": "buttonOff",
+        "path": ".",
+        "fsm": "Game Start",
+        "state": "Buttons off",
+        "action": "SetMaterial",
+        "field": "material"
+      },
+      {
+        "key": "creditText",
+        "path": "Pokeri-Money",
+        "fsm": "Money",
+        "state": "State 2",
+        "action": "SetProperty",
+        "field": "targetProperty"
+      },
+      {
+        "key": "winsText",
+        "path": "Pokeri-Money_Wins",
+        "fsm": "Wins",
+        "state": "State 2",
+        "action": "SetProperty",
+        "field": "targetProperty"
+      },
+      {
+        "key": "pendingText",
+        "path": "Pokeri-DoublingMoney",
+        "fsm": "Money",
+        "state": "State 2",
+        "action": "SetProperty",
+        "field": "targetProperty"
+      },
+      {
+        "key": "suit0",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "1st Card Spade",
+        "action": "SetMaterial",
+        "field": "material"
+      },
+      {
+        "key": "suit1",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "1st Card Clubs",
+        "action": "SetMaterial",
+        "field": "material"
+      },
+      {
+        "key": "suit2",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "1st Card Hearts",
+        "action": "SetMaterial",
+        "field": "material"
+      },
+      {
+        "key": "suit3",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "1st Card Diamonds",
+        "action": "SetMaterial",
+        "field": "material"
+      },
+      {
+        "key": "bet1",
+        "path": "Pokeri-Game",
+        "fsm": "Dealer Setup",
+        "state": "Bet 1",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "bet2",
+        "path": "Pokeri-Game",
+        "fsm": "Dealer Setup",
+        "state": "Bet 2",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "bet3",
+        "path": "Pokeri-Game",
+        "fsm": "Dealer Setup",
+        "state": "Bet 3",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "bet4",
+        "path": "Pokeri-Game",
+        "fsm": "Dealer Setup",
+        "state": "Bet 4",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "bet5",
+        "path": "Pokeri-Game",
+        "fsm": "Dealer Setup",
+        "state": "Bet 5",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black1",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card A",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red1",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card A",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black2",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 2",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red2",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 2",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black3",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 3",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red3",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 3",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black4",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 4",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red4",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 4",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black5",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 5",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red5",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 5",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black6",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 6",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red6",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 6",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black7",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 7",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red7",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 7",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black8",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 8",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red8",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 8",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black9",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 9",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red9",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 9",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black10",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 10",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red10",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 10",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black11",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 11",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red11",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 11",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black12",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 12",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red12",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 12",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "black13",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Black Card 13",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      },
+      {
+        "key": "red13",
+        "path": "Pokeri-Game",
+        "fsm": "Deal 1st Card",
+        "state": "Set Red Card 13",
+        "action": "SetMaterialTexture",
+        "field": "texture"
+      }
+    ],
+    "meshPath": "videopoker_mesh",
+    "menuFsm": "Menu",
+    "menuResetState": "State 1",
+    "pendingMoney": "Pokeri-DoublingMoney",
+    "menuIdleState": "Menu",
+    "menuBeginState": "Begin",
+    "balanceState": "State 2",
+    "startupFsm": "Game Start"
+  },
+  "slotMachines": {
+    "paths": [
+      "STORE_AREA/Stuff/LOD/GFX_Pub/SlotMachinePub",
+      "PERAPORTTI/Building/LOD100/SlotMachine"
+    ],
+    "fsmName": "Use",
+    "buttonPaths": [
+      "Buttons/PayMoney",
+      "Buttons/Bet",
+      "Buttons/Start",
+      "LockButtos/LockRoll1",
+      "LockButtos/LockRoll2",
+      "LockButtos/LockRoll3",
+      "Buttons/Cashout"
+    ],
+    "buttonStates": [
+      "Check money",
+      "Compare",
+      "Check added",
+      "State 1",
+      "State 1",
+      "State 1",
+      "State 2"
+    ],
+    "idleState": "Wait player",
+    "spinState": "Lock machine",
+    "finishState": "Reset game",
+    "creditVariable": "AddedMoney",
+    "winningsVariable": "Winnings",
+    "lastWinVariable": "Win",
+    "betVariable": "BetMK",
+    "betButtonVariable": "Bet",
+    "canHoldVariable": "AllowLock",
+    "rollVariable": "Roll",
+    "reelVariables": [
+      "Roll1",
+      "Roll2",
+      "Roll3"
+    ],
+    "reelObjectVariables": [
+      "Roll1Object",
+      "Roll2Object",
+      "Roll3Object"
+    ],
+    "holdVariables": [
+      "Roll1Locked",
+      "Roll2Locked",
+      "Roll3Locked"
+    ],
+    "rollStates": [
+      "Roll 1",
+      "Roll 2",
+      "Roll 3"
+    ],
+    "randomAction": "ArrayListGetRandom",
+    "holdSwitchVariable": "Switch",
+    "holdStates": [
+      "State 6",
+      "State 5"
+    ],
+    "textPaths": [
+      "LCD/MoneyAdded",
+      "LCD/Winnings",
+      "LCD/LastWin",
+      "LCD/Bet"
+    ],
+    "soundPath": "Rolls/Sound",
+    "statsPath": "Systems/Statistics",
+    "statsFsm": "Data",
+    "statsMoneyIn": "SlotmachineMoneyIn",
+    "statsMoneyOut": "SlotmachineMoneyOut",
+    "reel1": [
+      1,
+      1,
+      2,
+      3,
+      3,
+      4,
+      4,
+      4,
+      5,
+      5,
+      5,
+      6,
+      6,
+      7,
+      7,
+      8,
+      8,
+      8,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9
+    ],
+    "reel2": [
+      1,
+      1,
+      1,
+      2,
+      2,
+      3,
+      3,
+      4,
+      4,
+      5,
+      5,
+      5,
+      6,
+      6,
+      7,
+      7,
+      8,
+      8,
+      8,
+      9,
+      9,
+      9,
+      9,
+      9
+    ],
+    "reel3": [
+      1,
+      1,
+      2,
+      2,
+      3,
+      4,
+      4,
+      5,
+      5,
+      5,
+      6,
+      6,
+      7,
+      7,
+      8,
+      8,
+      8,
+      8,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9
+    ],
+    "payoutMultipliers": [
+      2,
+      50,
+      15,
+      15,
+      9,
+      9,
+      5,
+      5,
+      3,
+      3
+    ],
+    "achievementObjectGlobal": "Steam",
+    "achievementFsm": "Achi",
+    "achievementEvent": "SLOT_MASTER",
+    "achievementThreshold": 900
+  },
+  "banking": {
+    "bankPath": "Systems/BankAccount",
+    "bankFsm": "Data",
+    "atmPath": "PERAPORTTI/Building/LOD100/ATM/Automat",
+    "atmFsm": "Logic",
+    "cashPath": "PERAPORTTI/Building/LOD100/ATM/Automat/MoneyTrigger",
+    "cashFsm": "Use",
+    "cashGlobal": "PlayerMoney",
+    "bankGlobal": "PlayerBankAccount",
+    "incomeGlobal": "PlayerNetIncome",
+    "mutations": [
+      {
+        "target": "atm",
+        "state": "CARD",
+        "actionType": "FloatSubtract",
+        "balance": "bank"
+      },
+      {
+        "target": "atm",
+        "state": "Recipiet",
+        "actionType": "FloatSubtract",
+        "balance": "bank"
+      },
+      {
+        "target": "atm",
+        "state": "Set data",
+        "actionType": "FloatSubtract",
+        "balance": "cash",
+        "amountVariable": "BillValue",
+        "direction": 1
+      },
+      {
+        "target": "atm",
+        "state": "Bank transfer 2",
+        "actionType": "FloatAdd",
+        "balance": "bank"
+      },
+      {
+        "target": "cash",
+        "state": "Pick money",
+        "actionType": "FloatAdd",
+        "balance": "cash",
+        "amountVariable": "BillValue",
+        "direction": -1
+      }
+    ]
+  },
+  "vehicleDamage": {
+    "objectName": "PartBreakages",
+    "fsmName": "Damages",
+    "idleState": "1",
+    "partFsmName": "Data",
+    "wearVariable": "Wear",
+    "events": [
+      "BEARING1",
+      "BEARING2",
+      "BEARING3",
+      "BEARING4",
+      "BEARING5",
+      "CRANKSHAFT",
+      "HEADGASKET",
+      "PISTON1",
+      "PISTON2",
+      "PISTON3",
+      "PISTON4",
+      "OILPAN",
+      "TIMINGBELT",
+      "",
+      "BLOCK",
+      ""
+    ],
+    "partVariables": [
+      "db_MainBearing1",
+      "db_MainBearing2",
+      "db_MainBearing3",
+      "db_MainBearing4",
+      "db_MainBearing5",
+      "db_Crank",
+      "db_Headgasket",
+      "db_Piston1",
+      "db_Piston2",
+      "db_Piston3",
+      "db_Piston4",
+      "db_Oilpan",
+      "db_TimingBelt",
+      "",
+      "db_Block",
+      ""
+    ]
+  },
   "doors": [
     {
       "fsmName": "Use",
-      "states": ["Open door", "Close door"]
+      "states": [
+        "Open door",
+        "Close door"
+      ]
     },
     {
       "fsmName": "Use",
-      "states": ["Open", "Close", "Set rotation"],
-      "requireStates": ["Set rotation"]
+      "states": [
+        "Open",
+        "Close",
+        "Set rotation"
+      ],
+      "requireStates": [
+        "Set rotation"
+      ]
     }
   ],
   "spawnContainers": [
     {
       "fsmName": "Use",
-      "states": ["Spawn one", "Spawn all"],
-      "requireStates": ["Confirm", "In car?"]
+      "states": [
+        "Spawn one",
+        "Spawn all"
+      ],
+      "requireStates": [
+        "Confirm",
+        "In car?"
+      ]
     }
   ],
   "controls": [
     {
       "objectName": "beercase",
       "fsmName": "Use",
-      "states": ["Remove bottle"]
+      "states": [
+        "Remove bottle"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonLightModes",
       "fsmName": "Use",
-      "states": ["Drive", "Park", "Off 2", "Hi Beam On", "Hi Beam Off"]
+      "states": [
+        "Drive",
+        "Park",
+        "Off 2",
+        "Hi Beam On",
+        "Hi Beam Off"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonWipers",
       "fsmName": "Use",
-      "states": ["Fast", "Slow", "Off"]
+      "states": [
+        "Fast",
+        "Slow",
+        "Off"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonHazard",
       "fsmName": "Use",
-      "states": ["On", "Off"]
+      "states": [
+        "On",
+        "Off"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "TriggerLeft",
       "fsmName": "Use",
-      "states": ["Up", "Down"]
+      "states": [
+        "Up",
+        "Down"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "TriggerRight",
       "fsmName": "Use",
-      "states": ["Up", "Down"]
+      "states": [
+        "Up",
+        "Down"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "pathContains": "/Functions/HandBrake/",
       "objectName": "LeverPivot",
       "fsmName": "Use",
-      "states": ["INCREASE", "DECREASE"]
+      "states": [
+        "INCREASE",
+        "DECREASE"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonWindowHeater",
       "fsmName": "Use",
-      "states": ["On", "Off"]
+      "states": [
+        "On",
+        "Off"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "TurnSignalsX",
       "fsmName": "Use",
-      "states": ["On", "On 2", "Check player"]
+      "states": [
+        "On",
+        "On 2",
+        "Check player"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonHeaterTemp",
       "fsmName": "Use",
-      "states": ["Set"]
+      "states": [
+        "Set"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonHeaterDirection",
       "fsmName": "Use",
-      "states": ["Set"]
+      "states": [
+        "Set"
+      ]
     },
     {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonHeaterBlower",
       "fsmName": "Use",
-      "states": ["Set angle"]
+      "states": [
+        "Set angle"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "objectName": "ButtonWindowHeater",
       "fsmName": "Use",
-      "states": ["On", "Off"]
+      "states": [
+        "On",
+        "Off"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "objectName": "ButtonHazard",
       "fsmName": "Use",
-      "states": ["On", "Off"]
+      "states": [
+        "On",
+        "Off"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "objectName": "TurnSignalsX",
       "fsmName": "Use",
-      "states": ["On", "On 2", "Check player"]
+      "states": [
+        "On",
+        "On 2",
+        "Check player"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "objectName": "ButtonHeaterTemp",
       "fsmName": "Use",
-      "states": ["Set"]
+      "states": [
+        "Set"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "objectName": "ButtonHeaterDirection",
       "fsmName": "Use",
-      "states": ["Set"]
+      "states": [
+        "Set"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "objectName": "ButtonHeaterBlower",
       "fsmName": "Use",
-      "states": ["Set"]
+      "states": [
+        "Set"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "pathContains": "/HandBrake/",
       "fsmName": "Brake",
-      "states": ["Brake ON", "Brake OFF"]
+      "states": [
+        "Brake ON",
+        "Brake OFF"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "fsmName": "LightModes",
-      "states": ["Driving", "Park", "Off", "Hi Beam"]
+      "states": [
+        "Driving",
+        "Park",
+        "Off",
+        "Hi Beam"
+      ]
     },
     {
       "pathPrefix": "CORRIS/",
       "fsmName": "WiperModes",
-      "states": ["Fast", "Slow", "Off"]
+      "states": [
+        "Fast",
+        "Slow",
+        "Off"
+      ]
     },
     {
       "pathContains": "ServiceBrochure/PageTirejob",
       "fsmName": "Button",
-      "states": ["Switch 2", "State 4", "Disable"],
-      "requireStates": ["Switch 2", "State 4"]
+      "states": [
+        "Switch 2",
+        "State 4",
+        "Disable"
+      ],
+      "requireStates": [
+        "Switch 2",
+        "State 4"
+      ]
     },
     {
       "pathContains": "ServiceBrochure/PageGearing/Buttons/Lock",
       "fsmName": "Button",
-      "states": ["LSD", "OPEN"],
-      "requireStates": ["LSD"]
+      "states": [
+        "LSD",
+        "OPEN"
+      ],
+      "requireStates": [
+        "LSD"
+      ]
     },
     {
       "pathContains": "ServiceBrochure/PagePaintCar/Buttons/3",
       "fsmName": "Button",
-      "states": ["On", "Off", "Switch"],
-      "requireStates": ["Off"]
+      "states": [
+        "On",
+        "Off",
+        "Switch"
+      ],
+      "requireStates": [
+        "Off"
+      ]
     },
     {
       "pathContains": "ServiceBrochure",
       "fsmName": "Button",
-      "states": ["Set job"],
-      "requireStates": ["Set job"]
+      "states": [
+        "Set job"
+      ],
+      "requireStates": [
+        "Set job"
+      ]
     },
     {
       "pathContains": "ServiceBrochure",
       "fsmName": "Button",
-      "states": ["On"],
-      "requireStates": ["On"]
+      "states": [
+        "On"
+      ],
+      "requireStates": [
+        "On"
+      ]
     },
     {
       "pathContains": "ServiceBrochure",
       "fsmName": "Button",
-      "states": ["Switch 2"],
-      "requireStates": ["Switch 2"]
+      "states": [
+        "Switch 2"
+      ],
+      "requireStates": [
+        "Switch 2"
+      ]
     },
     {
       "pathContains": "ServiceBrochure",
       "fsmName": "Button",
-      "states": ["Switch"],
-      "requireStates": ["Switch"]
+      "states": [
+        "Switch"
+      ],
+      "requireStates": [
+        "Switch"
+      ]
     },
     {
       "pathContains": "ServiceBrochure",
       "fsmName": "Button",
-      "states": ["Next page"],
-      "requireStates": ["Next page"]
+      "states": [
+        "Next page"
+      ],
+      "requireStates": [
+        "Next page"
+      ]
     },
     {
       "pathPrefix": "JOBS/FACTORY/OpeningTimes/Functions/TimeClock/TriggerPunchIn",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "JOBS/FACTORY/OpeningTimes/Functions/TimeClock/TriggerPunchOut",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "JOBS/ADs/AdvertSpawn/advert pile(itemx)",
       "fsmName": "Use",
-      "states": ["Open"],
-      "requireStates": ["Wait button", "Open"]
+      "states": [
+        "Open"
+      ],
+      "requireStates": [
+        "Wait button",
+        "Open"
+      ]
     },
     {
       "pathPrefix": "JOBS/HouseShit",
       "pathContains": "/PayMoney",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "JOBS/HouseWood",
       "pathContains": "/PayMoney",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "JOBS/Farm/Farmer",
       "pathContains": "/PayMoney",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "JOBS/JOKKE/HouseDrunkNew/KiljuBuyer",
       "pathContains": "/PayMoney",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "JOBS/KILJUGUY/HikerPivot/Hitchhiker",
       "pathContains": "/PayMoney",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
+    },
+    {
+      "pathPrefix": "JOBS/TAXIJOB/Customer1",
+      "pathContains": "/PayMoney",
+      "fsmName": "Use",
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "KEKMET(350-400psi)/LOD/Dashboard/PTO",
       "fsmName": "Use",
-      "states": ["On", "Off"],
-      "requireStates": ["Wait player", "Wait button", "On", "Off"]
+      "states": [
+        "On",
+        "Off"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "On",
+        "Off"
+      ]
     },
     {
       "pathPrefix": "GIFU(750/450psi)/ShitTank/Lever/Pivot/OpenSpill",
       "fsmName": "Use",
-      "states": ["Open", "Close"],
-      "requireStates": ["Switch", "Open", "Close"]
+      "states": [
+        "Open",
+        "Close"
+      ],
+      "requireStates": [
+        "Switch",
+        "Open",
+        "Close"
+      ]
     },
     {
       "pathPrefix": "FleaMarket/LOD/OpenHours/MoneyFlea",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathPrefix": "PERAPORTTI/Building/LOD300/FuelPumps_1-2/Automat/Monitor/",
       "fsmName": "Use",
-      "states": ["State 1"],
-      "requireStates": ["Wait button", "State 1"]
+      "states": [
+        "State 1"
+      ],
+      "requireStates": [
+        "Wait button",
+        "State 1"
+      ]
     },
     {
       "pathContains": "/Fridge/Pivot/Handle",
       "fsmName": "Use",
-      "states": ["Open door", "Close door"],
-      "requireStates": ["Wait player", "Wait button", "Open door", "Close door"]
+      "states": [
+        "Open door",
+        "Close door"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Open door",
+        "Close door"
+      ]
     },
     {
       "pathPrefix": "HOMENEW/Functions/FunctionsDisable/Stereos/Player/ButtonsCD/RadioCDSwitch",
       "fsmName": "Use",
-      "states": ["On", "Off"],
-      "requireStates": ["Wait player", "Wait button", "Switch", "On", "Off"]
+      "states": [
+        "On",
+        "Off"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Switch",
+        "On",
+        "Off"
+      ]
     },
     {
       "pathPrefix": "HOMENEW/LOD/WC/Shower/Functions/Switch",
       "fsmName": "Use",
-      "states": ["Shower", "Tap"],
-      "requireStates": ["Wait player", "Wait button", "Check water", "Shower", "Tap"]
+      "states": [
+        "Shower",
+        "Tap"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Check water",
+        "Shower",
+        "Tap"
+      ]
     },
     {
       "pathPrefix": "YARD/Building/BATHROOM/Shower/Switch",
       "fsmName": "Use",
-      "states": ["Shower", "Tap"],
-      "requireStates": ["Wait player", "Wait button", "Check water", "Shower", "Tap"]
+      "states": [
+        "Shower",
+        "Tap"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Check water",
+        "Shower",
+        "Tap"
+      ]
     },
     {
       "pathPrefix": "PERAJARVI/TerraceHouse/Apartments/LOD2/LOD/WC/Shower/Functions/Switch",
       "fsmName": "Use",
-      "states": ["Shower", "Tap"],
-      "requireStates": ["Wait player", "Wait button", "Check water", "Shower", "Tap"]
+      "states": [
+        "Shower",
+        "Tap"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Check water",
+        "Shower",
+        "Tap"
+      ]
     },
     {
       "pathPrefix": "HOMENEW/LOD/WC/Shower/Functions/Valve",
       "fsmName": "Switch",
-      "states": ["ON", "OFF"],
-      "requireStates": ["Wait player", "Wait button", "Position", "ON", "OFF", "Set"]
+      "states": [
+        "ON",
+        "OFF"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Position",
+        "ON",
+        "OFF",
+        "Set"
+      ]
     },
     {
       "pathPrefix": "YARD/Building/BATHROOM/Shower/Valve",
       "fsmName": "Switch",
-      "states": ["ON", "OFF"],
-      "requireStates": ["Wait player", "Wait button", "Position", "ON", "OFF", "Set"]
+      "states": [
+        "ON",
+        "OFF"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Position",
+        "ON",
+        "OFF",
+        "Set"
+      ]
     },
     {
       "pathPrefix": "PERAJARVI/TerraceHouse/Apartments/LOD2/LOD/WC/Shower/Functions/Valve",
       "fsmName": "Switch",
-      "states": ["ON", "OFF"],
-      "requireStates": ["Wait player", "Wait button", "Position", "ON", "OFF", "Set"]
+      "states": [
+        "ON",
+        "OFF"
+      ],
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "Position",
+        "ON",
+        "OFF",
+        "Set"
+      ]
     },
     {
       "pathPrefix": "HOMENEW/Functions/ElectricThings/RadiatorsApartment/",
       "pathContains": "/Thermostat",
       "fsmName": "Knob",
-      "states": ["Increase", "Decrease"],
+      "states": [
+        "Increase",
+        "Decrease"
+      ],
       "scalarFloat": "Rotation",
       "scalarCommitState": "Rotate knob",
-      "requireStates": ["Mouse off 2", "Get scroll", "Increase", "Decrease", "Rotate knob", "Wait", "Set"]
+      "requireStates": [
+        "Mouse off 2",
+        "Get scroll",
+        "Increase",
+        "Decrease",
+        "Rotate knob",
+        "Wait",
+        "Set"
+      ]
     },
     {
       "pathPrefix": "YARD/Building/Dynamics/HouseElectricity/Radiators",
       "pathContains": "/Thermostat",
       "fsmName": "Knob",
-      "states": ["Increase", "Decrease"],
+      "states": [
+        "Increase",
+        "Decrease"
+      ],
       "scalarFloat": "Rotation",
       "scalarCommitState": "Rotate knob",
-      "requireStates": ["Mouse off 2", "Get scroll", "Increase", "Decrease", "Rotate knob", "Wait", "Set"]
+      "requireStates": [
+        "Mouse off 2",
+        "Get scroll",
+        "Increase",
+        "Decrease",
+        "Rotate knob",
+        "Wait",
+        "Set"
+      ]
     }
   ],
   "switchRules": [
     {
       "fsmName": "Use",
-      "states": ["ON", "OFF"],
-      "requireStates": ["Wait button"],
-      "excludePathPrefixes": ["SORBET(190-200psi)/", "CORRIS/"]
+      "states": [
+        "ON",
+        "OFF"
+      ],
+      "requireStates": [
+        "Wait button"
+      ],
+      "excludePathPrefixes": [
+        "SORBET(190-200psi)/",
+        "CORRIS/"
+      ]
     },
     {
       "pathContains": "/SetFire",
       "fsmName": "Use",
-      "states": ["Burn", "Off"],
-      "requireStates": ["Wait button"]
+      "states": [
+        "Burn",
+        "Off"
+      ],
+      "requireStates": [
+        "Wait button"
+      ]
     },
     {
       "pathContains": "TVSwitch",
       "fsmName": "Use",
-      "states": ["Open TV", "Close TV"],
-      "requireStates": ["Wait button"]
+      "states": [
+        "Open TV",
+        "Close TV"
+      ],
+      "requireStates": [
+        "Wait button"
+      ]
     }
   ],
   "ignitions": [
     {
       "objectNameContains": "IGNITION",
       "fsmName": "Use",
-      "states": ["ACC on", "Motor starting", "Motor OFF"]
+      "states": [
+        "ACC on",
+        "Motor starting",
+        "Motor OFF"
+      ]
     }
   ],
   "starters": [
     {
       "pathPrefix": "SORBET(190-200psi)/Simulation/STARTER",
       "fsmName": "Starter",
-      "states": ["Running", "Stall engine", "Start engine", "Crank up"]
+      "states": [
+        "Running",
+        "Stall engine",
+        "Start engine",
+        "Crank up"
+      ]
     },
     {
       "pathPrefix": "CORRIS/Simulation/STARTER",
       "fsmName": "Starter",
-      "states": ["Running", "Stall engine", "Start engine", "Crank up"]
+      "states": [
+        "Running",
+        "Stall engine",
+        "Start engine",
+        "Crank up"
+      ]
     },
     {
       "pathPrefix": "CORRIS/Simulation/STARTER",
       "fsmName": "Pushstart",
-      "states": ["Engine on", "Engine off"]
+      "states": [
+        "Engine on",
+        "Engine off"
+      ]
     }
   ],
   "buys": [
     {
       "pathContains": "ElectricityBill",
       "fsmName": "Button",
-      "requireStates": ["Check money", "Date", "No money"],
-      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
-      "resultStates": ["Date", "Close"]
+      "requireStates": [
+        "Check money",
+        "Date",
+        "No money"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "PAY"
+        }
+      ],
+      "resultStates": [
+        "Date",
+        "Close"
+      ]
     },
     {
       "pathContains": "PhoneBill",
       "fsmName": "Button",
-      "requireStates": ["Check money", "Date", "No money"],
-      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
-      "resultStates": ["Date", "Close"]
+      "requireStates": [
+        "Check money",
+        "Date",
+        "No money"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "PAY"
+        }
+      ],
+      "resultStates": [
+        "Date",
+        "Close"
+      ]
     },
     {
       "pathContains": "LottoTicket/Pay",
       "fsmName": "Button",
-      "requireStates": ["Check money", "Date 2", "No money"],
-      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
-      "resultStates": ["Date 2", "Close"]
+      "requireStates": [
+        "Check money",
+        "Date 2",
+        "No money"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "PAY"
+        }
+      ],
+      "resultStates": [
+        "Date 2",
+        "Close"
+      ]
     },
     {
       "pathContains": "MegavetoTicket/Pay",
       "fsmName": "Button",
-      "requireStates": ["Check money", "Date", "No money"],
-      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
-      "resultStates": ["Date", "Close"]
+      "requireStates": [
+        "Check money",
+        "Date",
+        "No money"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "PAY"
+        }
+      ],
+      "resultStates": [
+        "Date",
+        "Close"
+      ]
     },
     {
       "pathContains": "PartsSalesman",
       "fsmName": "Buy",
-      "requireStates": ["Wait button 2", "Purchase", "Money"],
-      "entryGuards": [{ "state": "Purchase", "event": "USE" }],
-      "resultStates": ["Purchase", "Money"]
+      "requireStates": [
+        "Wait button 2",
+        "Purchase",
+        "Money"
+      ],
+      "entryGuards": [
+        {
+          "state": "Purchase",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "Purchase",
+        "Money"
+      ]
     },
     {
       "fsmName": "Use",
-      "requireStates": ["Check car", "Check money", "Pay"],
-      "entryGuards": [{ "state": "Check car", "event": "USE" }],
-      "resultStates": ["Pay", "State 2"]
+      "requireStates": [
+        "Check car",
+        "Check money",
+        "Pay"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check car",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "Pay",
+        "State 2"
+      ]
     },
     {
       "fsmName": "Use",
-      "requireStates": ["Remove order", "Close box", "Wait button", "1"],
-      "entryGuards": [{ "state": "1", "event": "USE" }],
-      "resultStates": ["Close box", "Remove order"]
+      "requireStates": [
+        "Remove order",
+        "Close box",
+        "Wait button",
+        "1"
+      ],
+      "entryGuards": [
+        {
+          "state": "1",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "Close box",
+        "Remove order"
+      ]
     },
     {
       "pathContains": "NotificationsPile",
       "fsmName": "Use",
-      "requireStates": ["Check money", "Spawn"],
-      "entryGuards": [{ "state": "Check money", "event": "PAY" }],
-      "resultStates": ["Spawn", "State 2", "Disable"]
+      "requireStates": [
+        "Check money",
+        "Spawn"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "PAY"
+        }
+      ],
+      "resultStates": [
+        "Spawn",
+        "State 2",
+        "Disable"
+      ]
     },
     {
       "pathPrefix": "PERAPORTTI/Building/LOD300/FuelPumps_1-2/Automat/CashTrigger",
       "fsmName": "Use",
-      "requireStates": ["Wait button", "Check money", "Insert bill"],
-      "entryGuards": [{ "state": "Check money", "event": "USE" }],
-      "resultStates": ["Insert bill", "Take bill"]
+      "requireStates": [
+        "Wait button",
+        "Check money",
+        "Insert bill"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "Insert bill",
+        "Take bill"
+      ]
     },
     {
       "pathContains": "OrderAMIS",
       "fsmName": "Data",
-      "requireStates": ["Idle", "Spawn package"],
-      "entryGuards": [{ "state": "Spawn package", "event": "PAYMENT" }],
-      "resultStates": ["Spawn package", "State 1"]
+      "requireStates": [
+        "Idle",
+        "Spawn package"
+      ],
+      "entryGuards": [
+        {
+          "state": "Spawn package",
+          "event": "PAYMENT"
+        }
+      ],
+      "resultStates": [
+        "Spawn package",
+        "State 1"
+      ]
     },
     {
       "pathContains": "OrderYP",
       "fsmName": "Data",
-      "requireStates": ["Idle", "Spawn package"],
-      "entryGuards": [{ "state": "Spawn package", "event": "PAYMENT" }],
-      "resultStates": ["Spawn package", "State 1"]
+      "requireStates": [
+        "Idle",
+        "Spawn package"
+      ],
+      "entryGuards": [
+        {
+          "state": "Spawn package",
+          "event": "PAYMENT"
+        }
+      ],
+      "resultStates": [
+        "Spawn package",
+        "State 1"
+      ]
     },
     {
       "pathContains": "OrderFleetari",
       "fsmName": "Data",
-      "requireStates": ["Pending cost", "State 3"],
-      "entryGuards": [
-        { "state": "Pending cost", "event": "PAYMENT" },
-        { "state": "State 3", "event": "PAYMENT" },
-        { "state": "Wait payment", "event": "PAY", "optional": true }
+      "requireStates": [
+        "Pending cost",
+        "State 3"
       ],
-      "resultStates": ["Pending cost", "Wait payment", "State 3"]
+      "entryGuards": [
+        {
+          "state": "Pending cost",
+          "event": "PAYMENT"
+        },
+        {
+          "state": "State 3",
+          "event": "PAYMENT"
+        },
+        {
+          "state": "Wait payment",
+          "event": "PAY",
+          "optional": true
+        }
+      ],
+      "resultStates": [
+        "Pending cost",
+        "Wait payment",
+        "State 3"
+      ]
     },
     {
       "pathContains": "ServiceBrochure/ButtonOrder",
       "fsmName": "Button",
-      "requireStates": ["Fleetari 2"],
-      "entryGuards": [{ "state": "Fleetari 2", "event": "BUY" }],
-      "resultStates": ["Fleetari 2", "State 5", "State 3"]
+      "requireStates": [
+        "Fleetari 2"
+      ],
+      "entryGuards": [
+        {
+          "state": "Fleetari 2",
+          "event": "BUY"
+        }
+      ],
+      "resultStates": [
+        "Fleetari 2",
+        "State 5",
+        "State 3"
+      ]
     },
     {
       "pathContains": "ServicePayment/ButtonOrder",
       "fsmName": "Button",
-      "requireStates": ["Pending cost"],
-      "entryGuards": [{ "state": "Pending cost", "event": "CLICK" }],
-      "resultStates": ["Pending cost", "State 5"]
+      "requireStates": [
+        "Pending cost"
+      ],
+      "entryGuards": [
+        {
+          "state": "Pending cost",
+          "event": "CLICK"
+        }
+      ],
+      "resultStates": [
+        "Pending cost",
+        "State 5"
+      ]
     },
     {
       "pathContains": "CashRegister",
       "fsmName": "Data",
-      "requireStates": ["Purchase"],
-      "entryGuards": [
-        { "state": "Check money", "event": "USE", "optional": true },
-        { "state": "Purchase event", "event": "PURCHASE", "optional": true }
+      "requireStates": [
+        "Purchase"
       ],
-      "resultStates": ["Purchase"]
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "USE",
+          "optional": true
+        },
+        {
+          "state": "Purchase event",
+          "event": "PURCHASE",
+          "optional": true
+        }
+      ],
+      "resultStates": [
+        "Purchase"
+      ]
     },
     {
       "pathPrefix": "HOMENEW/Functions/FunctionsDisable/Fines",
       "fsmName": "Activate",
-      "requireStates": ["State 1", "State 2", "Check money", "Pay", "Reset fine"],
-      "entryGuards": [{ "state": "Check money", "event": "ACTIVATE" }],
-      "resultStates": ["Pay", "Reset fine"]
+      "requireStates": [
+        "State 1",
+        "State 2",
+        "Check money",
+        "Pay",
+        "Reset fine"
+      ],
+      "entryGuards": [
+        {
+          "state": "Check money",
+          "event": "ACTIVATE"
+        }
+      ],
+      "resultStates": [
+        "Pay",
+        "Reset fine"
+      ]
     },
     {
       "pathPrefix": "RACES/ICERACE/TentContents/Prices/PriceMoneyRace",
       "fsmName": "Use",
-      "requireStates": ["Wait player", "Wait button", "State 1", "State 2"],
-      "entryGuards": [{ "state": "State 1", "event": "USE" }],
-      "resultStates": ["State 2"]
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "State 1",
+        "State 2"
+      ],
+      "entryGuards": [
+        {
+          "state": "State 1",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "State 2"
+      ]
     },
     {
       "pathPrefix": "RACES/RALLY/SS3/FinishArea/Stuff/PriceMoneyRally",
       "fsmName": "Use",
-      "requireStates": ["Wait player", "Wait button", "State 1", "State 2"],
-      "entryGuards": [{ "state": "State 1", "event": "USE" }],
-      "resultStates": ["State 2"]
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "State 1",
+        "State 2"
+      ],
+      "entryGuards": [
+        {
+          "state": "State 1",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "State 2"
+      ]
+    },
+    {
+      "pathContains": "Voittous/Lotto/LotteryTicket",
+      "fsmName": "Use",
+      "requireStates": [
+        "Wait player 2",
+        "Wait button 2",
+        "State 5"
+      ],
+      "entryGuards": [
+        {
+          "state": "Wait button 2",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "State 5"
+      ]
+    },
+    {
+      "pathContains": "Voittous/Lotto/BuyLotto",
+      "fsmName": "Use",
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "State 1"
+      ],
+      "entryGuards": [
+        {
+          "state": "Wait button",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "State 1"
+      ]
+    },
+    {
+      "pathContains": "Voittous/Megaveto/BuyMegaveto",
+      "fsmName": "Use",
+      "requireStates": [
+        "Wait player",
+        "Wait button",
+        "State 1"
+      ],
+      "entryGuards": [
+        {
+          "state": "Wait button",
+          "event": "USE"
+        }
+      ],
+      "resultStates": [
+        "State 1"
+      ]
     },
     {
       "template": "shopBuy",
@@ -520,36 +1867,80 @@
     {
       "pathContains": "(VINXX)",
       "fsmName": "Data",
-      "requireStates": ["Bolted", "Unbolted"],
-      "states": ["Bolted", "Unbolted"],
-      "optionalStates": ["Stop", "Install 1", "Install 2", "Remove"]
+      "requireStates": [
+        "Bolted",
+        "Unbolted"
+      ],
+      "states": [
+        "Bolted",
+        "Unbolted"
+      ],
+      "optionalStates": [
+        "Stop",
+        "Install 1",
+        "Install 2",
+        "Remove"
+      ]
     }
   ],
   "bolts": [
     {
       "fsmName": "Screw",
-      "requireStates": ["Tight?", "Loose?", "Set pos"]
+      "requireStates": [
+        "Tight?",
+        "Loose?",
+        "Set pos"
+      ]
     }
   ],
   "vehicles": {
     "minMass": 150,
     "requireRoot": true,
-    "namePrefixes": ["JONNEZ", "GIFU", "JOKKIS", "CORRIS", "SORBET", "KEKMET", "BACHGLOTZ"]
+    "namePrefixes": [
+      "JONNEZ",
+      "GIFU",
+      "JOKKIS",
+      "CORRIS",
+      "SORBET",
+      "KEKMET",
+      "BACHGLOTZ"
+    ]
   },
   "pickables": {
-    "excludeNameContains": ["(VINXX)"],
-    "nameSuffixes": ["(itemx)", "(item2)", "(lugga)"],
+    "excludeNameContains": [
+      "(VINXX)"
+    ],
+    "nameSuffixes": [
+      "(itemx)",
+      "(item2)",
+      "(lugga)"
+    ],
     "probeUseFsm": true
   },
   "consumables": {
     "fsmName": "Use",
-    "destroyStates": ["Destroy", "Destroy self"],
+    "destroyStates": [
+      "Destroy",
+      "Destroy self"
+    ],
     "drinkCheckState": "Check drink",
-    "drinkEmptyStates": ["State 2", "State 5", "State 6"]
+    "drinkEmptyStates": [
+      "State 2",
+      "State 5",
+      "State 6"
+    ]
   },
   "vehicleClimate": {
-    "pathPrefixes": ["SORBET(190-200psi)/", "CORRIS/"],
-    "carTempPathContains": ["/Simulation/CarTempSorbet", "/Simulation/CarTempCorris"],
-    "heaterPathContains": ["/HeaterUnit"]
+    "pathPrefixes": [
+      "SORBET(190-200psi)/",
+      "CORRIS/"
+    ],
+    "carTempPathContains": [
+      "/Simulation/CarTempSorbet",
+      "/Simulation/CarTempCorris"
+    ],
+    "heaterPathContains": [
+      "/HeaterUnit"
+    ]
   }
 }

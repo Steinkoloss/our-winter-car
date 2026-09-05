@@ -131,6 +131,9 @@ namespace WinterMP.Core.Session
                         _playersByPeer[new PeerId(spawn.SteamId != 0 ? spawn.SteamId : spawn.PlayerId)] = remote;
                         AddChatLine($"* {remote.Name} joined");
                         PlayerJoined?.Invoke(remote);
+                        // A (re)joining player restarts its per-subsystem counters; this
+                        // client's stale latches for that slot must not drop its streams.
+                        Sync.WorldSyncManager.Instance?.OnPlayerAdmitted(spawn.PlayerId);
                     }
                     break;
 
@@ -359,6 +362,16 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteNpcTransform(npcTransform);
                     break;
 
+                case NpcDeathReport npcDeathReport when IsHost:
+                    if (!IsPeerPlayer(peer, npcDeathReport.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped NpcDeathReport claiming player {npcDeathReport.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostNpcDeathReport(this, npcDeathReport);
+                    break;
+
                 case VehicleState vehicleState when IsHost:
                     if (!IsPeerPlayer(peer, vehicleState.OwnerPlayerId))
                     {
@@ -470,6 +483,15 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteWalletState(walletState);
                     break;
 
+                case BankTransferIntent bankTransfer when IsHost:
+                    if (IsPeerPlayer(peer, bankTransfer.PlayerId))
+                        Sync.WorldSyncManager.Instance?.OnBankTransfer(bankTransfer);
+                    break;
+
+                case BankTransferResult bankResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnBankResult(bankResult);
+                    break;
+
                 case PurchaseIntent purchaseIntent when IsHost:
                     if (!IsPeerPlayer(peer, purchaseIntent.PlayerId))
                     {
@@ -525,6 +547,26 @@ namespace WinterMP.Core.Session
                         break;
                     }
                     Sync.WorldSyncManager.Instance?.OnHostGamblingIntent(gamblingIntent);
+                    break;
+
+                case SlotMachineIntent slotIntent when IsHost:
+                    if (IsPeerPlayer(peer, slotIntent.PlayerId))
+                        Sync.WorldSyncManager.Instance?.OnSlotIntent(slotIntent);
+                    break;
+                case SlotMachineState slotState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnSlotState(slotState);
+                    break;
+                case SlotMachineResult slotResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnSlotResult(slotResult);
+                    break;
+                case PokerIntent pokerIntent when IsHost:
+                    if (IsPeerPlayer(peer, pokerIntent.PlayerId)) Sync.WorldSyncManager.Instance?.OnPokerIntent(pokerIntent);
+                    break;
+                case PokerState pokerState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnPokerState(pokerState);
+                    break;
+                case PokerResult pokerResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnPokerResult(pokerResult);
                     break;
 
                 case FluidContainerState fluidState when IsHost:
@@ -611,8 +653,35 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteTaxiJobState(taxiJobState);
                     break;
 
+                case WorldScalarsState worldScalarsState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteWorldScalarsState(worldScalarsState);
+                    break;
+
+                case HockeyBettingState hockeyBettingState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteHockeyBettingState(hockeyBettingState);
+                    break;
+
+                case ApplianceFireReport applianceFireReport when IsHost:
+                    if (!IsPeerPlayer(peer, applianceFireReport.PlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped ApplianceFireReport claiming player {applianceFireReport.PlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostApplianceFireReport(applianceFireReport);
+                    break;
+
                 case WelfareState welfareState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteWelfareState(welfareState);
+                    break;
+                case DebtLetterState debtState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnDebtLetterState(debtState);
+                    break;
+                case DebtPaymentIntent debtPayment when IsHost:
+                    if (IsPeerPlayer(peer, debtPayment.PlayerId)) Sync.WorldSyncManager.Instance?.OnDebtPayment(debtPayment);
+                    break;
+                case DebtPaymentResult debtResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnDebtPaymentResult(debtResult);
                     break;
 
                 case HitchhikerState hitchhikerState when !IsHost:
@@ -625,6 +694,16 @@ namespace WinterMP.Core.Session
 
                 case JailState jailState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteJailState(jailState);
+                    break;
+
+                case JailState jailReport when IsHost:
+                    if (!IsPeerPlayer(peer, jailReport.JailedPlayerId))
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"Dropped JailState report claiming player {jailReport.JailedPlayerId} from {peer}.");
+                        break;
+                    }
+                    Sync.WorldSyncManager.Instance?.OnHostJailReport(jailReport);
                     break;
 
                 case PursuitState pursuitState when !IsHost:
