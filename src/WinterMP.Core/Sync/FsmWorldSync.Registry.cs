@@ -47,12 +47,13 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterDoor(PlayMakerFSM fsm, string[] syncedStates)
         {
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_doors.ContainsKey(id) || _bolts.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: door id collision, not syncing '{path}'.");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
@@ -60,17 +61,18 @@ namespace WinterMP.Core.Sync
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
                 string captured = state;
-                if (!FsmHook.OnStateEnter(fsm, state, () => OnDoorStateEntered(id, captured))) return false;
+                if (!HookState(fsm, state, () => OnDoorStateEntered(id, captured))) return false;
             }
 
             _doors[id] = new SyncedDoor { Fsm = fsm, Path = path, SyncedStates = syncedStates };
-            _bridge.HookedFsms[fsm] = true;
+            MarkRegistered(fsm);
             if (_bridge.FirstDoorRegisteredAt < 0f) _bridge.FirstDoorRegisteredAt = Time.unscaledTime;
             return true;
         }
 
         internal bool RegisterSpawnContainer(PlayMakerFSM fsm, string[] syncedStates)
         {
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
             uint baseId = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
 
@@ -89,7 +91,7 @@ namespace WinterMP.Core.Sync
                 if (_spawnContainers.TryGetValue(id, out var existing))
                 {
                     if (existing.Fsm == null) { _spawnContainers.Remove(id); placed = true; break; } // dead — reclaim
-                    if (existing.Fsm == fsm) { _bridge.HookedFsms[fsm] = true; return false; }       // already ours
+                    if (existing.Fsm == fsm) { MarkRegistered(fsm); return false; }       // already ours
                     continue;                                                                          // live duplicate
                 }
 
@@ -102,7 +104,7 @@ namespace WinterMP.Core.Sync
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: spawn-container id space full for '{path}'.");
                 Util.BootTrace.Crumb($"SPAWN-REG idspace-full '{path}'");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
@@ -112,7 +114,7 @@ namespace WinterMP.Core.Sync
             foreach (string state in syncedStates)
             {
                 string captured = state;
-                if (!FsmHook.OnStateEnter(fsm, state, () => OnSpawnStateEntered(id, captured)))
+                if (!HookState(fsm, state, () => OnSpawnStateEntered(id, captured)))
                 {
                     WinterMPPlugin.Log.LogWarning($"WorldSync: spawn-container '{path}' could not hook state '{state}'; not syncing.");
                     return false;
@@ -120,7 +122,7 @@ namespace WinterMP.Core.Sync
             }
 
             _spawnContainers[id] = new SyncedSpawnContainer { Fsm = fsm, Path = path, SyncedStates = syncedStates };
-            _bridge.HookedFsms[fsm] = true;
+            MarkRegistered(fsm);
             WinterMPPlugin.Log.LogInfo($"WorldSync: spawn-container registered: '{path}'.");
             Util.BootTrace.Crumb($"SPAWN-REG ok '{path}' states=[{string.Join(",", syncedStates)}]");
             return true;
@@ -128,12 +130,13 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterPart(PlayMakerFSM fsm, string[] syncedStates)
         {
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_parts.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: part id collision, not syncing '{path}'.");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
@@ -141,10 +144,10 @@ namespace WinterMP.Core.Sync
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
                 string captured = state;
-                if (!FsmHook.OnStateEnter(fsm, state, () => OnPartStateEntered(id, captured))) return false;
+                if (!HookState(fsm, state, () => OnPartStateEntered(id, captured))) return false;
                 if (state == "Stop" || state == "Bolted" || state == "Unbolted")
                 {
-                    if (!FsmHook.OnStateEnter(fsm, state, () => OnPartSettled(id))) return false;
+                    if (!HookState(fsm, state, () => OnPartSettled(id))) return false;
                 }
             }
 
@@ -157,12 +160,12 @@ namespace WinterMP.Core.Sync
                 TightnessVar = fsm.FsmVariables.FindFsmFloat("Tightness"),
                 WearVar = fsm.FsmVariables.FindFsmFloat("Wear"),
             };
-            _bridge.HookedFsms[fsm] = true;
+            MarkRegistered(fsm);
 
             if (_pendingPartStates.TryGetValue(id, out var pending) && Time.unscaledTime < pending.ExpiresAt)
             {
-                _pendingPartStates.Remove(id);
-                ApplyPartState(id, pending.Flags, pending.Tightness, pending.Wear);
+                if (ApplyPartState(id, pending.Flags, pending.Tightness, pending.Wear, pending.ReceiptOrder))
+                    _pendingPartStates.Remove(id);
             }
 
             return true;
@@ -170,12 +173,13 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterBuy(PlayMakerFSM fsm, BuyProfile profile)
         {
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_buys.ContainsKey(id) || _doors.ContainsKey(id) || _parts.ContainsKey(id) || _bolts.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: buy id collision, not syncing '{path}'.");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
@@ -183,14 +187,14 @@ namespace WinterMP.Core.Sync
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
                 string captured = state;
-                if (!FsmHook.OnStateEnter(fsm, state, () => OnBuyResultStateEntered(id, captured))) return false;
+                if (!HookState(fsm, state, () => OnBuyResultStateEntered(id, captured))) return false;
             }
 
             foreach (var guard in profile.EntryGuards)
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, guard.StateName)) return false;
                 string capturedEvent = guard.TriggerEvent;
-                if (!FsmHook.OnStateEnter(fsm, guard.StateName, () => OnBuyEntryGuard(id, capturedEvent))) return false;
+                if (!HookState(fsm, guard.StateName, () => OnBuyEntryGuard(id, capturedEvent))) return false;
             }
 
             _buys[id] = new SyncedBuy
@@ -200,7 +204,7 @@ namespace WinterMP.Core.Sync
                 EntryGuards = profile.EntryGuards,
                 ResultStates = profile.ResultStates,
             };
-            _bridge.HookedFsms[fsm] = true;
+            MarkRegistered(fsm);
 
             for (int i = _pendingPurchaseIntents.Count - 1; i >= 0; i--)
             {
@@ -215,36 +219,35 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterBolt(PlayMakerFSM fsm)
         {
+            if (!fsm.Fsm.Initialized || !fsm.Fsm.Started || fsm.ActiveStateName == "Init") return false;
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_bolts.ContainsKey(id) || _doors.ContainsKey(id) || _buys.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: bolt id collision, not syncing '{path}'.");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
-            // "Tight?"/"Loose?" are entered exactly when the wrench turns the bolt;
-            // their own BACK check rejects over/under-tightening on each machine.
-            if (!FsmHook.OnStateEnter(fsm, "Tight?", () => OnBoltTurned(id, "TIGHTEN"))) return false;
-            if (!FsmHook.OnStateEnter(fsm, "Loose?", () => OnBoltTurned(id, "UNTIGHTEN"))) return false;
-            if (!FsmHook.OnStateEnter(fsm, "Set pos", () => OnBoltSettled(id))) return false;
+            var bolt = new SyncedBolt { Fsm = fsm, Path = path };
+            try { BindNativeBolt(bolt); }
+            catch (System.Exception e) { FailBolt(bolt, e); MarkRegistered(fsm); return false; }
 
-            _bolts[id] = new SyncedBolt
-            {
-                Fsm = fsm,
-                Path = path,
-                BoltTightnessVar = fsm.FsmVariables.FindFsmInt("BoltTightness"),
-                ScrewIntVar = fsm.FsmVariables.FindFsmInt("ScrewInt"),
-                TightnessFVar = fsm.FsmVariables.FindFsmFloat("TightnessF"),
-                ScrewFloatVar = fsm.FsmVariables.FindFsmFloat("ScrewFloat"),
-            };
-            _bridge.HookedFsms[fsm] = true;
+            // Hook before native bounds checks so unsupported guest timing
+            // adjustments can return to Set pos without reaching the mount.
+            if (!HookState(fsm, "Tight?", () => OnBoltTurned(id, "TIGHTEN"))) return false;
+            if (!HookState(fsm, "Loose?", () => OnBoltTurned(id, "UNTIGHTEN"))) return false;
+            if (!HookState(fsm, "Set pos", () => OnBoltSettled(id))) return false;
+
+            _bolts[id] = bolt;
+            MarkRegistered(fsm);
+            if (SessionManager.Instance?.IsHost == true) QueueHostBoltReport(id);
 
             if (_pendingBoltStates.TryGetValue(id, out var pending) && Time.unscaledTime < pending.ExpiresAt)
             {
-                _pendingBoltStates.Remove(id);
-                ApplyBoltState(id, pending.BoltTightness, pending.ScrewInt);
+                if (ApplyBoltState(id, pending.BoltTightness, pending.ScrewInt, pending.PartTightness, pending.ReceiptOrder))
+                    _pendingBoltStates.Remove(id);
             }
 
             return true;
@@ -252,12 +255,13 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterIgnition(PlayMakerFSM fsm, string[] syncedStates)
         {
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_ignitions.ContainsKey(id) || _starters.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: ignition id collision, not syncing '{path}'.");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
@@ -265,11 +269,11 @@ namespace WinterMP.Core.Sync
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
                 string captured = state;
-                if (!FsmHook.OnStateEnter(fsm, state, () => OnIgnitionStateEntered(id, captured))) return false;
+                if (!HookState(fsm, state, () => OnIgnitionStateEntered(id, captured))) return false;
             }
 
             _ignitions[id] = new SyncedIgnition { Fsm = fsm, Path = path, SyncedStates = syncedStates };
-            _bridge.HookedFsms[fsm] = true;
+            MarkRegistered(fsm);
             WinterMPPlugin.Log.LogInfo($"WorldSync: ignition registered: '{path}'.");
             return true;
         }
@@ -290,12 +294,13 @@ namespace WinterMP.Core.Sync
             string? scalarFloatName,
             string? scalarCommitState)
         {
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_controls.ContainsKey(id) || _starters.ContainsKey(id) || _ignitions.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: control id collision, not syncing '{path}'.");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
@@ -320,14 +325,14 @@ namespace WinterMP.Core.Sync
 
                 if (!FsmHook.EnsureRemoteEntry(fsm, commitState)) return false;
                 string capturedCommit = commitState;
-                if (!FsmHook.OnStateEnter(fsm, capturedCommit, () => OnScalarControlCommitted(id))) return false;
+                if (!HookState(fsm, capturedCommit, () => OnScalarControlCommitted(id))) return false;
             }
 
             foreach (string state in syncedStates)
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
                 string captured = state;
-                if (!FsmHook.OnStateEnter(fsm, state, () => OnControlStateEntered(id, captured))) return false;
+                if (!HookState(fsm, state, () => OnControlStateEntered(id, captured))) return false;
             }
 
             _controls[id] = new SyncedControl
@@ -338,7 +343,7 @@ namespace WinterMP.Core.Sync
                 ScalarFloat = scalarFloat,
                 ScalarCommitState = scalarFloat != null ? commitState : null,
             };
-            _bridge.HookedFsms[fsm] = true;
+            MarkRegistered(fsm);
 
             if (_pendingRadiatorThermostatStates.TryGetValue(id, out var pending))
             {
@@ -353,12 +358,13 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterStarter(PlayMakerFSM fsm, string[] syncedStates)
         {
+            if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_starters.ContainsKey(id) || _controls.ContainsKey(id) || _ignitions.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: starter id collision, not syncing '{path}'.");
-                _bridge.HookedFsms[fsm] = true;
+                MarkRegistered(fsm);
                 return false;
             }
 
@@ -366,11 +372,11 @@ namespace WinterMP.Core.Sync
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
                 string captured = state;
-                if (!FsmHook.OnStateEnter(fsm, state, () => OnStarterStateEntered(id, captured))) return false;
+                if (!HookState(fsm, state, () => OnStarterStateEntered(id, captured))) return false;
             }
 
             _starters[id] = new SyncedStarter { Fsm = fsm, Path = path, SyncedStates = syncedStates };
-            _bridge.HookedFsms[fsm] = true;
+            MarkRegistered(fsm);
             WinterMPPlugin.Log.LogInfo($"WorldSync: starter registered: '{path}'.");
             return true;
         }

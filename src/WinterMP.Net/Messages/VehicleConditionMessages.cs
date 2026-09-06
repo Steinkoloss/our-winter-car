@@ -24,7 +24,7 @@ namespace WinterMP.Net.Messages
         public byte OwnerPlayerId;
         public ushort Sequence;
 
-        /// <summary>Tire pressure, scaled *100 into a byte (0..2.55 bar range clamped).</summary>
+        /// <summary>Tire pressure, rounded to hundredths of a bar (0..2.55 clamped; v96).</summary>
         public byte TirePressure;
         /// <summary>Aggregate drivetrain damage indicator (GearboxDamage <c>DamageType</c>, clamped).</summary>
         public byte DrivetrainDamage;

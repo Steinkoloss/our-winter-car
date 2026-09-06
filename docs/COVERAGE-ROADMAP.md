@@ -49,11 +49,34 @@ game dump → `python3 tools/extract_fsm_details.py catalog/dump-23268598.json s
 - **E** — remote-apply write onto a locally-owned object (ownership contamination). Guard every game-state write with `!LocallyOwned` / owner check.
 - **F** — sequence reset on a reused/path-derived id. Handle re-baseline (see `NpcTrafficSync` stale-run detection).
 
-**Reserved protocol id ranges** (current version **v94**; allocate the next free id in-range):
+**Reserved protocol id ranges** (current version **v118**; allocate the next free id in-range):
 `63–79` vehicles · `93–99` economy/appliances · `101–119` NPCs/jobs · `126–139` snapshot/bulk.
 Ranges are tight — if a range fills, extend it in `IMessage.cs` and document it.
-The economy overflow currently uses 160–172; 164–166 are the v92 slot ledger messages,
-167–169 are v93 VideoPoker, and 170–172 are v94 debt-letter quotes and payments.
+The economy overflow currently uses 160–183; 164–166 are the v92 slot ledger messages,
+167–169 are v93 VideoPoker, 170–172 are v94 debt-letter quotes/payments, 173 is v97
+Ventti property state, and 174 is v98 Ventti table observations (retiring 93).
+175–177 are the v99 Ventti ledger/commands/receipts (retiring 94), and 178–179
+are v100 Ventti NPC/furniture poses and live sound cues.
+v101 appends rally report tokens/acknowledgments and per-player revisions to 86/87;
+it allocates no new ids. v102 adds complete Lotto draw state 180, retiring incorrect 96.
+v103 adds Lotto ticket requests/receipts/state 181–183.
+v104 appends complete hockey betting collections to 160 without allocating a new id.
+v105 strengthens item despawn/replay/resync semantics without adding fields or IDs.
+v106 adds native trophy factory semantics to ItemSpawn flag bit 1 without new fields or IDs.
+v107 appends full native part condition floats to 45/124 and changes part-report/CRC semantics.
+v108 changes standard-package item identity/disposal semantics without adding fields or IDs.
+v109 adds standard box identity/quantity/creation state 184.
+v110 changes native part body/FSM identity semantics; no new fields or message IDs.
+v111 adds loose replacement-part creation state 185 and echoes accepted removals to requesters.
+v112 adds acknowledged box opening requests/receipts 186–187.
+v113 corrects native part lifetime and the Installed semantics in 185; no new IDs.
+v114 appends native parent tightness to 44/123 and makes bolt intents/results host-authoritative; no new IDs.
+v115 appends parent identity/path and local pose/scale to replacement state 185; no new IDs.
+v116 adds replacement fitting requests/receipts 188–189; next free ID is 190.
+v117 appends install/remove operation to 188–189 and removal readiness to 185;
+next free ID remains 190.
+v118 appends SlotIndex to 188–189 for native piston/main-bearing/rocker installation;
+next free ID remains 190.
 
 **Do NOT work on (verified out-of-scope — see §Appendix):** the in-game computer + its
 fishing minigame, host migration, water wells/taps (per-player thirst), map clock/weather
@@ -65,9 +88,9 @@ fishing minigame, host migration, water wells/taps (per-player thirst), map cloc
 
 Tick when merged. Ordered by priority (shared-state corruption first).
 
-> **Every box below is ticked — that does not mean the game is fully synced.** These 35
-> tasks were the *2026-07-21 audit's* decomposition, and they are implemented but still
-> largely **unplaytested**. A later re-audit found a whole unsynced background-economy
+> **The first pass ticked these 35 tasks, but later audits reopened incomplete work.**
+> These tasks were the *2026-07-21 audit's* decomposition and remain largely
+> **unplaytested**. A later re-audit found a whole unsynced background-economy
 > cluster plus several subsystems that bind the wrong FSM variable and silently no-op.
 > **Read §1b before concluding anything here is finished.**
 
@@ -79,7 +102,7 @@ Tick when merged. Ordered by priority (shared-state corruption first).
 - [x] 1.1 Gambling: pub & station slot machines — `GamblingSync` (164–166, v92), host ledger and seeded local reels; two-player verification pending
 - [x] 1.2 Gambling: Ventti blackjack (incl. car wager) — `VenttiSync` reuses 93/94 (Kind=Ventti), host deals
 - [x] 1.3 Electricity + phone bills → power cutoff / blackout — `UtilityBillState` (95, v58) + catalogued Pay buttons
-- [x] 1.4 Lottery national draw + Lotto/Megaveto tickets — `LotteryDrawState` (96, v59) + catalogued ticket Pay buttons
+- [ ] 1.4 Lotto draw (180, v102) and Lotto ticket purchases/claims (181–183, v103) implemented; two-player/save validation and Megaveto transactions remain incomplete (R2.21/R2.26).
 
 **Phase 2 — Shared-car integrity** *(the project car is THE shared object)*
 - [x] 2.1 Engine part-breakage RNG — `VehicleDamage` (64, v60) owner-authoritative mask + non-owner RNG suppression
@@ -151,7 +174,8 @@ An isolated Wine startup check loads Core 0.1.31 in the current Unity/Mono runti
 reaches MainMenu and starts a local UDP host; native Steam-dependent menu actions
 report missing-Steam errors in that offline profile. It does not exercise the shared world.
 The slot half of R2.12, VideoPoker (R1.3) and debt payments (R1.6) are implemented;
-Ventti settlement/property transfers (R2.11–13) and vehicle CRC coverage remain open.
+Ventti settlement remains open (R2.12); property/table replication (R2.11/13) and
+vehicle CRC coverage (R2.4b) are implemented with two-player checks still pending.
 
 **R1 — Never synced at all** (verified: zero references anywhere in `src/WinterMP.Core`)
 - [x] R1.1 `Systems/BankAccount` — implemented 2026-09-05 (**v90**), runtime validation
@@ -191,14 +215,23 @@ Ventti settlement/property transfers (R2.11–13) and vehicle CRC coverage remai
       collect a win, then cash out; double low/high including seven and the ≥500 automatic
       collection; retry a payment; reconnect during a hand/double; end the session and play
       the native machine again. Verify money conservation and native achievements.
-- [x] R1.4 `Systems/HockeyGames` — the betting half fixed 2026-07-28 (**v88**,
-      `HockeyBettingState` 160 / `HockeyBettingSync`): matchup ids, odds, round result and
-      `KurPaWins` are host-broadcast, so every payout-deciding input agrees. Scoped by dump
-      evidence: `Runkosarja :: Data`'s ints are *loop scratch* of the season sim — the
-      standings table lives in ES2 array save keys (`UTPairs`/`UTResults`/…) that no FSM
-      variable exposes, so the wall table stays per-client (display-only residual; carrying
-      it would need ES2-level sync, out of scope). Where the bet payout *button* lives (if
-      any) is an R3.1b question, same class as the scrap payout.
+- [ ] R1.4 `Systems/HockeyGames` — **v104 complete board implemented 2026-09-06;
+      runtime verification pending.** The v88 scalar broadcaster did not synchronize
+      the actual betting data: GameIndex/team IDs/odds/Result are loop scratch.
+      Installed build 23268598 proves six live Hashtables (0–5, keys 1/X/2),
+      ResultsGame/ResultsOdds lists, upcoming/previous pairings, scores and standings
+      display lists. They are now appended to `HockeyBettingState` 160 as one complete
+      snapshot. Host capture waits for both season and odds generation to finish;
+      join snapshots do not consume ordinary broadcasts. Guests retain pending state,
+      pause both local generators after loading, update live collections and refresh
+      teletext 240/241/302. Disconnect restores their original collections and values
+      before resuming native FSMs. No ROUND/ODDS/CHECKMEGAVETO or save event is replayed.
+      The old claim that standings require ES2-level sync was incorrect: their display
+      lists are live proxies too. Individual-player scoring (Pisteporssi) is still
+      outside this snapshot. Use the v104 BUILDING.md checklist for loading, live
+      rounds, visible pages, guest restoration and reconnect. Megaveto tickets still
+      need their own host transaction ledger (R2.21); board sync alone does not settle
+      purchases or claims.
 - [x] R1.5 `Systems/ScrapMetalPrice` — the *price* half fixed 2026-07-27 (**v86**,
       `WorldScalarsState` 104 / `WorldScalarsSync`): the host's daily `ScrapPriceMKkg` +
       `Change` are broadcast and guests' own re-rolls get stomped. Still open: the
@@ -280,16 +313,21 @@ Ventti settlement/property transfers (R2.11–13) and vehicle CRC coverage remai
       `BuildJoinClimateSnapshots()`, so a late joiner started with whatever engine/fuel/gear/
       damage/tire state its *own* save held. It now sends `BuildJoinVehicleSnapshots()`, which
       reuses the existing full `BuildVehicleResyncMessages()` set (VehicleState + climate).
-- [ ] R2.4b The vehicle CRC still folds only `id`+`flags`+`fuel`, so a parked damaged unowned
-      car checksums identical on both peers and never triggers a targeted resync. **The trap
-      that makes this non-trivial:** damage is held in *different fields per role* — the owner
-      accumulates `SyncedItem.LiveDamageMask`, a receiver stores `AppliedDamageMask`. Folding
-      either one naively mismatches by construction and would cause the perpetual false-mismatch
-      resync storm this file was already burned by (see the comment in `ComputeVehicleCrc`).
-      The likely-correct fold is the *union* `LiveDamageMask | AppliedDamageMask`, which is
-      symmetric for a car nobody currently owns — but that must be confirmed in a real 2-player
-      session before shipping, because getting it wrong degrades far worse than the gap it
-      closes. Same question for the tire/drivetrain condition fields.
+- [ ] R2.4b Parked-vehicle CRC — implemented 2026-09-05 (**v96**, unreleased),
+      **two-player verification remains required before shipping**. `VehicleChecksum` now
+      folds concrete damage, tire pressure, drivetrain damage, each wheel's health and
+      puncture/rim flags alongside id/flags/fuel. The v91 live fitted-part reader reconciles
+      `LiveDamageMask | AppliedDamageMask` against current wear: a bare union would retain
+      stale failures after repair. Both roles use those same reads, with no send-sequence or
+      change-baseline mutation. Tire pressure now rounds to hundredths; truncating a decoded
+      `n / 100f` could lose a unit on re-encoding and cause permanent mismatches. Tests cover
+      all 256 pressure values across repeated handoffs, role bookkeeping, repairs, every
+      concrete damage bit and every condition field through the wire/snapshot path. Dynamic
+      wear/climate/RPM and actively owned cars remain excluded. **Two-player check:** let a
+      damaged/flat parked car settle, repair it, hand ownership between peers, reconnect,
+      then idle for several checksum periods. Confirm a deliberately divergent condition
+      requests a vehicle resync, heals and stops requesting; driving/cooling/frost changes
+      must not introduce recurring vehicle mismatch logs. See `docs/BUILDING.md`.
 - [x] R2.5 `CarRadioSync` station never synced — fixed 2026-07-24 (protocol **v81**). No radio
       Knob FSM has a *float* named `Channel` (the only `Channel` in the subtree is a string on
       the CD player), so `FindFsmFloat("Channel")` bound null and only `Volume` worked — bug
@@ -339,44 +377,70 @@ Ventti settlement/property transfers (R2.11–13) and vehicle CRC coverage remai
       would freeze the guest's AI and teleport the guest's opponents onto the host's stage,
       hijacking the guest's own rally. Attempted and reverted 2026-07-24. Any real fix must
       sync `AIdrivers` `Stage` first and gate the stream on stage agreement.
+      **Installed-action evidence (2026-09-05):** `AIdrivers.Stage` is a sampled
+      copy of `RACES/RALLY :: Reset/CurrentStage`, not a durable fleet assignment.
+      Each car's Navigation starts also reparent the car, select stage-specific
+      waypoint ranges, toggle physics/drive FSMs and wait on local start timers.
+      A future stream must carry stage context atomically with poses, preserve ids
+      across reparenting, and restore those local lifecycle states on disagreement
+      or timeout. Merely adding these bodies to `NpcTrafficSync` remains unsafe.
 
-- [ ] R2.11 **A car/house transfer on the *host* does not reach guests.** R2.1 stops a guest
-      inventing its own outcome, but says nothing about propagating the host's. If `Lose car`
-      physically moves or removes the car, `VehicleWorldSync` carries it incidentally; if it
-      only flips a flag or writes an ES2 key, the guest keeps a stale title. The guest's world
-      stays self-consistent (its resolver is off), but the two peers do not agree about
-      ownership. Needs real action data (R3.1b) plus a wire field.
-- [ ] R2.12 **Inactive-host gambling settlement.** Slot machines implemented 2026-09-05
-      (**v92**); Ventti remains open. `GamblingSync` now uses a host-owned
-      `SlotMachineLedger` even when the host's machine/LOD is inactive. Inserted credit
-      (`AddedMoney`), accumulated cash-out funds (`Winnings`) and last payout (`Win`)
-      are separate: the old wire sent only Win and could not reproduce cash-out.
-      Controls are leased to one player for 15 s of inactivity; both host and guest
-      buttons queue authenticated/validated requests with cached acknowledgments.
-      The host draws the native weighted reels and settles through the shared wallet.
-      Peers animate the predetermined raw stops without charging again; held reels
-      stay fixed, wildcard payout rewrites never replace the transmitted raw stops.
-      Early completion retries, host timeout, disconnect and cleanup settle each
-      round once; cleanup restores hooks/RNG and stops suspended presentation.
-      Catalog bindings include the ≥900 mk native cash-out achievement.
-      **Still verify in game:** host far from machine, simultaneous players, two machines,
-      accumulated multi-win cash-out, held reels, LOD changes during a spin, reconnect,
-      achievement/button audio/material feedback, and session end during a spin.
-      **Remaining Ventti problem:** `Fsm.Active` requires
-      `owner.gameObject.active` (confirmed in the decompiled DLL), and all four
-      `GAME/Gamestuff/*` FSMs dump at `active=False` — that subtree is likely only active on
-      the client whose player has a game open. So `FsmHook.FireRemoteEntry` from
-      `TryAcceptIntent` hits an inactive FSM and does nothing unless the host is *also* sitting
-      at the table. R2.1 did not create this —
-      it makes it visible (a guest now gets an inert table instead of a divergent one). The
-      real destination is a lease/settlement model: lease the device to one player at a time
-      and settle through the wallet, rather than puppeting the host's FSMs.
-- [ ] R2.13 **Ventti's wire fields are lossy.** `HostBroadcastIfChanged` does
-      `bet = ClampByte(ReadFloat(_betValue))`, but a car-wager stake is by definition above
-      `BigBetLimit`, so any stake > 255 mk cannot be represented — and that same clamped byte
-      is then fed into `Credit`, a float field. `V3` is hardcoded 0 despite PROTOCOL.md
-      documenting it as an outcome code. Display-only while R2.1's lockdown holds; fix as part
-      of R2.12 (needs a version bump).
+- [ ] R2.11 Host Ventti property transfers — implemented 2026-09-05 (**v97**, 173),
+      **two-player verification pending**. Installed actions set the global ints
+      `PlayerKeyRuscko`, `PlayerKeySatsuma`, `PlayerKeyHome` and toggle cabin sleep,
+      woodstove hatch and logging access. These native legacy names are not aliases for
+      the Corris/Sorbet. `VenttiSync.Properties` broadcasts that state on change/keepalive
+      and join, independently of the table observations and with inactive-object lookup.
+      The native home-door close edges already use catalogued door sync; subsequent
+      opening checks `PlayerKeyHome`. Guests retain packets across late bindings, keep
+      their wager resolver disabled, and restore original local keys/access at teardown.
+      Missing access bindings remain unknown; explicit false states revoke old access.
+      No money, stress, speech or wager actions are replayed; save-point activation stays
+      host-local (only the host saves). Catalog bindings and packet/replica tests pass.
+      **Two-player check:** host wins/loses each stake with the guest away from the table;
+      compare keys, home door access, cabin sleep/stove/logging; join after a transfer,
+      reload inactive cabin LOD, then disconnect and verify the guest's original local
+      access returns. Inactive-host Ventti play remains R2.12; full-width table state
+      is implemented in R2.13 below.
+- [ ] R2.12 **Ventti guest actions while the host is away** — host-ledger integration
+      implemented 2026-09-05 (**v99**, 175–177); **two-player verification pending**.
+      Both peers cut native bet/deal actions and use acknowledged, authenticated
+      commands with one-player leases. Host draws a private 52-card deck, escrows
+      bets, resolves cash/property hands and publishes concrete card ids. Both peers
+      use native textures and pick targets; extra plain meshes support hands beyond
+      nine cards. The host's loaded manager keeps native save handling and runs each
+      catalog-checked property/NPC outcome once with duplicate accounting actions
+      removed. Actor stress is applied once from the matching receipt. Teardown
+      refunds an undealt stake or stands on the committed deck; an unrepresentable
+      final wallet return is retained as paid native stake. Guest variables, action
+      flags, materials and visibility are restored. Legacy control replay (94) is
+      retired. Net tests include 500 conservation hands plus 900 wire/replica hands.
+      **Still verify in game:** simultaneous bettors, host away with table controls
+      inactive, LOD changes, native hand already in progress, all property outcomes,
+      actor stress, save/load, late join, repeated reconnect and teardown during a
+      committed hand. Guest NPC/furniture pose and sound mirroring is implemented
+      in **v100** (178–179): host-observed bones, visibility and thrown furniture;
+      exact host-selected sound variations, with bounded/expiring live cues and no
+      historical speech in snapshots. Guest physics/AI/animations stay paused and
+      originals return on teardown. Verify throws, crawl/walk, audio, late joins
+      and missing assets on two peers. Do not mark R2.12 done until the runtime
+      matrix passes.
+- [ ] R2.13 **Ventti's wire fields are lossy** — observation fix implemented
+      2026-09-05 (**v98**, 174), **two-player verification pending**. `VenttiTableState`
+      replaces retired 93 with the native float stake, int hand totals, a sequence and
+      six explicit native result codes. `LoseText.Status` supplies the result; an empty
+      status clears it, and an unknown nonempty status is diagnosed, not guessed.
+      Native status can announce a win/loss before settlement: this is an observation,
+      never a payout or permission to replay car/house transfers. Catalog `venttiTable`
+      owns paths, typed variable names and result strings. Guests retain complete state
+      across late bindings, reject stale/invalid packets and restore their original
+      variables on teardown. Inactive discovery does not activate host gameplay.
+      Join snapshots leave the connected-guest broadcast baseline untouched. In v99,
+      observation 174 yields to full ledger state 175 once the table is adopted.
+      **Still verify:** >255 mk and fractional stakes, all six result codes and reset,
+      late table binding, join after a result, inactive LOD and repeated reconnect.
+      Leased controls, host settlement and native card/result presentation now have
+      a v99 implementation in R2.12; runtime verification remains required.
 
 **Round 3 (2026-07-27) — full class-A/B/C/D/E sweep over the v57–v81 subsystems** (they
 were written *after* the 2026-07-20 sweeps, so those lessons had never been checked here;
@@ -430,19 +494,45 @@ class B and D came back clean everywhere, the rest did not):
       claims) on an unowned resting bucket now claims it via
       `ItemWorldSync.TryClaimForInteraction`; the at-rest release hands it back. Receivers
       that own a bucket now also ignore remote `BrewState` for it.
-- [x] R2.21 **A guest's lottery-ticket win pays nothing** (previously unrecorded) — the
-      LOTTO half + both ticket-dispense buttons fixed 2026-07-28 via catalog rules (no wire
-      change; the handshake catalog hash gates mismatches). The win check turns out to be a
-      real fixed-path button: `Voittous/Lotto/LotteryTicket :: Use` (`Wait button 2 --USE-->
-      State 5` on the docked ticket) — now a catalogued buy, so a guest's check replays
-      host-side against the host's own (synced) draw numbers and the payout rides
-      `WalletState`, exactly the `PriceMoneyRace` pattern. Also catalogued:
-      `Voittous/Lotto/BuyLotto` + `Voittous/Megaveto/BuyMegaveto` (`Wait button --USE-->
-      State 1` ticket dispensers — host-routed is correct whether they charge or only
-      spawn; a host-side spawn materializes via item sync). **Still open (megaveto half):**
-      the megaveto CHECK has no button — `Megaveto :: Data` is driven by external
-      `CHECKMEGAVETO`/`BANK`/`CASH` events whose senders are invisible without global
-      transitions → fresh dump (R3.1b).
+- [ ] R2.21 **Lottery ticket purchases and claims lack proven host authority** — reopened
+      2026-09-06 after installed action inspection. **Form isolation fixed 2026-09-06,
+      runtime verification pending:** removed the three erroneous `buys[]` rules for
+      Lotto docked-ticket inspection, BuyLotto and BuyMegaveto. Their guard states
+      Wait button/Wait button 2 are entered on hover and still wait for
+      GetMouseButtonDown/GetButtonDown to emit USE. The old entry hooks sent repeated
+      requests before a press, aborted the guest's wait, and broadcast native form
+      opening as a shared purchase result. These three Use FSMs now remain local;
+      actual Sheets/LottoTicket/Pay and Sheets/MegavetoTicket/Pay bindings remain.
+      No wire layout/meaning changed; the existing catalog hash rejects mixed catalogs.
+      `check_fsm_bindings.py --purchase-catalog` now detects this input-wait guard
+      mistake from action evidence; incomplete dumps/templates remain unverified.
+      **Lotto transaction implementation 2026-09-06 (v103, 181–183), runtime
+      verification pending:** dedicated `LottoTicketSync` replaces generic Lotto Pay
+      replay. It captures completed paid rows, validates current round and fresh
+      player proximity, and instantiates the host factory's actual prefab with a
+      host-issued persistent ID. Partial unpaid rows are cleared; an open host form
+      is preserved. Host native ticket calculation/save handling stays authoritative.
+      The actual claim path is VoittousArea/TrashTrigger: under 1,000 mk goes to
+      shared cash, at/above 1,000 mk to shared bank. Claims identify a host ticket,
+      require the host body near the box, wait for complete native calculation and
+      retire the ticket before crediting money. Copied request receipts and lifetime
+      retirement prevent repeated/concurrent claims and guest reconnect duplicates.
+      Host ticket metadata joins/resyncs with stable item IDs; movement uses normal
+      item authority. Guests hide their local saved tickets and create native replicas
+      with load/save/delete/calculation disabled, restoring local tickets on teardown.
+      The offline extractor can now select `--asset sharedassets3.assets`, so the
+      spawned prefab was inspected alongside the scene instance and claim actions.
+      **Still open:** two-player form/purchase/claim timing, host-away behavior,
+      saved ticket reload/deletion, late binding and repeated reconnect (BUILDING.md).
+      An uninitialized host factory waits without charging; first-visit/loading
+      behavior needs a runtime check. Bank statement/achievement presentation is
+      still local-only/unimplemented for the new claim path. Megaveto selections,
+      ticket identity and claims still need their own host ledger; its generic
+      Pay rule and native collection path remain, so R2.21 and 1.4 stay unchecked.
+      **Megaveto prerequisite (v104):** complete host odds/results/pairings and
+      standings are now synchronized (R1.4), replacing the insufficient one-match
+      scratch values. Guest season calculation is paused; a future ticket ledger must
+      use host ticket winnings rather than reintroduce guest CHECKMEGAVETO replay.
 - [x] R2.22 **A repeat phone call with the same Topic may never broadcast** — fixed
       2026-07-28. The ringing object deactivates once a call ends (`Disable phone`
       terminals under `FunctionsDisable`), so the host now re-arms `_lastTopic` whenever
@@ -505,6 +595,71 @@ itself wrote (v82–v88); 13 findings, 10 fixed the same day:
       state, single-sourcing the house fire — the moose-report pattern. The guest's replay
       of a HOST ignition is suppressed from re-reporting (1 s echo window around
       `ReplayIgnition`).
+- [x] R2.25 **Rally crossing reports were lost after transient rejection** — implemented
+      2026-09-06 (**v101**, extended 86/87), **two-player verification pending**.
+      Guest crossing edges remain queued in checkpoint order until an exact host
+      acknowledgment; retries reuse their connection token and sequence. Host rejects
+      malformed/out-of-order reports without advancing dedup state, and a duplicate
+      start cannot reset elapsed time. A short history of host-observed marker/driver
+      proximity handles report/pose ordering delays without trusting guest clocks or
+      coordinates. Evidence expires from the original pose timestamp. Complete native
+      stage binding prevents partial scans from finishing a race early. Installed
+      actions also exposed an unused `Checkpoint` bool in every marker: completion
+      now observes the catalogued terminal `Idle` state, which survives Timing's
+      flag reset at finish. Bindings and the 4/6/4 marker layout are catalog data.
+      Same-connection scene rebinds preserve report identity/counters. Initial save
+      flags are baselines, so reconnect does not invent a new start; admission preserves
+      the host race while clearing old report identity. Per-player uint revisions
+      prevent one driver's stream from aging another's state out; final times freeze
+      and join snapshots preserve pending host finish broadcasts. The Net suite covers
+      300 seeded races with rejection/ack-loss, plus malformed data, wrap, reconnect,
+      evidence expiry and queue timeout/recovery. No opponent-car synchronization or
+      native result/prize mutation is added; R2.10 remains open. Verify native trigger
+      timing, delayed poses, reconnect with matching/mismatching native progress and
+      SS1/SS2/SS3 under two-player gameplay (BUILDING.md).
+- [x] R2.26 **Lotto sent a save key instead of winning numbers** — implemented
+      2026-09-06 (**v102**, `LottoDrawState` 180; 96 retired), **two-player verification
+      pending**. `UTNational7` contains `Lotto7`, the save tag for NationalLine7.
+      Actual results are four live integer ArrayLists: Results (7), ResultsBonus (3),
+      ResultsLinesWinnings (5), ResultsLinesWon (5). Complete stable-state snapshots
+      now carry them with round/ticket round, all three pots, DrawDone and teletext
+      visibility. Guest Numbers FSM pauses after native loading; pending snapshots
+      survive late binding, and teardown restores the local draw before resuming.
+      Both join and FSM-group resync include the draw; same-round list/prize changes
+      publish too. Display refresh avoids freezing the native Reset points hide.
+      Net tests cover wire sizes, partial/type-invalid native lists, invalid numbers,
+      full integer values, sequence wrap/order, copied pending state and change
+      detection. Native ticket events are not replayed; R2.21 remains open.
+- [ ] R2.27 **Shared-item removal and replay recovery** — implemented 2026-09-06
+      (**v105**, runtime verification pending). Live removal previously disappeared
+      if the guest had not materialized the body yet; deferred spawning could then
+      resurrect it. Removal now establishes a terminal session ID, checked by
+      scanning, offered-clone binding, deferred creation and replay. Item-group
+      resync now includes removal chunks and fresh live spawn manifests after poses.
+      Replays repair missing bodies even when the spill was previously received;
+      existing bodies are not duplicated or teleported. Repeated pending replays
+      coalesce, invalid manifests cannot consume dedup keys, and destroyed host
+      bodies/retired IDs are excluded from replays. Session teardown clears lifecycle
+      state. `ItemSpawnLifecycleTests` includes 200 seeded loss/removal/replay runs.
+      Use BUILDING.md for two-player delayed spawn, consumed item, missing template,
+      repeated resync and reconnect verification. The excluded SPAWNITEM factories
+      in 7.2 still need separate real-time materialization hooks.
+- [ ] R2.28 **Part-settle sync turned healthy parts into almost worn-out parts** —
+      implemented 2026-09-06 (**v107**, native checks pending). Actual VIN133 Data
+      initializes Wear with RandomFloat(90,99); ReadPartVars clamped every value above
+      1 to byte 255, and ApplyPartState decoded that as 1. PartState and part snapshots
+      now append and apply full native floats; legacy bytes remain wire hints only.
+      World CRCs distinguish native wear values instead of saturating them. All
+      readable parts, including zero values, are snapshotted; deferred values retry
+      when registered FSMs become available, and newer applies clear older pending
+      data. Object-state replies include native scalars alongside FSM state. Guest
+      reports request a deferred host reading and cannot alter its wear, installed
+      flag or tightness; accepted install/bolt events and vehicle damage retain their
+      existing authority paths. Protocol tests cover native values, legacy framing,
+      chunk pairing, malformed data, host authority and checksum convergence.
+      **Still verify:** guest/host bolt turns, late joins, delayed FSM activation,
+      repair and replacement, guest driving wear, corrupted-replica resync, and saved
+      condition after reconnect. Package spawning/opening is still unfinished.
 - Accepted residuals (documented, not bugs to fix): a crime incremented in the same frame a
       host broadcast applies can be missed (sub-frame window); a SleepTrigger variant
       without "State 3" would hint-but-not-block a guest (all dump variants have it);
@@ -577,11 +732,13 @@ Template — **Impact · Game truth · Model · Protocol · Touch · Done when �
 - **Protocol** a small `UtilityBillState` (host→guests) in `93–99`; payment via existing `PurchaseIntent`; +version; PROTOCOL.md. **Touch** new `Sync/UtilityBillSync.cs`; catalog buys.
 - **Done when** bills, payment, and blackout are identical on both machines; unpaid electricity cuts *both* homes' power. **Watch** B (join snapshot must not advance the delta baseline), C (retire a paid bill), D (verify `MainSwitch` is a Bool). **Deps** none. Pairs with 6.4.
 
-#### 1.4 · Lottery + gambling tickets  `TODO`
-- **Impact** MEDIUM. National draw + Lotto/Megaveto buy-in/payout are per-client → winners diverge, wallet flip-flops.
-- **Game truth** `Systems/Lottery::Numbers` (`NationalPot/Winning`, `LOTTODRAW/WIN/RESULTS`); `Sheets/{LottoTicket,MegavetoTicket}/Pay` (BUY-guarded).
-- **Model** Host draws the winning numbers and broadcasts them (host scalar-state); ticket buy-in + payout route through the host purchase/wallet path (catalog the Pay buttons). Guest ticket selection is local until the host draw resolves it.
-- **Protocol** `LotteryDrawState` (host→guests) in `93–99`; buys via catalog; +version; PROTOCOL.md. **Touch** new `Sync/LotterySync.cs`; catalog. **Done when** both see the same draw + payout. **Watch** A, C. **Deps** none.
+#### 1.4 · Lottery + gambling tickets  `PARTIAL`
+- **Implemented** v102 `LottoDrawState` (180): complete host Lotto arrays, rounds, pots, winner counts/prizes, guest draw suppression, late binding, join/resync and teardown restoration (R2.26). Native two-player validation is still pending.
+- **Game truth** `Systems/Lottery::Numbers` stores Results/ResultsBonus/ResultsLinesWinnings/ResultsLinesWon as live integer ArrayLists. `UTNational7` is a save tag. Megaveto uses hockey data rather than these Lotto lists.
+- **Implemented** v103 Lotto selected rows, native host-issued persistent tickets, acknowledged purchases and one-time cash/bank claims (`LottoTicketSync`, 181–183). Guest replicas use the native prefab and regular item transforms; native host save handling persists outstanding tickets.
+- **Implemented** v104 complete hockey betting collections, pairings/results and standings (160), with guest generator suppression and local restoration. This supplies Megaveto's shared betting data; it does not implement its tickets.
+- **Remaining** R2.21: runtime/save verification of Lotto and the separate Megaveto purchase/claim ledger. Bank statement/achievement presentation for Lotto claims is not implemented.
+- **Done when** both peers see the same draw, purchased tickets belong to the correct player/round, duplicate claims never credit twice, and reconnect preserves outstanding tickets. **Watch** A, C. **Touch** `LotterySync.cs`, ticket FSM/catalog bindings, wallet/host ledger; bump protocol again for ticket semantics.
 
 ### Phase 2 — Shared-car integrity
 
@@ -725,9 +882,175 @@ Template — **Impact · Game truth · Model · Protocol · Touch · Done when �
 - **Protocol** extend `NpcTransform` with a dead flag or a small `AnimalDeath` event in `101–119`; meat via `ItemSpawn`; +version; PROTOCOL.md. **Touch** `NpcTrafficSync`, `ItemWorldSync.Spawn`. **Done when** the moose dies + yields meat identically for both. **Watch** C, E, F. **Deps** 7.2.
 
 #### 7.2 · Spawner manifest completeness  `TODO`
+
+- **v118 guest array-slot fitting implemented, gameplay checks pending:**
+  pistons, main bearings and rockers now use the native shared Installer and their
+  catalog-bound arrays. The click's slot index is immutable and must match host
+  nearest-slot selection; equal distances choose the later index and occupied
+  nearest slots are rejected rather than skipped. Native selection and mount
+  prerequisite guards confirm only the same candidate/slot in the same frame.
+  Unconfirmed previews cancel immediately; committed installation remains native
+  and must settle at that slot before acceptance. Asset evidence validates all 17
+  mounts, completing fitting adapters for the 30 boxed replacement families.
+  Their replacement creation no longer requires the absent Installed scratch flag;
+  positive native AssemblyID remains authoritative. 983 protocol/catalog and 18
+  launcher tests pass; Core and both Net targets build cleanly. **Next:** guest mount/save
+  isolation and operational replica bolt/engine graphs. Native two-player/save
+  checks and non-box part creation remain pending; see the v118 checklist in BUILDING.md.
+
+- **v117 guest replacement removal implemented, gameplay checks pending:**
+  empty-handed guests can right-click a fitted replica to request native removal.
+  The host checks revision, fresh living-player proximity, tightness below one,
+  enabled native removal collider and actual mount ownership, then guards the
+  native Remove entry and waits for the settled loose body. Installation/removal
+  share one immutable receipt ledger; duplicates cannot reexecute and stale clicks
+  cannot remove a refitted part. State 185 includes revisioned RemovalAllowed;
+  guest ray selection reads disabled BoxColliders without enabling guest physics.
+  Native bindings validate all 30 replacement families, including dynamic fitted
+  piston/bearing/rocker mounts. 960 protocol/catalog and 18 launcher tests pass;
+  Core and both Net targets build cleanly. v118 adds multi-slot
+  installation selection. **Next:** guest mount/save isolation and operational replica
+  bolt/engine graphs. Native two-player/save checks remain pending; see the v117
+  checklist in BUILDING.md.
+
+- **v116 fixed-mount guest replacement fitting implemented, gameplay checks pending:**
+  guest-created loose copies offer the normal left click when held at a known free
+  mount. The host validates observed revision, fresh living-player proximity, item
+  authority and native distance, then executes ASSEMBLING and the native mount's
+  prerequisite checks. Requests receive immutable receipts; retries cannot repeat
+  fitting, and Busy requires another click. Native installation and settled state
+  185 own the result. Generic guest replacement-part state replay is refused.
+  Extracted bindings validate 27 fixed-mount families; 930 protocol/catalog and 18
+  launcher tests pass. v117 adds guest removal. **Next:**
+  guest mount/save isolation and
+  operational replica bolt/engine graphs. Two-player/save checks remain pending;
+  see the v116 checklist in BUILDING.md. v118 adds piston/main-bearing/rocker selection.
+
+- **v115 fitted replacement presentation implemented, gameplay checks pending:**
+  missing boxed-content copies can attach to a ready, unoccupied mount on a known
+  native part or vehicle and follow its movement. Host publication waits for the
+  mount reference and actual parent to agree. Relative pose/scale and parent identity
+  participate in revision validation; stale replays cannot reattach a removed part.
+  Fitted copies are non-colliding/kinematic and excluded from item/cargo authority;
+  removal restores loose tracking and the current host pose. Unready/occupied mounts
+  defer, preserving existing guest-save occupants. Owned child copies detach before
+  parent retirement or reconnect cleanup. 896 protocol/catalog and 18 launcher tests
+  pass; Core and both Net targets build cleanly. Native action/reference evidence
+  covers the 30 replacement families, including the dynamic piston/bearing/rocker
+  mounts. v116 adds fixed-mount installation requests; v117 adds removal. **Still open:** guest mount
+  isolation, followed by operational engine/bolt graphs for these copies. They remain
+  presentation-only while fitted. Non-box parts and native two-player/save checks
+  are also unfinished; see the v115 checklist in BUILDING.md.
+
+- **v114 existing native bolt reconciliation implemented, gameplay checks pending:**
+  guests send nearby turns to the host; their scalar reports cannot overwrite host
+  state. Absolute results restore Bolts[Index], scaled TightnessF and parent total,
+  including zero. Join/targeted resync and delayed binding use the same application;
+  local receipt ordering stops an older deferred sibling or part report from rolling
+  back the latest total. Derived Bolted/Unbolted/Stop replay is removed. Persistent
+  identities now include 36 parts without Installed, covering 192 native Data prefabs.
+  The asset audit validates 489 ordinary bolt bindings; MUDFLAPa0's ThisPart is
+  unresolved, and three drain/alignment controls need separate adapters. Crank-pulley
+  and camshaft ordinary turns work through this adapter; guest extra-turn timing
+  adjustment is guarded pending separate replication. 872 protocol/catalog and 18
+  launcher tests pass; Core builds cleanly. **Next:** construct missing fitted guest
+  graphs and mount references; then complete separate adjustments and original
+  guest-save isolation, and run the v114 two-player/save checklist. This does not
+  enable bolt interaction on the isolated loose replacement copies from v111.
+
+- **v113 native fitting lifetime fixed, gameplay checks pending:** native fitting
+  removes Rigidbody while preserving Data/save identity. This now removes loose-item
+  authority without broadcasting permanent disposal. Saved fitted parts are discovered
+  through Data; removal rebinds their new body. Fitted state keeps publishing and
+  answering targeted queries without an item-table entry. Item transforms, cargo and
+  loose pose snapshots cannot move a fitted/transitioning part. Message 185 Installed
+  means positive AssemblyID; the native bool is occupancy-query scratch data. Body
+  replacement also marks publication dirty. 838 protocol/catalog and 18 launcher
+  tests pass; installed action evidence verifies the alternator body lifecycle and
+  all 30 replacement assembly-ID transitions. **Still open:** complete guest fitting,
+  mount/bolt reconstruction, existing guest-save isolation and two-player verification.
+
+- **v112 guest box opening implemented, native checks pending:** guests request
+  openings using a session token, request sequence, stable box ID and observed
+  revision. The host validates fresh proximity/ownership, current quantity and a
+  ready one-output factory. A guard serializes native host/guest box openings before
+  quantity or PartSpawnPoint changes. Retries cannot rerun a reserved operation;
+  acceptance verifies the exact next native part ID and one quantity decrement.
+  Box/part state (or retirement) is replayed with receipts. Guest interaction never
+  calls its own contents factory; audio plays once on acceptance. An already-disposed
+  box or output does not cause a completed creation to repeat. 822 protocol/catalog
+  tests and 18 launcher tests pass, including contention on the last part, lost
+  receipts, stale requests, sequence wrap and reconnect tokens. All 30 opening
+  action/variable/target bindings match installed build 23268598. **Still open:**
+  two-player opening/disposal/save tests, complete fitted-part/bolt reconstruction
+  and the other spawner types below.
+
+- **v111 loose replacement implementation, native checks pending:** all 30 box-content
+  factories capture every native output, including saved loads and multi-product
+  loops. ReplacementPartState (185) publishes fresh identity/pose, assembly status
+  and native saved floats (wear, tightness and type-specific adjustments). Missing
+  loose parts are created on guests with isolated persistence, normal item carrying
+  and no native assembly authority. Existing saved parts are not replaced. A host
+  installation hides/unregisters the loose copy; removal exposes it at the fresh
+  host pose. Installed missing parts remain pending. Disposal preserves host save
+  cleanup and waits for an accepting host echo on guests. Join/resync reads do not
+  consume delta baselines. Static extraction verifies all 30 factory/ref/initialization
+  chains; 797 protocol/catalog and 18 launcher tests pass. **Still open:** guest box
+  opening, full installed-part/mount/bolt reconstruction and native two-player checks.
+
+- **v110 native part identity implementation, native checks pending:** root bodies
+  use native Data/ID with matching assembly/position save keys. Part, bolt and child
+  control FSMs use that part identity plus a relative child path, independent of
+  root rename, reparenting and peer scan order. Initialization waits for the native
+  save identity; invalid/duplicate owners are rejected. Grocery spill cloning cannot
+  capture or clone a native part graph. Generic FSM teardown now removes owned
+  hooks and registration marks, allowing reconnect and retry without duplicate
+  callbacks. Static evidence confirms the save-key pattern across 156 part prefabs;
+  tests cover 4,500 body/Data/bolt IDs, native zero-counter IDs, shuffled packet
+  routing and root rename/reparent. **Still open:** materializing missing part
+  contents, guest opening, complete install/bolt/save replication and native checks.
+
+- **v109 package creation/quantity implementation, native checks pending:** all 30
+  native factories capture the exact New box and register it after initialization.
+  Saved and newly created boxes share stable factory/Use.ID identities, quantities
+  and exact cataloged prefabs. PackageState (184) supports late join, item resync,
+  targeted replies and missing-replica repair; equal-revision refresh cannot change
+  contents or resurrect retired boxes. Snapshot reads cannot swallow broadcasts to
+  existing peers. Guests preserve local boxes separately and pause native factories;
+  replica startup skips load and disables persistence. Host disposal retains native
+  save cleanup; guest disposal removes the replica. Guest opening shows a local
+  request to ask the host instead of spawning unshared parts. Automated tests cover
+  identities, capacities, wire framing, stale states, replay, retirement and session
+  reset. **Still open:** guest opening intents, exactly-once contents creation,
+  persistent replacement-part identity/installation/bolts, and two-player/save tests.
+
+- **v106 implementation, runtime verification pending:** the 15 trophy factories
+  under Amateur/Junior/Icerace/RallyAMA/RallyJR now capture the exact native `New`
+  output after creation/name assignment, then wait for item initialization. Stable
+  factory + native item IDs distinguish awards with identical visible names. Native
+  saved awards are also discovered and included in join/resync manifests. Guests
+  create the exact factory prefab with persistence disabled, pause their factory
+  after load, and hide/preserve/restore local saved trophies across disconnect.
+  Per-factory binding failures are contained and logged. The installed factory and
+  prefab action layouts were verified; protocol/catalog identity and replay tests
+  pass. Follow `BUILDING.md`'s v106 checklist for the outstanding native checks.
+  **Still open:** moose meat (death/cooking/spoilage state), parts packages (contents
+  and opening), spray cans (paint/remaining contents), missing race outcome authority,
+  and two-player/save-reload validation. The old claim that item-position snapshots
+  alone created these missing items for late joiners was incorrect and is removed.
+
+- **Package recon (v107):** 30 standard package factories reference a boxed prefab
+  and a `CARPARTS/PARTSYSTEM/SPAWNERS_*` contents factory. `BrakeBiasRegulator` is a
+  direct part, and `Plugwires` has null prefab/spawner references in this build.
+  Standard `Use/Create Plug` decrements Quantity, sets global PartSpawnPoint and
+  sends SPAWNITEM to its referenced part factory; Empty retains a native save-delete
+  lifecycle. Part factories mint native IDs, assign installation references and
+  initialize wear. These cannot safely use a display-name-only box clone. This trace
+  exposed the now-fixed scalar corruption in R2.28; contents replication
+  remains the next dependency, with actual prefab evidence in BUILDING.md.
 - **Impact** MEDIUM (correctness of item spawning at large). The `Spawner` root (101 FSMs) is the item factory; `CreateMooseMeat` is proven unregistered, so the manifest isn't exhaustive.
 - **Model** Systematically diff every `Spawner/*` SPAWNITEM child against `ItemWorldSync.Spawn`'s registered-container list; register the missing ones (parts packages, bag contents, trophies, moose meat) so any host-minted spawn materializes on peers. Log any deliberately-excluded spawner.
-- **Protocol** none (uses `ItemSpawn`/`SpawnIntent`). **Touch** `ItemWorldSync.Spawn`, spawn registration. **Done when** every gameplay spawner is registered or explicitly excluded with a reason. **Watch** the spawn-sync design notes ([[spawn-sync-gap]] equivalent). **Deps** none. Unblocks 5.2, 7.1.
+- **Protocol** `ItemSpawn` factory flag in v106; `PackageState` 184 in v109; `SpawnIntent` remains for bags. **Touch** `ItemWorldSync.Spawn`, `.Factories`, `.PackageFactories`, `.PackageReplicas`, catalog `trophyFactories` / `partsPackages`. **Done when** every gameplay spawner is registered or explicitly excluded with a reason. **Watch** the spawn-sync design notes ([[spawn-sync-gap]] equivalent). **Deps** none. Unblocks 5.2, 7.1.
 
 #### 7.3 · Crime / reaction NPCs  `TODO`
 - **Impact** LOW. `SOCCER/Janitor "Reijo"` (anger accumulator, `CRIME/PLAYER/SHOOT`, can shoot) and `HUMANS/FighterPub/Fighter2` react to player/car crime; only pose (if streamed) syncs.

@@ -12,7 +12,7 @@ namespace WinterMP.Core.Sync
             foreach (var pair in _items)
             {
                 var item = pair.Value;
-                if (item.Body == null) continue;
+                if (item.Body == null || _spawnLifecycle.IsRetired(pair.Key) || !CanSyncItemMotion(item)) continue;
 
                 items.Entries.Add(new WorldItemSnapshot.Entry
                 {
@@ -40,6 +40,7 @@ namespace WinterMP.Core.Sync
                 // uses "tracked here but never in a host snapshot" to spot stale clones
                 // left over from a previous connection (see MaterializeSpawnEntry).
                 _snapshotSeenIds.Add(entry.ItemId);
+                if (_spawnLifecycle.IsRetired(entry.ItemId)) continue;
 
                 var position = entry.Position.ToUnity();
                 var rotation = entry.Rotation.ToUnity();
@@ -77,13 +78,14 @@ namespace WinterMP.Core.Sync
             int removed = 0, parked = 0;
             foreach (uint itemId in message.ItemIds)
             {
+                RecordItemRetirement(itemId);
                 if (_items.TryGetValue(itemId, out var item) && item.Body != null)
                 {
                     item.DespawnSent = true;
                     _bridge.ApplyingRemote = true;
                     try
                     {
-                        UnityEngine.Object.Destroy(item.Body.gameObject);
+                        if (!TryRetirePackage(item.Body) && !TryRetireReplacement(item.Body)) UnityEngine.Object.Destroy(item.Body.gameObject);
                     }
                     finally
                     {
@@ -96,7 +98,6 @@ namespace WinterMP.Core.Sync
                 }
                 else
                 {
-                    _pendingDespawnedItems.Add(itemId);
                     parked++;
                 }
             }
@@ -107,6 +108,7 @@ namespace WinterMP.Core.Sync
 
         private void ApplySnapshotPose(SyncedItem item, Vector3 position, Quaternion rotation)
         {
+            if (!CanSyncItemMotion(item)) return;
             // Validate the snapshot pose like OnRemoteItemTransform does: snapshot floats
             // reach the transform verbatim (ToUnity copies raw wire components), and Unity
             // silently drops a NaN/Infinity transform — the item would vanish for the rest

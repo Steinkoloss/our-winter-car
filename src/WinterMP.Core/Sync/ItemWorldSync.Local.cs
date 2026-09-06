@@ -8,6 +8,7 @@ namespace WinterMP.Core.Sync
     internal sealed partial class ItemWorldSync
     {
         private const float DriverKeepaliveSeconds = 0.4f;
+        private const float HeldItemKeepaliveSeconds = 0.4f;
 
         /// <summary>
         /// After a remote car's stream goes quiet (past its hold), keep it frozen at its
@@ -40,13 +41,15 @@ namespace WinterMP.Core.Sync
                 var body = item.Body;
                 if (body == null)
                 {
-                    if (!item.DespawnSent && !_bridge.ApplyingRemote)
+                    if (!item.DespawnSent && !_bridge.ApplyingRemote && !NativePartSurvivesBodyRemoval(pair.Key))
                         AnnounceItemDespawn(pair.Key, "removed");
                     // Removing here would invalidate the enumerator (this killed
                     // world sync mid-session); collect and remove after the loop.
                     _deadItemIds.Add(pair.Key);
                     continue;
                 }
+
+                if (!CanSyncItemMotion(item)) continue;
 
                 bool operating = item.IsVehicle && IsLocalPlayerDriving(item);
                 bool remoteDriven = item.RemoteOwner != WorldSyncIds.NoOwner
@@ -113,6 +116,7 @@ namespace WinterMP.Core.Sync
 
                 TrackMotion(item, body, now);
                 bool moving = now - item.LastMovedAt < item.StillSeconds;
+                bool held = !item.IsVehicle && IsPlayerHeldItem(item);
 
                 if (item.LocallyOwned)
                 {
@@ -165,7 +169,7 @@ namespace WinterMP.Core.Sync
                             item.NextSendAt = now + DriverKeepaliveSeconds;
                         }
                     }
-                    else if (!moving)
+                    else if (!moving && !held)
                     {
                         if (!ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
                         {
@@ -181,10 +185,10 @@ namespace WinterMP.Core.Sync
                     else if (now >= item.NextSendAt)
                     {
                         SendItem(session, item, body, false);
-                        item.NextSendAt = now + 1f / item.SendRateHz;
+                        item.NextSendAt = now + (moving ? 1f / item.SendRateHz : HeldItemKeepaliveSeconds);
                     }
                 }
-                else if (moving && CanClaim(item, body.transform.position, now)
+                else if ((moving || held) && CanClaim(item, body.transform.position, now)
                          && !ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
                 {
                     ClaimItem(session, item, body, now);
@@ -194,7 +198,7 @@ namespace WinterMP.Core.Sync
             if (_deadItemIds.Count > 0)
             {
                 foreach (uint id in _deadItemIds)
-                    RemoveTrackedItem(id, null);
+                    if (_items.TryGetValue(id, out var dead)) RemoveTrackedItem(id, dead.Body);
                 _deadItemIds.Clear();
             }
 

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
+using WinterMP.Net;
 using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.Sync
@@ -112,58 +113,30 @@ namespace WinterMP.Core.Sync
                 yield return message;
         }
 
-        internal bool TryReadVehicleChecksum(SyncedItem item, out byte flags, out ushort rpm, out byte fuel,
-            out byte coolant, out byte frost, out byte fog, out byte cabinTemp)
+        internal uint FoldVehicleChecksum(uint crc, SyncedItem item)
         {
-            flags = 0;
-            rpm = 0;
-            fuel = 0;
-            coolant = 0;
-            frost = 0;
-            fog = 0;
-            cabinTemp = 0;
-            if (!item.IsVehicle || item.Body == null) return false;
+            if (!item.IsVehicle || item.Body == null || item.LocallyOwned
+                || item.RemoteOwner != WorldSyncIds.NoOwner) return crc;
+            EnsureVehicleSystemsProbe(item);
+            if (!item.SystemsReady) return crc;
 
-            if (item.LocallyOwned || item.RemoteOwner == WorldSyncIds.NoOwner)
-            {
-                EnsureVehicleSystemsProbe(item);
-                if (!item.SystemsReady) return false;
+            byte flags = 0;
+            bool engineOn = ReadBestRpm(item) > EngineRunningRevs;
+            if (engineOn) flags |= VehicleState.FlagEngineOn;
+            if (ReadAccOn(item) || engineOn) flags |= VehicleState.FlagAccOn;
+            if (ReadBlinkerLeft(item)) flags |= VehicleState.FlagBlinkerLeft;
+            if (ReadBlinkerRight(item)) flags |= VehicleState.FlagBlinkerRight;
+            if (ReadHazardOn(item)) flags |= VehicleState.FlagHazard;
 
-                float revs = ReadBestRpm(item);
-                bool engineOn = revs > EngineRunningRevs;
-                bool accOn = ReadAccOn(item) || engineOn;
-                if (engineOn) flags |= VehicleState.FlagEngineOn;
-                if (accOn) flags |= VehicleState.FlagAccOn;
-                if (ReadBlinkerLeft(item)) flags |= VehicleState.FlagBlinkerLeft;
-                if (ReadBlinkerRight(item)) flags |= VehicleState.FlagBlinkerRight;
-                if (ReadHazardOn(item)) flags |= VehicleState.FlagHazard;
-                rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue);
-                fuel = ReadFuelLevelByte(item);
-                coolant = ReadCoolantTempByte(item);
-
-                EnsureClimateProbe(item);
-                if (item.ClimateReady)
-                {
-                    frost = QuantizeFrost(ReadFrost(item));
-                    fog = QuantizeFrost(ReadFog(item));
-                    cabinTemp = QuantizeRange(ReadCabinTemp(item), CabinTempMinC, CabinTempMaxC);
-                }
-
-                return true;
-            }
-
-            if (item.RemoteEngineOn) flags |= VehicleState.FlagEngineOn;
-            if (item.RemoteAccOn) flags |= VehicleState.FlagAccOn;
-            if (item.RemoteBlinkerLeft) flags |= VehicleState.FlagBlinkerLeft;
-            if (item.RemoteBlinkerRight) flags |= VehicleState.FlagBlinkerRight;
-            if (item.RemoteHazard) flags |= VehicleState.FlagHazard;
-            rpm = (ushort)Mathf.Clamp(item.RemoteRpm, 0f, ushort.MaxValue);
-            fuel = item.RemoteFuelLevel;
-            coolant = item.RemoteCoolantTemp;
-            frost = item.RemoteFrost;
-            fog = item.RemoteFog;
-            cabinTemp = item.RemoteCabinTemp;
-            return true;
+            // Read fitted parts on both roles: a bare Live|Applied union retains
+            // stale failures after repair. The damage reader reconciles that fallback
+            // against current Wear without advancing sequences or send baselines.
+            var damage = TryReadDamageState(item, WorldSyncIds.NoOwner);
+            var condition = TryReadConditionState(item);
+            // RPM, climate and continuous part wear change between samples and caused
+            // perpetual false resyncs. Their existing streams carry those values.
+            return VehicleChecksum.Fold(crc, item.Id, flags, ReadFuelLevelByte(item),
+                damage != null ? damage.DamageMask : 0u, condition);
         }
 
         private VehicleState? TryBuildVehicleStateMessage(SyncedItem item, byte ownerPlayerId)

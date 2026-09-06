@@ -12,7 +12,7 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <RootNamespace>WinterMP.Launcher</RootNamespace>
     <AssemblyName>WinterMPLauncher</AssemblyName>
-    <Version>0.1.31</Version>
+    <Version>0.1.32</Version>
     <!-- Avalonia compiles XAML ahead of time; keep diagnostics readable. -->
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <WinterMPCoreOut>$(MSBuildThisFileDirectory)..\WinterMP.Core\bin\$(Configuration)\net35</WinterMPCoreOut>

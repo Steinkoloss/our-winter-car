@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using HutongGames.PlayMaker;
 using UnityEngine;
 using WinterMP.Core.Session;
+using WinterMP.Core.Catalog;
+using WinterMP.Core.Diagnostics;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
@@ -16,7 +19,6 @@ namespace WinterMP.Core.Sync
     /// </summary>
     internal sealed class RallySync
     {
-        private const string RallyPrefix = "RACES/RALLY/SS";
         private const float ScanIntervalSeconds = 5f;
         private const float HostBroadcastSeconds = 1f;
         private const float PlayerPoseMaxAgeSeconds = 2f;
@@ -25,7 +27,11 @@ namespace WinterMP.Core.Sync
 
         private sealed class Stage
         {
-            public byte Number;
+            public byte Number, CheckpointCount;
+            public RallyStageData Config = null!;
+            public string CompletedState = "";
+            public bool Observed, WasStarted;
+            public byte ObservedMask;
             public PlayMakerFSM? Timing;
             public FsmBool? Started;
             public Transform? StartLine;
@@ -35,46 +41,30 @@ namespace WinterMP.Core.Sync
         private sealed class Checkpoint
         {
             public Transform Transform = null!;
-            public FsmBool? Reached;
-        }
-
-        private sealed class Record
-        {
-            public byte PlayerId;
-            public byte Stage;
-            public byte Phase;
-            public byte Checkpoint;
-            public float StartedAt;
-            // Set when the record reaches PhaseFinished so the elapsed clock freezes
-            // (otherwise every later broadcast/snapshot of a finished record would
-            // report an ever-growing "final" time).
-            public float FinishedAt;
-            // A finished record must be broadcast to already-connected guests exactly
-            // once; racing records are re-sent at HostBroadcastSeconds but the finish is
-            // a one-shot terminal edge (host-driven finishes have no intent to relay).
-            public bool FinishedBroadcast;
+            public PlayMakerFSM Marker = null!;
         }
 
         private readonly ItemWorldSync _items;
         private readonly Dictionary<byte, Stage> _stages = new Dictionary<byte, Stage>();
-        private readonly Dictionary<byte, Record> _records = new Dictionary<byte, Record>();
-        private readonly Dictionary<byte, ushort> _lastIntentSequence = new Dictionary<byte, ushort>();
-        private readonly Dictionary<byte, bool> _guestStartObserved = new Dictionary<byte, bool>();
+        private readonly RallyProgressLedger _ledger = new RallyProgressLedger();
+        private readonly RallyProgressReplica _replica = new RallyProgressReplica(NewReportToken());
+        private readonly RallyCrossingEvidence _crossings = new RallyCrossingEvidence();
+        private readonly Dictionary<byte, float> _requestAt = new Dictionary<byte, float>();
+        private float _nextScanAt, _nextBroadcastAt;
+        private bool _failed, _reportFailureLogged;
 
-        /// <summary>Host: a player (re)joined — its intent counter restarted; drop its stale latches.</summary>
         public void ForgetPlayer(byte playerId)
         {
-            _lastIntentSequence.Remove(playerId);
-            _guestStartObserved.Remove(playerId);
+            _ledger.ForgetPlayer(playerId);
+            _crossings.ForgetPlayer(playerId);
+            _requestAt.Remove(playerId);
         }
-        private readonly Dictionary<uint, bool> _guestCheckpointObserved = new Dictionary<uint, bool>();
-        private readonly Dictionary<byte, bool> _hostStartObserved = new Dictionary<byte, bool>();
-        private readonly Dictionary<uint, bool> _hostCheckpointObserved = new Dictionary<uint, bool>();
-        private float _nextScanAt;
-        private float _nextBroadcastAt;
-        private ushort _outIntentSequence;
-        private ushort _outStateSequence;
-        private ushort _lastRemoteSequence;
+
+        private static ulong NewReportToken()
+        {
+            ulong token = BitConverter.ToUInt64(Guid.NewGuid().ToByteArray(), 0);
+            return token == 0 ? 1 : token;
+        }
 
         public RallySync(ItemWorldSync items)
         {
@@ -83,83 +73,69 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
-            _stages.Clear();
-            _records.Clear();
-            _lastIntentSequence.Clear();
-            _guestStartObserved.Clear();
-            _guestCheckpointObserved.Clear();
-            _hostStartObserved.Clear();
-            _hostCheckpointObserved.Clear();
-            _nextScanAt = 0f;
-            _nextBroadcastAt = 0f;
-            _outIntentSequence = 0;
-            _outStateSequence = 0;
-            _lastRemoteSequence = 0;
+            _stages.Clear(); _ledger.Clear(); _crossings.Clear(); _requestAt.Clear();
+            if (SessionManager.Instance?.State == SessionState.Connected) _replica.ResetView();
+            else _replica.Clear(NewReportToken());
+            _nextScanAt = _nextBroadcastAt = 0;
+            _failed = _reportFailureLogged = false;
         }
 
         public void Update(SessionManager session)
         {
-            Scan();
-            if (session.IsHost)
+            if (_failed) return;
+            try
             {
-                ObserveHostStage(session);
-                BroadcastActiveRecords(session);
+                Scan();
+                if (session.IsHost)
+                {
+                    ObserveCrossings(session);
+                    ObserveHostStage(session);
+                    if (Time.unscaledTime >= _nextBroadcastAt)
+                    {
+                        _nextBroadcastAt = Time.unscaledTime + HostBroadcastSeconds;
+                        foreach (var state in _ledger.Snapshots(Time.unscaledTime, true))
+                            session.SendWorldMessage(state, Channel.ReliableOrdered);
+                    }
+                }
+                else ObserveGuestStage(session);
             }
-            else
-            {
-                ObserveGuestStage(session);
-            }
+            catch (Exception e) { Disable(e); }
         }
 
-        public IEnumerable<RallyState> BuildSnapshots()
-        {
-            foreach (var record in _records.Values)
-                yield return ToMessage(record);
-        }
+        public IEnumerable<RallyState> BuildSnapshots() => _failed
+            ? new RallyState[0] : _ledger.Snapshots(Time.unscaledTime, false);
 
         public bool TryAcceptIntent(RallyIntent message, out RallyState state)
         {
             state = new RallyState();
             var session = SessionManager.Instance;
-            if (session == null || !session.IsHost || !_stages.TryGetValue(message.Stage, out var stage))
-                return false;
-            if (!TryGetMarker(stage, message.Checkpoint, out var marker)
-                || !TryGetFreshPlayerPose(session, message.PlayerId, out Vector3 playerPosition)
-                || (playerPosition - marker.position).sqrMagnitude > PlayerMarkerMaxDistance * PlayerMarkerMaxDistance
-                || !HasNearbyDelegatedVehicle(message.PlayerId, playerPosition))
-                return false;
-
-            if (_lastIntentSequence.TryGetValue(message.PlayerId, out ushort last))
+            if (_failed || session == null || !session.IsHost || !_stages.TryGetValue(message.Stage, out var stage)
+                || !Ready(stage) || message.Checkpoint > stage.CheckpointCount) return false;
+            try
             {
-                ushort diff = (ushort)(message.Sequence - last);
-                if (diff == 0 || diff > short.MaxValue) return false;
+                float now = Time.unscaledTime;
+                if (_requestAt.TryGetValue(message.PlayerId, out float next) && now < next) return false;
+                _requestAt[message.PlayerId] = now + .1f;
+                ObserveCrossings(session);
+                bool verified = _crossings.Contains(message.PlayerId, message.Stage, message.Checkpoint, now);
+                bool accepted = _ledger.TryAccept(message, stage.CheckpointCount, now, verified, out state);
+                if (accepted) SyncEventLog.Record("rally-crossing", "player " + message.PlayerId + " SS" + message.Stage
+                    + " checkpoint " + message.Checkpoint + " report " + message.Sequence);
+                return accepted;
             }
-            _lastIntentSequence[message.PlayerId] = message.Sequence;
-
-            if (!TryAdvance(message.PlayerId, stage, message.Checkpoint, out var record)) return false;
-            state = ToMessage(record);
-            // The caller broadcasts this accepted state, so the periodic one-shot must not
-            // re-send a guest finish; host-driven finishes leave the flag clear for it.
-            if (record.Phase == RallyState.PhaseFinished)
-                record.FinishedBroadcast = true;
-            WinterMPPlugin.Log.LogInfo(
-                $"RallySync: accepted player {message.PlayerId} SS{message.Stage} checkpoint {message.Checkpoint}.");
-            return true;
+            catch (Exception e) { Disable(e); return false; }
         }
 
         public void Apply(RallyState message)
         {
-            ushort diff = (ushort)(message.Sequence - _lastRemoteSequence);
-            if (_lastRemoteSequence != 0 && (diff == 0 || diff > short.MaxValue)) return;
-            _lastRemoteSequence = message.Sequence;
-            _records[message.PlayerId] = new Record
-            {
-                PlayerId = message.PlayerId,
-                Stage = message.Stage,
-                Phase = message.Phase,
-                Checkpoint = message.Checkpoint,
-                StartedAt = Time.unscaledTime - message.ElapsedCentiseconds / 100f,
-            };
+            if (!_failed) _replica.Receive(message);
+        }
+
+        private void Disable(Exception e)
+        {
+            _failed = true;
+            WinterMPPlugin.Log.LogError("RallySync: progress sync disabled: " + e);
+            SyncEventLog.Record("rally-disabled", e.Message);
         }
 
         private void Scan()
@@ -168,37 +144,34 @@ namespace WinterMP.Core.Sync
             _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
             try
             {
-                var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
-                foreach (var obj in fsms)
+                var config = SyncCatalog.RallyProgress;
+                if (config == null) return;
+                for (int i = 0; i < config.Stages.Count; i++)
+                    if (!_stages.ContainsKey((byte)(i + 1))) _stages.Add((byte)(i + 1), new Stage
+                    {
+                        Number = (byte)(i + 1), Config = config.Stages[i],
+                        CheckpointCount = (byte)config.Stages[i].Checkpoints.Length, CompletedState = config.CompletedState,
+                    });
+                foreach (var obj in ScenePath.ScanFsms())
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null) continue;
                     string path = ScenePath.Of(fsm.transform);
-                    if (!TryParseStage(path, out byte stageNumber)) continue;
-                    if (!_stages.TryGetValue(stageNumber, out var stage))
+                    foreach (var stage in _stages.Values)
                     {
-                        stage = new Stage { Number = stageNumber };
-                        _stages[stageNumber] = stage;
-                    }
-
-                    string timingPath = RallyPrefix + stageNumber + "/TimingSS" + stageNumber;
-                    if (path == timingPath && fsm.FsmName == "Timing" && stage.Timing == null)
-                    {
-                        stage.Timing = fsm;
-                        stage.Started = fsm.FsmVariables.FindFsmBool("Start");
-                    }
-                    else if (path == timingPath + "/JumpStartLineSS" + stageNumber && fsm.FsmName == "Checkpoint")
-                    {
-                        stage.StartLine = fsm.transform;
-                    }
-                    else if (TryParseCheckpoint(path, timingPath, out byte checkpoint) && fsm.FsmName == "Checkpoint"
-                        && !stage.Checkpoints.ContainsKey(checkpoint))
-                    {
-                        stage.Checkpoints[checkpoint] = new Checkpoint
+                        if (path == stage.Config.TimingPath && fsm.FsmName == config.TimingFsm)
                         {
-                            Transform = fsm.transform,
-                            Reached = fsm.FsmVariables.FindFsmBool("Checkpoint"),
-                        };
+                            stage.Timing = fsm;
+                            stage.Started = fsm.FsmVariables.FindFsmBool(config.StartedVariable);
+                        }
+                        else if (path == stage.Config.StartPath && fsm.FsmName == config.MarkerFsm) stage.StartLine = fsm.transform;
+                        else if (fsm.FsmName == config.MarkerFsm)
+                            for (int i = 0; i < stage.Config.Checkpoints.Length; i++)
+                                if (path == stage.Config.TimingPath + "/" + stage.Config.Checkpoints[i])
+                                {
+                                    ValidateMarker(fsm, config);
+                                    stage.Checkpoints[(byte)(i + 1)] = new Checkpoint { Transform = fsm.transform, Marker = fsm };
+                                }
                     }
                 }
             }
@@ -208,147 +181,89 @@ namespace WinterMP.Core.Sync
             }
         }
 
+        private static void ValidateMarker(PlayMakerFSM fsm, RallyProgressData config)
+        {
+            if (!fsm.Fsm.Initialized) fsm.Fsm.Init(fsm);
+            var commit = FsmHook.FindState(fsm, config.CommitState);
+            var completed = FsmHook.FindState(fsm, config.CompletedState);
+            // SS2 checkpoint 4 activates checkpoints 5/6 on entry to Idle, then
+            // remains there. Observing completion must leave those native actions alone.
+            if (commit == null || completed == null || completed.Transitions.Length != 0
+                || commit.Transitions.Length != 1 || commit.Transitions[0].ToState != config.CompletedState)
+                throw new InvalidOperationException("Rally checkpoint completion layout changed: " + fsm.name);
+        }
+
+        private static bool Ready(Stage stage)
+        {
+            if (stage.Timing == null || stage.Started == null || stage.StartLine == null || stage.CheckpointCount == 0
+                || stage.Checkpoints.Count != stage.CheckpointCount) return false;
+            for (byte i = 1; i <= stage.CheckpointCount; i++)
+                if (!stage.Checkpoints.TryGetValue(i, out var point) || point.Transform == null || point.Marker == null
+                    || stage.Timing.FsmVariables.FindFsmBool(stage.Config.Checkpoints[i - 1]) == null) return false;
+            return true;
+        }
+
+        private static byte ReadMask(Stage stage)
+        {
+            // The marker's unused Checkpoint bool never changes. Its terminal state
+            // survives the Timing FSM clearing every flag synchronously at the finish.
+            byte mask = 0;
+            foreach (var pair in stage.Checkpoints)
+                if (pair.Value.Marker != null && pair.Value.Marker.ActiveStateName == stage.CompletedState) mask |= (byte)(1 << (pair.Key - 1));
+            return mask;
+        }
+
         private void ObserveGuestStage(SessionManager session)
         {
             foreach (var stage in _stages.Values)
+                if (Ready(stage)) _replica.Observe(session.LocalPlayerId, stage.Number, stage.Started!.Value, ReadMask(stage), Time.unscaledTime);
+            var report = _replica.Take(Time.unscaledTime);
+            if (report != null) session.SendWorldMessage(report, Channel.ReliableOrdered);
+            if (_replica.Failed && !_reportFailureLogged)
             {
-                bool started = stage.Started != null && stage.Started.Value;
-                bool wasStarted = _guestStartObserved.TryGetValue(stage.Number, out bool seen) && seen;
-                if (started && !wasStarted) SendIntent(session, stage.Number, 0);
-                _guestStartObserved[stage.Number] = started;
-
-                foreach (var pair in stage.Checkpoints)
-                {
-                    bool reached = pair.Value.Reached != null && pair.Value.Reached.Value;
-                    uint id = CheckpointKey(stage.Number, pair.Key);
-                    bool wasReached = _guestCheckpointObserved.TryGetValue(id, out bool previous) && previous;
-                    if (reached && !wasReached) SendIntent(session, stage.Number, pair.Key);
-                    _guestCheckpointObserved[id] = reached;
-                }
+                _reportFailureLogged = true;
+                session.AddSystemChat("* Rally crossing could not be confirmed. Restart the stage to record a new time.");
+                SyncEventLog.Record("rally-report-timeout", "unconfirmed local crossing");
             }
+            if (!_replica.Failed) _reportFailureLogged = false;
         }
 
         private void ObserveHostStage(SessionManager session)
         {
             foreach (var stage in _stages.Values)
             {
-                bool started = stage.Started != null && stage.Started.Value;
-                bool wasStarted = _hostStartObserved.TryGetValue(stage.Number, out bool seen) && seen;
-                if (started && !wasStarted) TryAdvance(session.LocalPlayerId, stage, 0, out _);
-                _hostStartObserved[stage.Number] = started;
-
-                foreach (var pair in stage.Checkpoints)
+                if (!Ready(stage)) continue;
+                bool started = stage.Started!.Value;
+                byte mask = ReadMask(stage);
+                if (stage.Observed)
                 {
-                    bool reached = pair.Value.Reached != null && pair.Value.Reached.Value;
-                    uint id = CheckpointKey(stage.Number, pair.Key);
-                    bool wasReached = _hostCheckpointObserved.TryGetValue(id, out bool previous) && previous;
-                    if (reached && !wasReached) TryAdvance(session.LocalPlayerId, stage, pair.Key, out _);
-                    _hostCheckpointObserved[id] = reached;
+                    if (started && !stage.WasStarted) _ledger.AdvanceLocal(session.LocalPlayerId, stage.Number, 0, stage.CheckpointCount, Time.unscaledTime);
+                    // Dictionary scan order must never decide which checkpoint reaches the host first.
+                    for (byte i = 1; i <= stage.CheckpointCount; i++)
+                        if ((mask & (1 << (i - 1))) != 0 && (stage.ObservedMask & (1 << (i - 1))) == 0)
+                            _ledger.AdvanceLocal(session.LocalPlayerId, stage.Number, i, stage.CheckpointCount, Time.unscaledTime);
+                }
+                stage.Observed = true; stage.WasStarted = started; stage.ObservedMask = mask;
+            }
+        }
+
+        private void ObserveCrossings(SessionManager session)
+        {
+            float now = Time.unscaledTime;
+            foreach (var player in session.Players)
+            {
+                if (player.PlayerId == session.LocalPlayerId || player.LastTransformTime <= 0
+                    || now < player.LastTransformTime || now - player.LastTransformTime > PlayerPoseMaxAgeSeconds
+                    || !HasNearbyDelegatedVehicle(player.PlayerId, player.Position)) continue;
+                foreach (var stage in _stages.Values)
+                {
+                    if (!Ready(stage)) continue;
+                    for (byte checkpoint = 0; checkpoint <= stage.CheckpointCount; checkpoint++)
+                        if (TryGetMarker(stage, checkpoint, out var marker)
+                            && (player.Position - marker.position).sqrMagnitude <= PlayerMarkerMaxDistance * PlayerMarkerMaxDistance)
+                            _crossings.Observe(player.PlayerId, stage.Number, checkpoint, player.LastTransformTime, now);
                 }
             }
-        }
-
-        private void SendIntent(SessionManager session, byte stage, byte checkpoint)
-        {
-            session.SendWorldMessage(new RallyIntent
-            {
-                PlayerId = session.LocalPlayerId,
-                Stage = stage,
-                Checkpoint = checkpoint,
-                Sequence = ++_outIntentSequence,
-            }, Channel.ReliableOrdered);
-        }
-
-        private void BroadcastActiveRecords(SessionManager session)
-        {
-            if (session.PlayerCount == 0 || Time.unscaledTime < _nextBroadcastAt) return;
-            _nextBroadcastAt = Time.unscaledTime + HostBroadcastSeconds;
-            foreach (var record in _records.Values)
-            {
-                if (record.Phase == RallyState.PhaseRacing)
-                {
-                    session.SendWorldMessage(ToMessage(record), Channel.ReliableOrdered);
-                }
-                else if (record.Phase == RallyState.PhaseFinished && !record.FinishedBroadcast)
-                {
-                    // Host-driven finishes have no guest intent to relay, so the periodic
-                    // loop is the only path that reaches already-connected guests. One-shot:
-                    // the terminal time is frozen (FinishedAt), so re-sending adds nothing.
-                    record.FinishedBroadcast = true;
-                    session.SendWorldMessage(ToMessage(record), Channel.ReliableOrdered);
-                }
-            }
-        }
-
-        private bool TryAdvance(byte playerId, Stage stage, byte checkpoint, out Record record)
-        {
-            if (checkpoint == 0)
-            {
-                record = new Record
-                {
-                    PlayerId = playerId,
-                    Stage = stage.Number,
-                    Phase = RallyState.PhaseRacing,
-                    Checkpoint = 0,
-                    StartedAt = Time.unscaledTime,
-                };
-                _records[playerId] = record;
-                return true;
-            }
-
-            if (!_records.TryGetValue(playerId, out record!) || record.Stage != stage.Number
-                || record.Phase != RallyState.PhaseRacing || checkpoint != record.Checkpoint + 1
-                || !stage.Checkpoints.ContainsKey(checkpoint))
-                return false;
-
-            record.Checkpoint = checkpoint;
-            if (checkpoint == stage.Checkpoints.Count)
-            {
-                record.Phase = RallyState.PhaseFinished;
-                record.FinishedAt = Time.unscaledTime;
-            }
-            return true;
-        }
-
-        private RallyState ToMessage(Record record)
-        {
-            float endTime = record.Phase == RallyState.PhaseFinished && record.FinishedAt > 0f
-                ? record.FinishedAt
-                : Time.unscaledTime;
-            return new RallyState
-            {
-                PlayerId = record.PlayerId,
-                Stage = record.Stage,
-                Phase = record.Phase,
-                Checkpoint = record.Checkpoint,
-                Sequence = ++_outStateSequence,
-                ElapsedCentiseconds = (uint)Mathf.Max(0, Mathf.RoundToInt((endTime - record.StartedAt) * 100f)),
-            };
-        }
-
-        private static bool TryParseStage(string path, out byte stage)
-        {
-            stage = 0;
-            if (!path.StartsWith(RallyPrefix, StringComparison.Ordinal) || path.Length <= RallyPrefix.Length)
-                return false;
-            char digit = path[RallyPrefix.Length];
-            if (digit < '1' || digit > '3' || path.Length <= RallyPrefix.Length + 1 || path[RallyPrefix.Length + 1] != '/')
-                return false;
-            stage = (byte)(digit - '0');
-            return true;
-        }
-
-        private static bool TryParseCheckpoint(string path, string timingPath, out byte checkpoint)
-        {
-            checkpoint = 0;
-            const string prefix = "/Checkpoint0";
-            if (!path.StartsWith(timingPath + prefix, StringComparison.Ordinal)) return false;
-            int index = (timingPath + prefix).Length;
-            if (index >= path.Length || path.Length != index + 1) return false;
-            char digit = path[index];
-            if (digit < '1' || digit > '6') return false;
-            checkpoint = (byte)(digit - '0');
-            return true;
         }
 
         private static bool TryGetMarker(Stage stage, byte checkpoint, out Transform marker)
@@ -379,24 +294,5 @@ namespace WinterMP.Core.Sync
             return false;
         }
 
-        private static bool TryGetFreshPlayerPose(SessionManager session, byte playerId, out Vector3 position)
-        {
-            float now = Time.unscaledTime;
-            foreach (var player in session.Players)
-            {
-                if (player.PlayerId != playerId) continue;
-                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > PlayerPoseMaxAgeSeconds)
-                    break;
-                position = player.Position;
-                return true;
-            }
-            position = Vector3.zero;
-            return false;
-        }
-
-        private static uint CheckpointKey(byte stage, byte checkpoint)
-        {
-            return (uint)(stage << 8 | checkpoint);
-        }
     }
 }

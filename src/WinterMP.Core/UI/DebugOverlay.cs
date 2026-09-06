@@ -32,6 +32,7 @@ namespace WinterMP.Core.UI
                 DrawPlayerList(session);
 
             DrawChat(session);
+            if (!_chatOpen) Sync.WorldSyncManager.Instance?.DrawPartFitPrompt();
         }
 
         private static void DrawSessionBadge(SessionManager session)

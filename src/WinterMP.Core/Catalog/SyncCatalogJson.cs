@@ -24,6 +24,14 @@ namespace WinterMP.Core.Catalog
 
             ParseRuleArray(root, "doors", data.Doors);
             ParseRuleArray(root, "spawnContainers", data.SpawnContainers);
+            if (root.TryGetValue("trophyFactories", out var factories))
+                data.TrophyFactories = ParseTrophyFactories(factories);
+            if (root.TryGetValue("partsPackages", out var packages))
+                data.PartsPackages = ParsePartsPackages(packages);
+            if (root.TryGetValue("partIdentity", out var partIdentity))
+                data.PartIdentity = ParsePartIdentity(partIdentity);
+            if (root.TryGetValue("replacementParts", out var replacements))
+                data.ReplacementParts = ParseReplacementParts(replacements);
             ParseRuleArray(root, "controls", data.Controls);
             ParseRuleArray(root, "switchRules", data.SwitchRules);
             ParseRuleArray(root, "ignitions", data.Ignitions);
@@ -47,11 +55,47 @@ namespace WinterMP.Core.Catalog
                 data.SlotMachines = ParseSlotMachines(slots);
             if (root.TryGetValue("videoPoker", out var pokerObj) && pokerObj is Dictionary<string, object?> poker)
                 data.VideoPoker = ParsePoker(poker);
+            if (root.TryGetValue("venttiTable", out var tableObj) && tableObj is Dictionary<string, object?> table)
+                data.VenttiTable = ParseVenttiTable(table);
+            if (root.TryGetValue("hockeyBetting", out var hockeyObj))
+            {
+                if (!(hockeyObj is Dictionary<string, object?> hockey)) throw new FormatException("Invalid hockey bindings.");
+                data.HockeyBetting = ParseHockeyBetting(hockey);
+            }
+            if (root.TryGetValue("lottoDraw", out var lottoObj))
+            {
+                if (!(lottoObj is Dictionary<string, object?> lotto)) throw new FormatException("Invalid Lotto draw bindings.");
+                data.LottoDraw = ParseLottoDraw(lotto);
+            }
+            if (root.TryGetValue("lottoTickets", out var ticketsObj) && ticketsObj is Dictionary<string, object?> tickets)
+            {
+                data.LottoTickets = new LottoTicketsData();
+                foreach (string key in LottoTicketsData.RequiredBindings)
+                    data.LottoTickets.Bindings.Add(key, RequiredString(tickets, key));
+                data.LottoTickets.LinePrice = SlotNumber(tickets.TryGetValue("linePrice", out var price) ? price : null, "linePrice", 1, 1000);
+                data.LottoTickets.BankThreshold = SlotNumber(tickets.TryGetValue("bankThreshold", out var threshold) ? threshold : null, "bankThreshold", 1, 1000000);
+            }
+            if (root.TryGetValue("rallyProgress", out var rallyObj) && rallyObj is Dictionary<string, object?> rally)
+                data.RallyProgress = ParseRallyProgress(rally);
             if (root.TryGetValue("debtLetter", out var debtObj) && debtObj is Dictionary<string, object?> debt)
             {
                 data.DebtLetter = new DebtLetterData();
                 foreach (string key in DebtLetterData.RequiredBindings)
                     data.DebtLetter.Bindings.Add(key, RequiredString(debt, key));
+            }
+            if (root.TryGetValue("venttiProperty", out var propertyObj) && propertyObj is Dictionary<string, object?> property)
+            {
+                data.VenttiProperty = new VenttiPropertyData();
+                foreach (string key in VenttiPropertyData.RequiredBindings)
+                    data.VenttiProperty.Bindings.Add(key, RequiredString(property, key));
+                var bindings = data.VenttiProperty;
+                if (new HashSet<string> { bindings["rusckoKey"], bindings["satsumaKey"], bindings["homeKey"] }.Count != 3
+                    || new HashSet<string> { bindings["sleepPath"], bindings["hatchPath"], bindings["loggingPath"] }.Count != 3)
+                    throw new FormatException("Ventti property slots must have distinct bindings.");
+                var tableBindings = data.VenttiTable;
+                if (tableBindings != null && (bindings["managerPath"] != tableBindings["tablePath"] + "/" + tableBindings["managerPath"]
+                    || bindings["managerFsm"] != tableBindings["fsm"]))
+                    throw new FormatException("Ventti table and property bindings must use the same resolver.");
             }
             return data;
         }
@@ -61,6 +105,41 @@ namespace WinterMP.Core.Catalog
             string value = GetString(obj, key);
             if (value.Length == 0) throw new FormatException("Missing catalog binding: " + key);
             return value;
+        }
+
+        private static bool ValidScenePath(string path) => path.Length > 0 && !path.StartsWith("/", StringComparison.Ordinal)
+            && !path.EndsWith("/", StringComparison.Ordinal) && path.IndexOf("//", StringComparison.Ordinal) < 0
+            && path.IndexOf("..", StringComparison.Ordinal) < 0 && path.IndexOfAny(new[] { '\n', '\r', '\0', '\\' }) < 0;
+
+        private static RallyProgressData ParseRallyProgress(Dictionary<string, object?> obj)
+        {
+            var data = new RallyProgressData
+            {
+                TimingFsm = RequiredString(obj, "timingFsm"), StartedVariable = RequiredString(obj, "startedVariable"),
+                MarkerFsm = RequiredString(obj, "markerFsm"), CommitState = RequiredString(obj, "commitState"),
+                CompletedState = RequiredString(obj, "completedState"),
+            };
+            if (data.CommitState == data.CompletedState || !obj.TryGetValue("stages", out var entries)
+                || entries is not List<object?> stages || stages.Count != 3)
+                throw new FormatException("Three distinct rally stage bindings are required.");
+            var paths = new HashSet<string>();
+            foreach (var entry in stages)
+            {
+                if (entry is not Dictionary<string, object?> stage || !stage.TryGetValue("checkpoints", out var pointsObj)
+                    || pointsObj is not List<object?> points || points.Count < 1 || points.Count > 6)
+                    throw new FormatException("Invalid rally checkpoints.");
+                var binding = new RallyStageData { TimingPath = RequiredString(stage, "timingPath"),
+                    StartPath = RequiredString(stage, "startPath"), Checkpoints = SlotStrings(stage, "checkpoints", points.Count) };
+                if (!ValidScenePath(binding.TimingPath) || !ValidScenePath(binding.StartPath)
+                    || !paths.Add(binding.TimingPath) || !paths.Add(binding.StartPath))
+                    throw new FormatException("Invalid/duplicate rally stage path.");
+                foreach (string checkpoint in binding.Checkpoints)
+                    if (!ValidScenePath(checkpoint) || checkpoint.IndexOf('/') >= 0
+                        || checkpoint == data.StartedVariable || !paths.Add(binding.TimingPath + "/" + checkpoint))
+                        throw new FormatException("Invalid/duplicate rally checkpoint binding.");
+                data.Stages.Add(binding);
+            }
+            return data;
         }
 
         private static BankingData ParseBanking(Dictionary<string, object?> obj)
@@ -569,6 +648,26 @@ namespace WinterMP.Core.Catalog
         public SlotMachineData? SlotMachines;
         public PokerData? VideoPoker;
         public DebtLetterData? DebtLetter;
+        public VenttiPropertyData? VenttiProperty;
+        public VenttiTableData? VenttiTable;
+        public RallyProgressData? RallyProgress;
+        public LottoDrawData? LottoDraw;
+        public HockeyBettingData? HockeyBetting;
+        public LottoTicketsData? LottoTickets;
+        public TrophyFactoriesData? TrophyFactories;
+        public PartsPackagesData? PartsPackages;
+        public PartIdentityData? PartIdentity;
+        public ReplacementPartsData? ReplacementParts;
+    }
+
+    internal sealed class VenttiPropertyData
+    {
+        public static readonly string[] RequiredBindings = {
+            "managerPath", "managerFsm", "rusckoKey", "satsumaKey", "homeKey",
+            "sleepPath", "hatchPath", "loggingPath", "loggingFsm",
+        };
+        public readonly Dictionary<string, string> Bindings = new Dictionary<string, string>();
+        public string this[string key] => Bindings[key];
     }
 
     internal sealed class DebtLetterData
@@ -581,6 +680,17 @@ namespace WinterMP.Core.Catalog
         };
         public readonly Dictionary<string, string> Bindings = new Dictionary<string, string>();
         public string this[string key] => Bindings[key];
+    }
+
+    internal sealed class RallyProgressData
+    {
+        public string TimingFsm = "", StartedVariable = "", MarkerFsm = "", CommitState = "", CompletedState = "";
+        public readonly List<RallyStageData> Stages = new List<RallyStageData>();
+    }
+    internal sealed class RallyStageData
+    {
+        public string TimingPath = "", StartPath = "";
+        public string[] Checkpoints = new string[0];
     }
 
     internal sealed class BankingData

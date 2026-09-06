@@ -4,6 +4,8 @@ Requires UnityPy==1.25.3 and TypeTreeGeneratorAPI==0.0.10 (use a separate venv).
 Example:
   python tools/extract_fsm_assets.py /path/to/My\ Winter\ Car \
       --match Systems/BankAccount --match Sheets/DebtLetter --out /tmp/economy.json
+  python tools/extract_fsm_assets.py /path/to/My\ Winter\ Car \
+      --match RoomVenttiPig --include-array-lists --out /tmp/ventti.json
 
 This is static evidence: values are asset defaults, not a player's save, and
 runtime-created objects are absent. It supplements, never replaces, an F9 dump.
@@ -97,26 +99,34 @@ def read_script(obj, generator):
         TypeTreeHelper.read_typetree_boost = boost
 
 
-def extract(game: Path, matches: list[str]) -> dict:
+def extract(game: Path, matches: list[str], include_array_lists: bool = False,
+            include_transforms: bool = False, asset: str = "level2", include_hash_tables: bool = False) -> dict:
     import UnityPy
     from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
     data_dir = game / "mywintercar_Data"
-    level = data_dir / "level2"
+    if Path(asset).name != asset:
+        raise ValueError("Asset must be a filename inside mywintercar_Data")
+    level = data_dir / asset
     env = UnityPy.load(str(level))
     objects = list(env.objects)
     version = str(objects[0].version)
     generator = TypeTreeGenerator(version)
     generator.load_local_game(str(game))
 
-    names, transforms, parents = {}, {}, {}
+    names, transforms, parents, game_objects, transform_data = {}, {}, {}, {}, {}
     for obj in objects:
         if obj.type.name == "GameObject":
-            names[obj.path_id] = obj.read().m_Name
+            tree = obj.read()
+            names[obj.path_id] = tree.m_Name
+            if include_transforms:
+                game_objects[obj.path_id] = tree
         elif obj.type.name == "Transform":
             tree = obj.read()
             transforms[obj.path_id] = tree.m_GameObject.m_PathID
             parents[tree.m_GameObject.m_PathID] = tree.m_Father.m_PathID
+            if include_transforms:
+                transform_data[tree.m_GameObject.m_PathID] = tree
 
     paths = {}
 
@@ -140,7 +150,7 @@ def extract(game: Path, matches: list[str]) -> dict:
             for child in value:
                 references(child)
 
-    records = []
+    records, array_lists, hash_tables = [], [], []
     for obj in objects:
         if obj.type.name != "MonoBehaviour":
             continue
@@ -148,7 +158,17 @@ def extract(game: Path, matches: list[str]) -> dict:
         path = scene_path(head.m_GameObject.m_PathID)
         if matches and not any(m.lower() in path.lower() for m in matches):
             continue
-        if head.m_Script.deref_parse_as_object().m_ClassName != "PlayMakerFSM":
+        class_name = head.m_Script.deref_parse_as_object().m_ClassName
+        if ((include_array_lists and class_name == "PlayMakerArrayListProxy")
+                or (include_hash_tables and class_name == "PlayMakerHashTableProxy")):
+            proxy = read_script(obj, generator)
+            # Preserve the native type discriminator and every pre-fill list. Do
+            # not guess which list is live from nonempty stale editor defaults.
+            record = {"path": path, "referenceName": proxy["referenceName"],
+                      "defaults": {k: v for k, v in proxy.items() if k.startswith("preFill")}}
+            references(record)
+            (array_lists if class_name == "PlayMakerArrayListProxy" else hash_tables).append(record)
+        if class_name != "PlayMakerFSM":
             continue
         fsm = read_script(obj, generator)["fsm"]
         record = {"path": path, "fsmName": fsm["name"], "startState": fsm["startState"],
@@ -172,23 +192,54 @@ def extract(game: Path, matches: list[str]) -> dict:
             values = read_script(obj, generator)["variables"]
             globals_ = {k[0].upper() + k[1:]: vs for k, vs in values.items()}
             break
-    return {"meta": {"source": "installed-assets", "unityVersion": version,
+    result = {"meta": {"source": "installed-assets", "asset": asset, "unityVersion": version,
                      "levelSha256": hashlib.sha256(level.read_bytes()).hexdigest(),
                      "values": "asset defaults; not runtime or save state"},
             "fsms": sorted(records, key=lambda f: (f["path"], f["fsmName"])),
             "globalVariables": globals_}
+    if include_array_lists:
+        result["arrayLists"] = sorted(array_lists, key=lambda r: (r["path"], r["referenceName"]))
+    if include_hash_tables:
+        result["hashTables"] = sorted(hash_tables, key=lambda r: (r["path"], r["referenceName"]))
+    if include_transforms:
+        component_types = {obj.path_id: obj.type.name for obj in objects}
+        poses = []
+        for go_id, transform in transform_data.items():
+            path = scene_path(go_id)
+            if matches and not any(m.lower() in path.lower() for m in matches):
+                continue
+            go = game_objects[go_id]
+            poses.append({"path": path, "activeSelf": bool(go.m_IsActive),
+                          "localPosition": {axis: getattr(transform.m_LocalPosition, axis) for axis in "xyz"},
+                          "localRotation": {axis: getattr(transform.m_LocalRotation, axis) for axis in "xyzw"},
+                          "components": [component_types.get(c[1].m_PathID, "?") for c in go.m_Component]})
+        result["transforms"] = sorted(poses, key=lambda p: p["path"])
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("game", type=Path)
     parser.add_argument("--match", action="append", default=[], help="Path fragment; repeatable")
+    parser.add_argument("--asset", default="level2", help="Unity asset filename (e.g. sharedassets3.assets for spawned prefabs)")
+    parser.add_argument("--include-array-lists", action="store_true",
+                        help="Also read matching native ArrayList proxy defaults, including card values/textures")
+    parser.add_argument("--include-transforms", action="store_true",
+                        help="Also read matching scene poses, visibility and component types, including inactive bones")
+    parser.add_argument("--include-hash-tables", action="store_true",
+                        help="Also read matching native Hashtable proxy keys, type and defaults")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
-    result = extract(args.game, args.match)
+    result = extract(args.game, args.match, args.include_array_lists, args.include_transforms, args.asset, args.include_hash_tables)
     args.out.write_text(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
                         encoding="utf-8")
     print(f"Extracted {len(result['fsms'])} FSMs and global definitions to {args.out}")
+    if args.include_array_lists:
+        print(f"Included {len(result['arrayLists'])} ArrayList proxy definitions")
+    if args.include_transforms:
+        print(f"Included {len(result['transforms'])} scene transform definitions")
+    if args.include_hash_tables:
+        print(f"Included {len(result['hashTables'])} Hashtable proxy definitions")
 
 
 if __name__ == "__main__":

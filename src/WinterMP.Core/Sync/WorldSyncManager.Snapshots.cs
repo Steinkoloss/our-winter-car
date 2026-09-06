@@ -76,6 +76,8 @@ namespace WinterMP.Core.Sync
 
             if ((flags & WorldResyncRequest.FlagFsmStates) != 0)
             {
+                var lotto = _lottery.BuildSnapshot();
+                if (lotto != null) yield return lotto;
                 foreach (var chunk in _fsm.BuildDoorSnapshotChunks())
                     yield return chunk;
                 foreach (var thermostat in _fsm.BuildRadiatorThermostatStates())
@@ -96,8 +98,14 @@ namespace WinterMP.Core.Sync
 
             if ((flags & WorldResyncRequest.FlagItems) != 0)
             {
+                if (_lottoTickets != null)
+                    foreach (var ticket in _lottoTickets.BuildSnapshots()) yield return ticket;
                 foreach (var chunk in _items.BuildItemSnapshotChunks())
                     yield return chunk;
+                foreach (var chunk in BuildItemDespawnSnapshots()) yield return chunk;
+                foreach (var package in _items.BuildPackageStates()) yield return package;
+                foreach (var replacement in _items.BuildReplacementPartStates()) yield return replacement;
+                foreach (var spawn in _items.BuildSpawnReplayManifests()) yield return spawn;
             }
 
             if ((flags & WorldResyncRequest.FlagVehicles) != 0)
@@ -128,8 +136,13 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) yield break;
 
-            if (_items.Items.TryGetValue(netId, out var item) && item.Body != null)
+            var replacement = _items.BuildReplacementPartState(netId);
+            if (replacement != null) yield return replacement;
+
+            if (_items.Items.TryGetValue(netId, out var item) && item.Body != null && _items.CanSyncItemMotion(item))
             {
+                var package = _items.BuildPackageState(netId);
+                if (package != null) yield return package;
                 yield return new ItemTransform
                 {
                     ItemId = netId,
@@ -155,22 +168,22 @@ namespace WinterMP.Core.Sync
             }
 
             string? fsmState = _fsm.TryGetFsmSnapshotState(netId);
+            var partState = _fsm.BuildPartState(netId);
+            if (partState != null)
+            {
+                // A part's visual FSM state does not carry its native wear/tightness.
+                if (fsmState != null) yield return new FsmStateEnter { NetId = netId, StateName = fsmState };
+                yield return partState;
+                yield break;
+            }
             if (fsmState != null)
             {
                 yield return new FsmStateEnter { NetId = netId, StateName = fsmState };
                 yield break;
             }
 
-            if (_fsm.TryGetPartSnapshot(netId, out byte flags, out byte tightness, out byte wear))
-            {
-                yield return new PartState { NetId = netId, Flags = flags, Tightness = tightness, Wear = wear };
-                yield break;
-            }
-
-            if (_fsm.TryGetBoltSnapshot(netId, out ushort boltTightness, out ushort screwInt))
-            {
-                yield return new BoltState { NetId = netId, BoltTightness = boltTightness, ScrewInt = screwInt };
-            }
+            var boltState = _fsm.BuildBoltState(netId);
+            if (boltState != null) yield return boltState;
         }
 
         public IEnumerable<IMessage> BuildWorldSnapshot()
@@ -183,6 +196,8 @@ namespace WinterMP.Core.Sync
             foreach (var thermostat in _fsm.BuildRadiatorThermostatStates())
                 yield return thermostat;
 
+            if (_lottoTickets != null)
+                foreach (var ticket in _lottoTickets.BuildSnapshots()) yield return ticket;
             foreach (var chunk in _items.BuildItemSnapshotChunks())
                 yield return chunk;
 
@@ -192,19 +207,10 @@ namespace WinterMP.Core.Sync
             foreach (var chunk in _fsm.BuildPartSnapshotChunks())
                 yield return chunk;
 
-            var despawns = new WorldItemDespawnSnapshot();
-            foreach (uint itemId in _items.SessionDespawnedIds)
-            {
-                despawns.ItemIds.Add(itemId);
-                if (despawns.ItemIds.Count >= DespawnSnapshotChunk)
-                {
-                    yield return despawns;
-                    despawns = new WorldItemDespawnSnapshot();
-                }
-            }
+            foreach (var chunk in BuildItemDespawnSnapshots()) yield return chunk;
 
-            if (despawns.ItemIds.Count > 0)
-                yield return despawns;
+            foreach (var package in _items.BuildPackageStates()) yield return package;
+            foreach (var replacement in _items.BuildReplacementPartStates()) yield return replacement;
 
             foreach (var vehicle in _vehicles.BuildJoinVehicleSnapshots())
                 yield return vehicle;
@@ -250,6 +256,22 @@ namespace WinterMP.Core.Sync
             var worldScalars = _worldScalars.BuildSnapshot();
             if (worldScalars != null)
                 yield return worldScalars;
+
+            var venttiProperty = _ventti.BuildPropertySnapshot();
+            if (venttiProperty != null)
+                yield return venttiProperty;
+
+            var venttiGame = _ventti.BuildGameSnapshot();
+            if (venttiGame != null) yield return venttiGame;
+            var venttiScene = _ventti.BuildSceneSnapshot();
+            if (venttiScene != null) yield return venttiScene;
+
+            var venttiTable = _ventti.BuildTableSnapshot();
+            if (venttiTable != null)
+                yield return venttiTable;
+
+            var lotto = _lottery.BuildSnapshot();
+            if (lotto != null) yield return lotto;
 
             var hockey = _hockey.BuildSnapshot();
             if (hockey != null)
@@ -321,6 +343,23 @@ namespace WinterMP.Core.Sync
             var iceRaceResults = _iceRaceResults.BuildSnapshot();
             if (iceRaceResults != null)
                 yield return iceRaceResults;
+        }
+
+        private IEnumerable<WorldItemDespawnSnapshot> BuildItemDespawnSnapshots()
+        {
+            var despawns = new WorldItemDespawnSnapshot();
+            foreach (uint itemId in _items.SessionDespawnedIds)
+            {
+                despawns.ItemIds.Add(itemId);
+                if (despawns.ItemIds.Count >= DespawnSnapshotChunk)
+                {
+                    yield return despawns;
+                    despawns = new WorldItemDespawnSnapshot();
+                }
+            }
+
+            if (despawns.ItemIds.Count > 0)
+                yield return despawns;
         }
     }
 }

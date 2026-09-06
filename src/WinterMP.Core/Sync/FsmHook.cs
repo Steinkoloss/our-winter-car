@@ -24,6 +24,7 @@ namespace WinterMP.Core.Sync
 
         public override void OnEnter()
         {
+            if (!Enabled) { Finish(); return; }
             try
             {
                 _callback();
@@ -48,6 +49,12 @@ namespace WinterMP.Core.Sync
         /// <summary>Invoke <paramref name="callback"/> whenever <paramref name="stateName"/> is entered.</summary>
         public static bool OnStateEnter(PlayMakerFSM fsm, string stateName, Action callback)
         {
+            return OnStateEnter(fsm, stateName, callback, out _);
+        }
+
+        internal static bool OnStateEnter(PlayMakerFSM fsm, string stateName, Action callback, out FsmStateAction? hook)
+        {
+            hook = null;
             var state = FindState(fsm, stateName);
             if (state == null) return false;
 
@@ -62,13 +69,15 @@ namespace WinterMP.Core.Sync
                 // sync, vehicles included).
                 var actions = state.Actions ?? new FsmStateAction[0];
                 var expanded = new FsmStateAction[actions.Length + 1];
-                expanded[0] = new FsmHookAction(callback);
+                hook = new FsmHookAction(callback);
+                expanded[0] = hook;
                 Array.Copy(actions, 0, expanded, 1, actions.Length);
                 state.Actions = expanded;
                 return true;
             }
             catch (Exception e)
             {
+                hook = null;
                 WinterMPPlugin.Log.LogDebug(
                     $"FsmHook: state '{stateName}' on '{fsm.FsmName}' not ready to hook: {e.Message}");
                 return false;

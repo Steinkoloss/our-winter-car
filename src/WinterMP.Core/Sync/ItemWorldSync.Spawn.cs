@@ -26,17 +26,16 @@ namespace WinterMP.Core.Sync
         //   COVERED (bag "Spawn one/all" capture flow above):
         //     BagContentsStore, BagContentsFleetari, CreateBagStore, CreateBagFleetari,
         //     CreateItems, CreateItemsSeparate.
+        //   COVERED (native factory identity, ItemWorldSync.Factories.cs, v106):
+        //     CreateTrophiesAmateur/Icerace/Junior/RallyAMA/RallyJR (15 factories).
         //   EXCLUDED — SPAWNITEM-event spawners (CreateMooseMeat, CreatePartsPackages,
-        //     CreateSprayCans, CreateTrophiesAmateur/Icerace/Junior/RallyAMA/RallyJR).
+        //     CreateSprayCans).
         //     These fire a SPAWNITEM action on a game event (chop moose, buy part, win race)
         //     rather than pouring near an opened container, so the bag capture window does
-        //     not apply. They spawn host-authoritatively (the triggering purchase/race is
-        //     already host-routed), and a LATE JOINER receives them via the join item
-        //     snapshot once ItemWorldSync scans them as pickables. Real-time materialization
-        //     on already-connected peers needs a dedicated SPAWNITEM->ItemSpawn hook and is
-        //     deliberately deferred: the capture flow is fragile (see the v29-v31 note above)
-        //     and each spawner's timing needs a 2-player check before enabling. Tracked as
-        //     the residual of 7.1 (moose meat) / 5.2 (rally parts).
+        //     not apply. Item pose snapshots cannot create missing bodies, including
+        //     for late joiners. These factories still need native identity, contents /
+        //     condition and save/deletion adapters, plus their gameplay authority paths.
+        //     Tracked as the residual of 7.1 (moose meat) / 5.2 (rally parts).
 
         /// <summary>How far from the container's transform a fresh clone may appear.</summary>
         private const float SpawnCaptureRadius = 6f;
@@ -80,9 +79,6 @@ namespace WinterMP.Core.Sync
         private const float SpawnAdoptRadius = 3f;
 
         private readonly List<PendingSpawn> _pendingSpawns = new List<PendingSpawn>();
-        // (containerId, epoch) already materialized — guards against a re-delivered
-        // manifest (join resend, reliable retransmit) double-spawning.
-        private readonly HashSet<long> _handledSpawns = new HashSet<long>();
         // Host: manifests it minted this session, re-sent (live-refreshed) with the join
         // snapshot so late joiners get already-spilled contents. See BuildSpawnReplayManifests.
         private readonly Dictionary<long, ItemSpawn> _hostSpawnManifests = new Dictionary<long, ItemSpawn>();
@@ -115,7 +111,6 @@ namespace WinterMP.Core.Sync
         internal void StartHostSpawnCapture(uint containerId, string stateName, Vector3 near)
         {
             ushort epoch = MintSpawnEpoch(containerId);
-            _handledSpawns.Add(SpawnKey(containerId, epoch));
             _pendingSpawns.Add(new PendingSpawn
             {
                 ContainerId = containerId,
@@ -222,7 +217,6 @@ namespace WinterMP.Core.Sync
             }
 
             ushort epoch = MintSpawnEpoch(intent.ContainerNetId);
-            _handledSpawns.Add(SpawnKey(intent.ContainerNetId, epoch));
             WinterMPPlugin.Log.LogInfo(
                 $"WorldSync: spawn offer from player {intent.PlayerId}: {intent.ContainerNetId:X8} '{intent.StateName}', {intent.Items.Count} item(s) — minting #{epoch}.");
             Util.BootTrace.Crumb(
@@ -276,11 +270,11 @@ namespace WinterMP.Core.Sync
         /// <summary>Guest: a spawn manifest arrived; bind our own offered clones, or materialize.</summary>
         internal void StartGuestSpawnBind(ItemSpawn message)
         {
-            long key = SpawnKey(message.ContainerNetId, message.Epoch);
-            if (!_handledSpawns.Add(key))
+            if (message.IsFactory && !ValidateTrophyManifest(message)) return;
+            if (!_spawnLifecycle.AcceptManifest(message))
             {
                 WinterMPPlugin.Log.LogDebug(
-                    $"WorldSync: duplicate spawn manifest {message.ContainerNetId:X8} #{message.Epoch} ignored.");
+                    $"WorldSync: duplicate or invalid spawn manifest {message.ContainerNetId:X8} #{message.Epoch} ignored.");
                 return;
             }
 
@@ -295,10 +289,22 @@ namespace WinterMP.Core.Sync
             for (int i = 0; i < message.Items.Count; i++)
                 _snapshotSeenIds.Add(message.Items[i].NetId);
 
+            if (message.IsFactory) { QueueTrophyManifest(message); return; }
+
             var session = SessionManager.Instance;
             if (session != null && !message.IsReplay
                 && message.OwnerPlayerId == session.LocalPlayerId && TryBindOfferManifest(message))
                 return;
+
+            // Repeated resyncs refresh one pending job without postponing it forever.
+            foreach (var pending in _pendingSpawns)
+            {
+                if (pending.IsHost || pending.IsOffer || pending.ContainerId != message.ContainerNetId || pending.Epoch != message.Epoch) continue;
+                pending.Descriptors = new List<ItemSpawn.Entry>(message.Items);
+                pending.IsReplay |= message.IsReplay;
+                pending.HostOwnerId = message.OwnerPlayerId;
+                return;
+            }
 
             // Someone else's spill (or our own offer already timed out): nothing to
             // gather locally — materialize each entry. Processing happens on the next
@@ -312,7 +318,7 @@ namespace WinterMP.Core.Sync
                 Epoch = message.Epoch,
                 StateName = message.StateName,
                 HostOwnerId = message.OwnerPlayerId,
-                Descriptors = message.Items,
+                Descriptors = new List<ItemSpawn.Entry>(message.Items),
                 IsReplay = message.IsReplay,
                 HardDeadline = Time.unscaledTime + (message.IsReplay ? SpawnCaptureHardSeconds : 0f),
                 StableSince = Time.unscaledTime,
@@ -363,6 +369,11 @@ namespace WinterMP.Core.Sync
                     if (body.gameObject.name != entry.TemplateName) continue;
 
                     used[c] = true;
+                    if (_spawnLifecycle.IsRetired(entry.NetId))
+                    {
+                        _trackedBodies.Remove(body); UnityEngine.Object.Destroy(body.gameObject);
+                        break;
+                    }
                     BindOfferedBodyAsOwner(body, entry.NetId, now);
                     bound++;
                     break;
@@ -405,6 +416,12 @@ namespace WinterMP.Core.Sync
 
         internal void ProcessPendingSpawns(SessionManager session)
         {
+            ProcessPackageRemovals();
+            ProcessPackages(session);
+            ProcessReplacementParts(session);
+            ProcessPackageOpening(session);
+            ProcessPartFitting(session);
+            ProcessTrophySpawns(session);
             if (_pendingSpawns.Count == 0) return;
             float now = Time.unscaledTime;
 
@@ -545,6 +562,7 @@ namespace WinterMP.Core.Sync
                 try
                 {
                     if (!body.gameObject.activeInHierarchy) continue;
+                    if (FindPackageUse(body) != null || NativePartIdentity.FindData(body.transform) != null) continue;
                     if (!SyncCatalog.IsPickableRigidbody(body)) continue;
                     if ((body.transform.position - pending.Near).sqrMagnitude > radiusSqr) continue;
 
@@ -627,6 +645,7 @@ namespace WinterMP.Core.Sync
         /// </summary>
         internal IEnumerable<ItemSpawn> BuildSpawnReplayManifests()
         {
+            foreach (var factory in BuildTrophyReplayManifests()) yield return factory;
             List<long>? dead = null;
 
             foreach (var pair in _hostSpawnManifests)
@@ -644,13 +663,10 @@ namespace WinterMP.Core.Sync
                 for (int i = 0; i < stored.Items.Count; i++)
                 {
                     var entry = stored.Items[i];
-                    if (!_items.TryGetValue(entry.NetId, out var live)) continue;
+                    if (_spawnLifecycle.IsRetired(entry.NetId) || !_items.TryGetValue(entry.NetId, out var live) || live.Body == null) continue;
 
-                    if (live.Body != null)
-                    {
-                        entry.Position = live.Body.transform.position.ToNet();
-                        entry.Rotation = live.Body.transform.rotation.ToNet();
-                    }
+                    entry.Position = live.Body.transform.position.ToNet();
+                    entry.Rotation = live.Body.transform.rotation.ToNet();
                     replay.Items.Add(entry);
                 }
 
@@ -707,11 +723,15 @@ namespace WinterMP.Core.Sync
 
         private bool MaterializeSpawnEntry(ItemSpawn.Entry entry, byte ownerId, float now, bool allowSteal)
         {
-            if (_items.ContainsKey(entry.NetId)) return false;
+            bool exists = _items.TryGetValue(entry.NetId, out var existing);
+            if (!_spawnLifecycle.ShouldMaterialize(entry.NetId, exists && existing!.Body != null)) return false;
+            if (exists) RemoveTrackedItem(entry.NetId, existing!.Body);
 
             try
             {
                 Vector3 pos = entry.Position.ToUnity();
+                if (!IsFinite(pos) || !TryNormalize(entry.Rotation.ToUnity(), out var rotation)) return false;
+                entry.Rotation = rotation.ToNet();
 
                 var adopted = FindSpawnBodyByName(entry.TemplateName, pos, SpawnAdoptRadius, untrackedOnly: true);
                 if (adopted != null)
@@ -792,6 +812,7 @@ namespace WinterMP.Core.Sync
             {
                 var item = pair.Value;
                 if (item.IsVehicle || item.Body == null) continue;
+                if (FindPackageUse(item.Body) != null || NativePartIdentity.FindData(item.Body.transform) != null) continue;
                 if (_snapshotSeenIds.Contains(pair.Key)) continue;
                 if (item.Body.gameObject.name != entry.TemplateName) continue;
                 if ((item.Body.transform.position - near).sqrMagnitude > radiusSqr) continue;
@@ -850,6 +871,7 @@ namespace WinterMP.Core.Sync
                     }
 
                     bool tracked = _trackedBodies.ContainsKey(body);
+                    if (FindPackageUse(body) != null || NativePartIdentity.FindData(body.transform) != null) continue;
                     if (untrackedOnly && tracked) continue;
                     if (!SyncCatalog.IsPickableRigidbody(body)) continue;
 

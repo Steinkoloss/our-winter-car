@@ -1,9 +1,9 @@
 namespace WinterMP.Net.Messages
 {
     /// <summary>
-    /// Host -> guests: legacy Ventti display state. Guest resolvers stay suppressed;
-    /// property transfers and inactive-host play remain incomplete (coverage R2.11–13).
-    /// Slot use of this layout is retired in v92; see SlotMachineState.
+    /// Retired layout: slots moved to SlotMachineState in v92 and Ventti observations
+    /// to VenttiTableState in v98. Kept decodable for diagnostics; no current sender
+    /// or game-state handler uses message 93. Its id and fields must never be reused.
     /// </summary>
     public sealed class GamblingState : IMessage
     {
@@ -13,22 +13,22 @@ namespace WinterMP.Net.Messages
         public const byte FlagReel1Locked = 1;
         public const byte FlagReel2Locked = 2;
         public const byte FlagReel3Locked = 4;
-        /// <summary>A Ventti hand is live.</summary>
+        /// <summary>Retired active flag (legacy Ventti actually sent its car-wager flag).</summary>
         public const byte FlagActive = 8;
 
         /// <summary>Stable scene-path hash of the device container (see PLAN §4.1).</summary>
         public uint MachineId;
         public byte Kind;
         public byte Flags;
-        /// <summary>Ventti stake; currently clamped to a byte before assignment (R2.13).</summary>
+        /// <summary>Retired credit/stake field; legacy Ventti truncated it to a byte.</summary>
         public float Credit;
-        /// <summary>Ventti stake clamped to a byte.</summary>
+        /// <summary>Retired byte stake.</summary>
         public byte Bet;
         /// <summary>Ventti player hand total.</summary>
         public byte V1;
         /// <summary>Ventti house hand total.</summary>
         public byte V2;
-        /// <summary>Reserved Ventti outcome; currently always zero.</summary>
+        /// <summary>Retired reserved outcome; legacy senders always wrote zero.</summary>
         public byte V3;
         /// <summary>Last resolved winnings, mk (negative for a net loss on a resolved hand).</summary>
         public int Payout;
@@ -63,8 +63,7 @@ namespace WinterMP.Net.Messages
     }
 
     /// <summary>
-    /// Guest -> host: legacy Ventti controls. Validated intents replay a host FSM;
-    /// inactive table settlement remains R2.12. Slots use SlotMachineIntent in v92.
+    /// Retired in v99; retained for diagnostics only. Slots use 165, Ventti uses 176.
     /// </summary>
     public sealed class GamblingIntent : IMessage
     {
@@ -76,7 +75,7 @@ namespace WinterMP.Net.Messages
         public const byte ActionLock2 = 4;
         public const byte ActionLock3 = 5;
         public const byte ActionCashout = 6;
-        // Ventti table actions (reuse the same wire; see VenttiSync).
+        // Retired Ventti actions; these numbers remain reserved.
         public const byte ActionVenttiBet = 7;
         public const byte ActionVenttiDeal = 8;
         public const byte ActionVenttiHit = 9;

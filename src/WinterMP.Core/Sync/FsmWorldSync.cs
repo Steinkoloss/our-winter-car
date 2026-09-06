@@ -33,6 +33,7 @@ namespace WinterMP.Core.Sync
         private readonly List<PendingFsmApply> _pending = new List<PendingFsmApply>();
         private readonly Dictionary<uint, PendingBoltState> _pendingBoltStates = new Dictionary<uint, PendingBoltState>();
         private readonly Dictionary<uint, PendingPartState> _pendingPartStates = new Dictionary<uint, PendingPartState>();
+        private readonly Dictionary<uint, WinterMP.Net.Messages.PartState> _hostPartReports = new Dictionary<uint, WinterMP.Net.Messages.PartState>();
         private readonly Dictionary<uint, PendingRadiatorThermostatState> _pendingRadiatorThermostatStates = new Dictionary<uint, PendingRadiatorThermostatState>();
         private readonly List<PendingPurchaseIntent> _pendingPurchaseIntents = new List<PendingPurchaseIntent>();
         private readonly Dictionary<byte, ushort> _lastGuestPurchaseSequences = new Dictionary<byte, ushort>();
@@ -88,28 +89,14 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        internal bool TryGetPartSnapshot(uint netId, out byte flags, out byte tightness, out byte wear)
+        internal WinterMP.Net.Messages.PartState? BuildPartState(uint netId)
         {
-            if (_parts.TryGetValue(netId, out var part) && ShouldIncludePartSnapshot(part, out flags, out tightness, out wear))
-                return true;
-            flags = tightness = wear = 0;
-            return false;
-        }
-
-        internal bool TryGetBoltSnapshot(uint netId, out ushort boltTightness, out ushort screwInt)
-        {
-            if (_bolts.TryGetValue(netId, out var bolt))
-            {
-                ReadBoltVars(bolt, out boltTightness, out screwInt);
-                if (boltTightness != 0 || screwInt != 0)
-                    return true;
-            }
-            boltTightness = screwInt = 0;
-            return false;
+            return _parts.TryGetValue(netId, out var part) ? ReadPartState(netId, part) : null;
         }
 
         public void Clear()
         {
+            ClearFsmHooks();
             _doors.Clear();
             _spawnContainers.Clear();
             _parts.Clear();
@@ -120,7 +107,10 @@ namespace WinterMP.Core.Sync
             _starters.Clear();
             _pending.Clear();
             _pendingBoltStates.Clear();
+            _hostBoltReports.Clear();
+            _partTightnessReceipts.Clear(); _partReceiptOrder = 0;
             _pendingPartStates.Clear();
+            _hostPartReports.Clear();
             _pendingRadiatorThermostatStates.Clear();
             _pendingPurchaseIntents.Clear();
             _lastGuestPurchaseSequences.Clear();

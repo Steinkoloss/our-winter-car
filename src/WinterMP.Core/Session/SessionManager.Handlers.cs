@@ -55,6 +55,7 @@ namespace WinterMP.Core.Session
             // sync state clears on scene/menu transitions), while our per-player dedup
             // latches would survive — dropping every report from the returning player as
             // "stale" until it out-counted its previous life. Reset them for this slot.
+            _passengerSeats.ForgetPlayer(player.PlayerId);
             Sync.WorldSyncManager.Instance?.OnPlayerAdmitted(player.PlayerId);
 
             SendAcceptedHandshake(peer, player.PlayerId);
@@ -135,7 +136,7 @@ namespace WinterMP.Core.Session
                 messages++;
             }
 
-            foreach (var occupancy in _passengerOccupancy.Values)
+            foreach (var occupancy in _passengerSeats.Occupants)
             {
                 SendTo(peer, occupancy, Channel.ReliableOrdered);
                 messages++;
@@ -459,77 +460,48 @@ namespace WinterMP.Core.Session
             return rotationLengthSquared >= 0.25f && rotationLengthSquared <= 2.25f;
         }
 
-        /// <summary>Host boundary for a guest's cosmetic passenger-seat claim. The
-        /// player identity/sequence, fresh pose, exact registered seat, and existing
-        /// occupancy are all checked before any avatar or snapshot state changes.</summary>
-        private bool TryAcceptGuestPassengerState(PeerId peer, PassengerState state)
+        private void HandleGuestPassengerState(PeerId peer, PassengerState request)
         {
-            if (!_playersByPeer.TryGetValue(peer, out var player) || player.PlayerId != state.PlayerId)
-                return false;
+            var decision = _passengerSeats.Apply(request, ValidatePassengerSeat);
+            if (decision == null) return;
 
-            if (player.HasPassengerState)
+            if (decision.Evicted != null)
             {
-                ushort difference = (ushort)(state.Sequence - player.LastPassengerSequence);
-                if (difference == 0 || difference > short.MaxValue) return false;
-            }
-
-            var passengers = Sync.PassengerController.Instance;
-            if (passengers == null || !passengers.TryValidateGuestPassengerState(state, player))
-                return false;
-
-            if (state.IsSeated && !TryResolvePassengerSeatClaim(state))
-                return false;
-
-            player.LastPassengerSequence = state.Sequence;
-            player.HasPassengerState = true;
-            return true;
-        }
-
-        /// <summary>Seat races are settled by player id on the host, not packet arrival
-        /// order. A higher-id claimant is rejected (and corrected by the caller); a lower-id
-        /// claimant evicts the higher-id occupant, which is then explicitly freed with a
-        /// self-addressed SeatNone so it exits at once instead of rendering two avatars in
-        /// one seat until its next ~8 s keepalive is rejected.</summary>
-        private bool TryResolvePassengerSeatClaim(PassengerState state)
-        {
-            byte occupantId = 0;
-            bool occupied = false;
-            foreach (var occupancy in _passengerOccupancy)
-            {
-                if (occupancy.Key != state.PlayerId && occupancy.Value.IsSeated
-                    && occupancy.Value.VehicleId == state.VehicleId
-                    && occupancy.Value.SeatIndex == state.SeatIndex)
+                foreach (var pair in _playersByPeer)
                 {
-                    occupantId = occupancy.Key;
-                    occupied = true;
+                    if (pair.Value.PlayerId != decision.Evicted.PlayerId) continue;
+                    SendTo(pair.Key, decision.Evicted, Channel.ReliableOrdered);
                     break;
                 }
             }
 
-            if (!occupied) return true;
-            if (occupantId < state.PlayerId) return false;
+            if (!decision.Accepted)
+            {
+                WinterMPPlugin.Log.LogWarning(
+                    $"Passenger: rejected claim from player {request.PlayerId}, vehicle {request.VehicleId:X8}, " +
+                    $"seat {request.SeatIndex}, seq {request.Sequence}; cleared occupancy for all peers.");
+                Diagnostics.SyncEventLog.Record("passenger", $"reject player {request.PlayerId} seq {request.Sequence}");
+            }
 
-            _passengerOccupancy.Remove(occupantId);
-            SendSelfSeatNoneCorrection(occupantId);
-            return true;
+            Sync.PassengerController.Instance?.OnRemotePassengerState(decision.State);
+            // A rejection changes canonical occupancy as well as the claimant's local
+            // state. Observers and join snapshots must not retain a ghost passenger.
+            if (decision.Accepted)
+                Broadcast(decision.State, Channel.ReliableOrdered, except: peer);
+            else
+                Broadcast(decision.State, Channel.ReliableOrdered);
         }
 
-        /// <summary>Tell one player the host has taken it out of its seat. Mirrors the
-        /// rejection correction; PassengerController treats a self-addressed SeatNone as an
-        /// explicit host order to exit (only acts if still locally seated).</summary>
-        private void SendSelfSeatNoneCorrection(byte playerId)
+        private bool ValidatePassengerSeat(PassengerState state, bool continuing)
         {
-            foreach (var pair in _playersByPeer)
+            var passengers = Sync.PassengerController.Instance;
+            if (passengers == null) return false;
+            foreach (var player in _playersByPeer.Values)
             {
-                if (pair.Value.PlayerId != playerId) continue;
-                SendTo(pair.Key, new PassengerState
-                {
-                    PlayerId = playerId,
-                    VehicleId = 0,
-                    SeatIndex = PassengerState.SeatNone,
-                }, Channel.ReliableOrdered);
-                return;
+                if (player.PlayerId == state.PlayerId)
+                    return passengers.TryValidateGuestPassengerState(state, player, continuing);
             }
+            return false;
         }
 
         /// <summary>Guest-originated owner fields must match the authenticated peer.</summary>

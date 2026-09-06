@@ -5,8 +5,8 @@
 (Windows: double-click; Linux: `sh ./OurWinterCar-Installer.com`). Windows-only
 `OurWinterCar-Setup.exe` and the Linux AppImage are also available.
 
-**Tester release 0.1.31:** targets My Winter Car **v.260516-01 / build 23268598**,
-protocol **94**. Read the [tester guide](docs/TESTING.md) and
+**[Tester release 0.1.32](https://github.com/Steinkoloss/our-winter-car/releases/tag/v0.1.32):** targets My Winter Car **v.260516-01 / build 23268598**,
+protocol **118**. Read the [tester guide](docs/TESTING.md) and
 [release notes](docs/RELEASE-NOTES.md). Two-player gameplay validation is still pending.
 
 Full co-op conversion of [My Winter Car](https://store.steampowered.com/app/4164420/My_Winter_Car/):

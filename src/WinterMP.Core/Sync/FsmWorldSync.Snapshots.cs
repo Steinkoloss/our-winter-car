@@ -4,6 +4,7 @@ using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
@@ -70,7 +71,7 @@ namespace WinterMP.Core.Sync
             foreach (var pair in _parts)
             {
                 var part = pair.Value;
-                if (part.LastSyncedState == null) continue;
+                if (part.LastSyncedState == null || IsDerivedPartState(part.LastSyncedState)) continue;
 
                 doors.Entries.Add(new WorldDoorSnapshot.Entry { NetId = pair.Key, StateName = part.LastSyncedState });
                 if (doors.Entries.Count >= DoorSnapshotChunk)
@@ -129,15 +130,9 @@ namespace WinterMP.Core.Sync
             var bolts = new WorldBoltSnapshot();
             foreach (var pair in _bolts)
             {
-                ReadBoltVars(pair.Value, out ushort tightness, out ushort screwInt);
-                if (tightness == 0 && screwInt == 0) continue;
-
-                bolts.Entries.Add(new WorldBoltSnapshot.Entry
-                {
-                    NetId = pair.Key,
-                    BoltTightness = tightness,
-                    ScrewInt = screwInt,
-                });
+                var state = BuildBoltState(pair.Key);
+                if (state == null) continue;
+                bolts.Entries.Add(BoltStatePolicy.SnapshotEntry(state));
                 if (bolts.Entries.Count >= BoltSnapshotChunk)
                 {
                     yield return bolts;
@@ -154,16 +149,10 @@ namespace WinterMP.Core.Sync
             var parts = new WorldPartSnapshot();
             foreach (var pair in _parts)
             {
-                if (!ShouldIncludePartSnapshot(pair.Value, out byte flags, out byte tightness, out byte wear))
-                    continue;
-
-                parts.Entries.Add(new WorldPartSnapshot.Entry
-                {
-                    NetId = pair.Key,
-                    Flags = flags,
-                    Tightness = tightness,
-                    Wear = wear,
-                });
+                var state = ReadPartState(pair.Key, pair.Value);
+                if (state == null) continue;
+                // Zero wear/tightness and an uninstalled flag also clear stale guest state.
+                parts.Entries.Add(PartStatePolicy.SnapshotEntry(state));
                 if (parts.Entries.Count >= PartSnapshotChunk)
                 {
                     yield return parts;
@@ -273,17 +262,24 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteBoltSnapshot(WorldBoltSnapshot message)
         {
+            if (!BoltStatePolicy.Valid(message)) return;
             int applied = 0, parked = 0;
             foreach (var entry in message.Entries)
             {
-                if (ApplyBoltState(entry.NetId, entry.BoltTightness, entry.ScrewInt))
+                ulong order = ++_partReceiptOrder;
+                if (ApplyBoltState(entry.NetId, entry.BoltTightness, entry.ScrewInt, entry.PartTightness, order))
+                {
+                    _pendingBoltStates.Remove(entry.NetId);
                     applied++;
+                }
                 else
                 {
                     _pendingBoltStates[entry.NetId] = new PendingBoltState
                     {
                         BoltTightness = entry.BoltTightness,
                         ScrewInt = entry.ScrewInt,
+                        PartTightness = entry.PartTightness,
+                        ReceiptOrder = order,
                         ExpiresAt = Time.unscaledTime + SnapshotPoseTtlSeconds,
                     };
                     parked++;
@@ -295,30 +291,38 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteBoltState(BoltState message)
         {
-            if (!ApplyBoltState(message.NetId, message.BoltTightness, message.ScrewInt))
-                QueuePendingBolt(message.NetId, message.BoltTightness, message.ScrewInt);
+            if (!BoltStatePolicy.Valid(message)) return;
+            ulong order = ++_partReceiptOrder;
+            if (!ApplyBoltState(message.NetId, message.BoltTightness, message.ScrewInt, message.PartTightness, order))
+                QueuePendingBolt(message.NetId, message.BoltTightness, message.ScrewInt, message.PartTightness, order);
+            else _pendingBoltStates.Remove(message.NetId);
         }
 
         public void OnRemotePartState(PartState message)
         {
-            if (!ApplyPartState(message.NetId, message.Flags, message.Tightness, message.Wear))
-                QueuePendingPart(message.NetId, message.Flags, message.Tightness, message.Wear);
+            if (!PartStatePolicy.Valid(message)) return;
+            ulong order = ++_partReceiptOrder;
+            if (!ApplyPartState(message.NetId, message.Flags, message.TightnessValue, message.WearValue, order))
+                QueuePendingPart(message.NetId, message.Flags, message.TightnessValue, message.WearValue, order);
         }
 
         public void OnRemotePartSnapshot(WorldPartSnapshot message)
         {
+            if (!PartStatePolicy.Valid(message)) return;
             int applied = 0, parked = 0;
             foreach (var entry in message.Entries)
             {
-                if (ApplyPartState(entry.NetId, entry.Flags, entry.Tightness, entry.Wear))
+                ulong order = ++_partReceiptOrder;
+                if (ApplyPartState(entry.NetId, entry.Flags, entry.TightnessValue, entry.WearValue, order))
                     applied++;
                 else
                 {
                     _pendingPartStates[entry.NetId] = new PendingPartState
                     {
                         Flags = entry.Flags,
-                        Tightness = entry.Tightness,
-                        Wear = entry.Wear,
+                        Tightness = entry.TightnessValue,
+                        Wear = entry.WearValue,
+                        ReceiptOrder = order,
                         ExpiresAt = Time.unscaledTime + SnapshotPoseTtlSeconds,
                     };
                     parked++;
@@ -328,83 +332,61 @@ namespace WinterMP.Core.Sync
             WinterMPPlugin.Log.LogInfo($"WorldSync: part snapshot — {message.Entries.Count} entries, {applied} applied, {parked} parked.");
         }
 
-        private void QueuePendingPart(uint netId, byte flags, byte tightness, byte wear)
+        private void QueuePendingPart(uint netId, byte flags, float tightness, float wear, ulong order)
         {
             _pendingPartStates[netId] = new PendingPartState
             {
                 Flags = flags,
                 Tightness = tightness,
                 Wear = wear,
+                ReceiptOrder = order,
                 ExpiresAt = Time.unscaledTime + SnapshotPoseTtlSeconds,
             };
         }
 
-        private bool ApplyPartState(uint netId, byte flags, byte tightness, byte wear)
+        private bool ApplyPartState(uint netId, byte flags, float tightness, float wear, ulong order)
         {
+            if (!PartStatePolicy.Valid(flags, tightness, wear)) return false;
             if (!_parts.TryGetValue(netId, out var part) || part.Fsm == null) return false;
-            if (!part.Fsm.gameObject.activeInHierarchy || !part.Fsm.enabled) return false;
+            if (!part.Fsm.Fsm.Initialized || !part.Fsm.Fsm.Started
+                || !part.Fsm.gameObject.activeInHierarchy || !part.Fsm.enabled) return false;
 
             WinterMPPlugin.Log.LogInfo(
                 $"WorldSync: part {netId:X8} -> installed={((flags & PartState.FlagInstalled) != 0)} tightness={tightness} wear={wear} (remote).");
+            tightness = ResolvePartTightness(part.Fsm, order, tightness);
+            bool applying = _bridge.ApplyingRemote;
             _bridge.ApplyingRemote = true;
             try
             {
                 if (part.InstalledVar != null)
                     part.InstalledVar.Value = (flags & PartState.FlagInstalled) != 0;
                 if (part.TightnessVar != null)
-                    part.TightnessVar.Value = DecodeUnitFloat(tightness);
+                    part.TightnessVar.Value = tightness;
                 if (part.WearVar != null)
-                    part.WearVar.Value = DecodeUnitFloat(wear);
+                    part.WearVar.Value = wear;
+                if (NativePartIdentity.Phase(part.Fsm) == NativePartPhase.Fitted && HasFsmEvent(part.Fsm, "BOLTING"))
+                    part.Fsm.SendEvent("BOLTING");
             }
             finally
             {
-                _bridge.ApplyingRemote = false;
+                _bridge.ApplyingRemote = applying;
             }
 
+            _pendingPartStates.Remove(netId);
             return true;
         }
 
-        private void QueuePendingBolt(uint netId, ushort tightness, ushort screwInt)
+        private void QueuePendingBolt(uint netId, ushort tightness, ushort screwInt, float partTightness, ulong order)
         {
             _pendingBoltStates[netId] = new PendingBoltState
             {
                 BoltTightness = tightness,
                 ScrewInt = screwInt,
+                PartTightness = partTightness,
+                ReceiptOrder = order,
                 ExpiresAt = Time.unscaledTime + SnapshotPoseTtlSeconds,
             };
         }
-
-        private bool ApplyBoltState(uint netId, ushort tightness, ushort screwInt)
-        {
-            if (!_bolts.TryGetValue(netId, out var bolt) || bolt.Fsm == null) return false;
-            if (!bolt.Fsm.gameObject.activeInHierarchy || !bolt.Fsm.enabled) return false;
-
-            // Already at this tightness — skip the var writes and the "Set pos" re-entry, which would
-            // replay the wrench animation/sound and churn the FSM on every redundant snapshot/resync.
-            ReadBoltVars(bolt, out ushort curTightness, out ushort curScrew);
-            if (curTightness == tightness && curScrew == screwInt)
-                return true;
-
-            WinterMPPlugin.Log.LogInfo($"WorldSync: bolt {netId:X8} -> tightness={tightness} screw={screwInt} (remote).");
-            _bridge.ApplyingRemote = true;
-            try
-            {
-                if (bolt.BoltTightnessVar != null) bolt.BoltTightnessVar.Value = tightness;
-                if (bolt.ScrewIntVar != null) bolt.ScrewIntVar.Value = screwInt;
-                if (bolt.TightnessFVar != null) bolt.TightnessFVar.Value = tightness;
-                if (bolt.ScrewFloatVar != null) bolt.ScrewFloatVar.Value = screwInt;
-
-                if (FsmHook.EnsureRemoteEntry(bolt.Fsm, "Set pos"))
-                    FsmHook.FireRemoteEntry(bolt.Fsm, "Set pos");
-            }
-            finally
-            {
-                _bridge.ApplyingRemote = false;
-            }
-
-            return true;
-        }
-
 
     }
 }

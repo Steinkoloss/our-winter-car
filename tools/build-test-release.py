@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
+import unittest
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -106,7 +106,7 @@ def main():
     work = ROOT / 'build/test-release' / ('v' + version)
     output = ROOT / 'dist' / ('test-v' + version)
     publish = {rid: work / 'publish' / rid for rid in ('win-x64', 'linux-x64')}
-    reports = ROOT / 'build/test-results'
+    reports = work / 'test-results'
     output.mkdir(parents=True, exist_ok=True)
     if not args.skip_build:
         for name in ('WinterMP.Net', 'WinterMP.Core', 'WinterMP.Tools', 'WinterMP.FastBoot'):
@@ -130,7 +130,10 @@ def main():
                 for package in framework.get(key, []):
                     if package.get('vulnerabilities'):
                         raise ValueError('Resolve reported package vulnerabilities before shipping: ' + package['id'])
-    run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tools/tests'])
+    evidence_tests = unittest.TextTestRunner(verbosity=1).run(
+        unittest.defaultTestLoader.discover(str(ROOT / 'tools/tests')))
+    if not evidence_tests.wasSuccessful() or evidence_tests.testsRun == 0 or evidence_tests.skipped:
+        raise ValueError('Release evidence-tool tests did not all pass')
     manifests = {}
     for rid, directory in publish.items():
         if not args.skip_build:
@@ -201,15 +204,13 @@ def main():
         'targetGameBuildIds': source_manifest['targetGameBuildIds'],
         'baseCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT).decode().strip(),
         'workingTreeChangesIncluded': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT).strip()),
-        'tests': tests, 'evidenceToolTests': 5,
+        'tests': tests, 'evidenceToolTests': evidence_tests.testsRun,
         'reportedDependencyVulnerabilities': 0,
         'runtime': json.loads((publish['win-x64'] / 'WinterMPLauncher.runtimeconfig.json').read_text())['runtimeOptions'].get('includedFrameworks'),
         'payloadSha256': manifests['win-x64']['payloadSha256'],
         'twoPlayerGameplay': 'pending tester validation',
+        'runtimeSmoke': 'not run for this release',
     }
-    smoke = ROOT / 'build/runtime-smoke/result.json'
-    if smoke.exists():
-        validation['runtimeSmoke'] = json.loads(smoke.read_text())
     (output / 'validation.json').write_text(json.dumps(validation, indent=2) + '\n')
     sums = ''.join(digest(path) + '  ' + path.name + '\n' for path in sorted(output.iterdir())
                    if path.is_file() and path.name != 'SHA256SUMS.txt' and not path.name.endswith(('.dbg', '.elf')))

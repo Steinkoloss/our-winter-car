@@ -11,7 +11,6 @@ namespace WinterMP.Core.Sync
     {
         private const float ConditionProbeIntervalSeconds = 5f;
         private const float ConditionKeepAliveSeconds = 20f;
-        private const float TirePressureScale = 100f;
 
         // Wheel index order used on the wire (FL, FR, RL, RR).
         private static readonly string[] WheelSuffixes = { "FL", "FR", "RL", "RR" };
@@ -97,7 +96,7 @@ namespace WinterMP.Core.Sync
             hfl = 0; hfr = 0; hrl = 0; hrr = 0;
             try
             {
-                pressure = ClampByte((item.TirePressureVar != null ? item.TirePressureVar.Value : 0f) * TirePressureScale);
+                pressure = VehicleConditionPolicy.EncodeTirePressure(item.TirePressureVar != null ? item.TirePressureVar.Value : 0f);
                 drivetrain = (byte)Mathf.Clamp(item.DrivetrainDamageVar != null ? item.DrivetrainDamageVar.Value : 0, 0, 255);
                 if (item.WheelConditionFsms != null && item.WheelHealthVars != null)
                 {
@@ -132,8 +131,26 @@ namespace WinterMP.Core.Sync
         /// </summary>
         internal VehicleCondition? TryBuildConditionSnapshot(SyncedItem item, byte ownerPlayerId)
         {
+            var state = TryReadConditionState(item);
+            if (state != null)
+            {
+                state.OwnerPlayerId = ownerPlayerId;
+                state.Sequence = ++item.OutConditionSequence;
+            }
+            return state;
+        }
+
+        private static VehicleCondition? TryReadConditionState(SyncedItem item)
+        {
             if (!item.IsVehicle || item.Body == null) return null;
-            EnsureConditionProbe(item);
+            try { EnsureConditionProbe(item); }
+            catch (System.Exception e)
+            {
+                // An inactive/missing wheel must not break the world's checksum or
+                // snapshot callback. The probe's timer bounds subsequent bind retries.
+                WinterMPPlugin.Log.LogDebug("VehicleWorldSync: condition probe failed for " + item.Path + ": " + e.Message);
+                return null;
+            }
             if (item.TirePressureVar == null && item.WheelConditionFsms == null) return null;
             if (!TryReadCondition(item, out byte pressure, out byte drivetrain, out byte flags,
                     out byte hfl, out byte hfr, out byte hrl, out byte hrr)) return null;
@@ -141,8 +158,6 @@ namespace WinterMP.Core.Sync
             return new VehicleCondition
             {
                 VehicleId = item.Id,
-                OwnerPlayerId = ownerPlayerId,
-                Sequence = ++item.OutConditionSequence,
                 TirePressure = pressure,
                 DrivetrainDamage = drivetrain,
                 HealthFL = hfl, HealthFR = hfr, HealthRL = hrl, HealthRR = hrr,
@@ -212,7 +227,7 @@ namespace WinterMP.Core.Sync
 
             try
             {
-                if (item.TirePressureVar != null) item.TirePressureVar.Value = message.TirePressure / TirePressureScale;
+                if (item.TirePressureVar != null) item.TirePressureVar.Value = VehicleConditionPolicy.DecodeTirePressure(message.TirePressure);
                 if (item.DrivetrainDamageVar != null) item.DrivetrainDamageVar.Value = message.DrivetrainDamage;
 
                 if (item.WheelConditionFsms != null && item.WheelHealthVars != null)

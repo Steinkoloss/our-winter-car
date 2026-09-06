@@ -289,7 +289,7 @@ namespace WinterMP.Core.Sync
             for (int i = 0; i < entries.Length; i++)
             {
                 if (!_items.TryGetValue(entries[i].ItemId, out var item)
-                    || item.IsVehicle || item.Body == null)
+                    || item.IsVehicle || item.Body == null || !CanSyncItemMotion(item))
                     continue;
 
                 var localPos = entries[i].LocalPosition.ToUnity();
@@ -495,7 +495,7 @@ namespace WinterMP.Core.Sync
         {
             foreach (var item in _items.Values)
             {
-                if (item.RemoteCargoVehicleId == 0 || item.IsVehicle) continue;
+                if (item.RemoteCargoVehicleId == 0 || item.IsVehicle || !CanSyncItemMotion(item)) continue;
                 var body = item.Body;
                 if (body == null) continue;
                 if (!_items.TryGetValue(item.RemoteCargoVehicleId, out var vehicle) || vehicle.Body == null)

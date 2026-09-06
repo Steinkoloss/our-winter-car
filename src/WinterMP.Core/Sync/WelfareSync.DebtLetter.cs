@@ -234,7 +234,7 @@ namespace WinterMP.Core.Sync
             _debtConfig = SyncCatalog.DebtLetter;
             var c = _debtConfig;
             if (c == null || SyncCatalog.Banking == null) return;
-            foreach (var obj in Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM)))
+            foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
                 if (fsm == null) continue;

@@ -131,8 +131,8 @@ namespace WinterMP.Net.Messages
     }
 
     /// <summary>
-    /// Host -> guest: bolt tightness values for every Screw FSM that is not fully
-    /// loose. Guests write the variables and replay Set pos so meshes match the host.
+    /// Host -> guest: every ready fitted bolt, including zero tightness. Guests restore
+    /// its native array entry, parent total and scaled visual pose.
     /// Chunked by the sender.
     /// </summary>
     public sealed class WorldBoltSnapshot : IMessage
@@ -145,6 +145,7 @@ namespace WinterMP.Net.Messages
             public uint NetId;
             public ushort BoltTightness;
             public ushort ScrewInt;
+            public float PartTightness;
         }
 
         public List<Entry> Entries = new List<Entry>();
@@ -163,6 +164,7 @@ namespace WinterMP.Net.Messages
                 writer.WriteUInt16(entry.BoltTightness);
                 writer.WriteUInt16(entry.ScrewInt);
             }
+            foreach (var entry in Entries) writer.WriteSingle(entry.PartTightness);
         }
 
         public void Read(NetReader reader)
@@ -181,12 +183,16 @@ namespace WinterMP.Net.Messages
                     ScrewInt = reader.ReadUInt16(),
                 });
             }
+            for (int i = 0; i < count; i++)
+            {
+                var entry = Entries[i]; entry.PartTightness = reader.ReadSingle(); Entries[i] = entry;
+            }
         }
     }
 
     /// <summary>
-    /// Host -> guest: Installed/Tightness/Wear for every car part that is not in its
-    /// default uninstalled state. Guests write the variables on the part Data FSM.
+    /// Host -> guest: Installed/Tightness/Wear for every readable car part, including
+    /// zero values. Guests write the variables on the part Data FSM.
     /// Chunked by the sender.
     /// </summary>
     public sealed class WorldPartSnapshot : IMessage
@@ -200,6 +206,8 @@ namespace WinterMP.Net.Messages
             public byte Flags;
             public byte Tightness;
             public byte Wear;
+            public float TightnessValue;
+            public float WearValue;
         }
 
         public List<Entry> Entries = new List<Entry>();
@@ -219,6 +227,12 @@ namespace WinterMP.Net.Messages
                 writer.WriteByte(entry.Tightness);
                 writer.WriteByte(entry.Wear);
             }
+            // v107 appends full native scalars after the entire legacy entry block.
+            foreach (var entry in Entries)
+            {
+                writer.WriteSingle(entry.TightnessValue);
+                writer.WriteSingle(entry.WearValue);
+            }
         }
 
         public void Read(NetReader reader)
@@ -237,6 +251,13 @@ namespace WinterMP.Net.Messages
                     Tightness = reader.ReadByte(),
                     Wear = reader.ReadByte(),
                 });
+            }
+            for (int i = 0; i < count; i++)
+            {
+                var entry = Entries[i];
+                entry.TightnessValue = reader.ReadSingle();
+                entry.WearValue = reader.ReadSingle();
+                Entries[i] = entry;
             }
         }
     }

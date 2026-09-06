@@ -457,24 +457,25 @@ namespace WinterMP.Core.Sync
         /// seating is cosmetic locally, but an unchecked request could pin that
         /// guest's remote avatar into any tracked car for every peer.
         /// </summary>
-        public bool TryValidateGuestPassengerState(PassengerState message, RemotePlayer player)
+        public bool TryValidateGuestPassengerState(PassengerState message, RemotePlayer player, bool continuing)
         {
             if (!message.IsSeated)
                 return message.VehicleId == 0;
 
-            if (message.SeatIndex >= 3 || player.LastTransformTime <= 0f
-                || Time.unscaledTime - player.LastTransformTime > GuestPoseFreshSeconds
-                || !IsFinite(player.Position))
+            if (message.SeatIndex >= 3) return false;
+            if (!_vehicles.TryGetValue(message.VehicleId, out var vehicle) || vehicle.Body == null)
             {
-                return false;
+                ScanVehicles(force: true);
+                if (!_vehicles.TryGetValue(message.VehicleId, out vehicle) || vehicle.Body == null)
+                    return false;
             }
 
-            // A just-loaded host may not have completed its periodic scan yet. Resolve
-            // eagerly here; if the exact car is not registered, fail closed and let the
-            // guest's normal seated keepalive retry after the scene becomes ready.
-            ScanVehicles(force: true);
-            if (!_vehicles.TryGetValue(message.VehicleId, out var vehicle) || vehicle.Body == null)
-                return false;
+            // Once the host accepted this exact seat, occupancy is the proof. Comparing
+            // a delayed world-space pose with a moving car every keepalive ejects riders.
+            if (continuing) return true;
+            if (player.LastTransformTime <= 0f
+                || Time.unscaledTime - player.LastTransformTime > GuestPoseFreshSeconds
+                || !IsFinite(player.Position)) return false;
 
             Vector3 seatPosition = vehicle.Body.transform.TransformPoint(vehicle.SeatLocal[message.SeatIndex]);
             return (player.Position - seatPosition).sqrMagnitude <= GuestSeatClaimRadius * GuestSeatClaimRadius;
@@ -494,10 +495,11 @@ namespace WinterMP.Core.Sync
 
             // The host normally omits a guest from relays of that guest's own
             // valid state. A self-addressed SeatNone is therefore an explicit host
-            // rejection/correction and must free the local player without echoing it.
+            // correction. A delayed answer to an older claim must not undo a newer
+            // local entry; the host will answer that newer request separately.
             if (message.PlayerId == session.LocalPlayerId)
             {
-                if (!message.IsSeated && _seated)
+                if (!message.IsSeated && _seated && message.Sequence == _seatSequence)
                     ApplyHostSeatCorrection();
                 return;
             }
@@ -777,6 +779,7 @@ namespace WinterMP.Core.Sync
             _originalParent = null;
             _vehicles.Clear();
             _remoteSeats.Clear();
+            _remoteSeatSequences.Clear();
             _nextPlayerSearchAt = 0f;
             _nextVehicleScanAt = 0f;
 

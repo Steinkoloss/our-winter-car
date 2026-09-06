@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using WinterMP.Launcher.Services;
+using WinterMP.Net;
 using Xunit;
 
 namespace WinterMP.Launcher.Tests
@@ -25,7 +26,7 @@ namespace WinterMP.Launcher.Tests
             string version = System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(CompatManifest).Assembly.Location).FileVersion!;
             File.WriteAllText(Path.Combine(path, "wintermp-compat.json"), JsonSerializer.Serialize(new CompatManifest
             {
-                ModVersion = version, ProtocolVersion = 94, TargetGameBuildIds = new[] { "23268598" }, ReleaseChannel = "test",
+                ModVersion = version, ProtocolVersion = ProtocolInfo.Version, TargetGameBuildIds = new[] { "23268598" }, ReleaseChannel = "test",
             }));
             return path;
         }
@@ -70,7 +71,10 @@ namespace WinterMP.Launcher.Tests
             Assert.Throws<InvalidOperationException>(() => ModPayload.ReplaceDirectory(source, dest, _root));
             Assert.Equal("old version", File.ReadAllText(core));
             File.WriteAllText(Path.Combine(source, "WinterMP.Net.dll"), "net");
-            File.WriteAllText(Path.Combine(source, "wintermp-compat.json"), "{\"modVersion\":\"99.0.0\",\"protocolVersion\":94}");
+            File.WriteAllText(Path.Combine(source, "wintermp-compat.json"), JsonSerializer.Serialize(new CompatManifest
+            {
+                ModVersion = "99.0.0", ProtocolVersion = ProtocolInfo.Version,
+            }));
             Assert.Throws<InvalidOperationException>(() => ModPayload.ReplaceDirectory(source, dest, _root));
             Assert.Equal("old version", File.ReadAllText(core));
         }
@@ -95,7 +99,10 @@ namespace WinterMP.Launcher.Tests
             string meta = Path.Combine(bundle, "wintermp-compat.json");
             File.WriteAllText(meta, "{\"modVersion\":\"0.0.1\",\"protocolVersion\":1}");
             Assert.Equal(cache, ModPayload.SelectPayloadDirectory(bundle, cache));
-            File.WriteAllText(meta, "{\"modVersion\":\"99.0.0\",\"protocolVersion\":94}");
+            File.WriteAllText(meta, JsonSerializer.Serialize(new CompatManifest
+            {
+                ModVersion = "99.0.0", ProtocolVersion = ProtocolInfo.Version,
+            }));
             Assert.Equal(bundle, ModPayload.SelectPayloadDirectory(bundle, cache));
             File.WriteAllText(meta, "{\"modVersion\":\"0.0.1\",\"protocolVersion\":1}");
             File.Delete(Path.Combine(cache, "WinterMP.FastBoot.dll"));

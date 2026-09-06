@@ -22,7 +22,7 @@ namespace WinterMP.Core.Sync
         public bool TryAcceptGuestItemTransform(ItemTransform message, byte playerId)
         {
             if (message.OwnerPlayerId != playerId || !_items.TryGetValue(message.ItemId, out var item)
-                || item.Body == null)
+                || item.Body == null || !CanSyncItemMotion(item))
                 return false;
 
             if (item.RemoteOwner == playerId)
@@ -47,7 +47,7 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteItemTransform(ItemTransform message)
         {
-            if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null) return;
+            if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null || !CanSyncItemMotion(item)) return;
 
             // Validate the wire pose BEFORE mutating any ownership/sequence state. Wire
             // floats reach the transform verbatim (NetReader reinterprets raw bytes,
@@ -126,6 +126,7 @@ namespace WinterMP.Core.Sync
             // Remember whose sequence space the baseline belongs to; unlike RemoteOwner
             // this is not cleared by a final, so post-final stragglers stay recognisable.
             item.LastRemoteSequenceOwner = message.OwnerPlayerId;
+            item.LastRemoteReleaseAt = message.IsFinal ? Time.unscaledTime : -999f;
 
             var body = item.Body;
             if (!item.KinematicSaved)

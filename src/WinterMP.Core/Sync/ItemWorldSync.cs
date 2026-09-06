@@ -12,9 +12,9 @@ namespace WinterMP.Core.Sync
 
         private readonly Dictionary<uint, SyncedItem> _items = new Dictionary<uint, SyncedItem>();
         private readonly Dictionary<Rigidbody, bool> _trackedBodies = new Dictionary<Rigidbody, bool>();
+        private readonly HashSet<uint> _ticketItemIds = new HashSet<uint>();
         private readonly Dictionary<uint, PendingPose> _pendingItemPoses = new Dictionary<uint, PendingPose>();
-        private readonly HashSet<uint> _sessionDespawnedItems = new HashSet<uint>();
-        private readonly HashSet<uint> _pendingDespawnedItems = new HashSet<uint>();
+        private readonly WinterMP.Net.Sync.ItemSpawnLifecycle _spawnLifecycle = new WinterMP.Net.Sync.ItemSpawnLifecycle();
         private readonly List<uint> _deadItemIds = new List<uint>();
 
         public ItemWorldSync(WorldSyncBridge bridge)
@@ -23,6 +23,41 @@ namespace WinterMP.Core.Sync
         }
 
         public void BindVehicles(VehicleWorldSync vehicles) => _vehicles = vehicles;
+        internal System.Func<uint, bool>? TicketDespawnHandler;
+
+        internal void RegisterTicket(string ticketId, Rigidbody body)
+        {
+            uint id = WinterMP.Net.Sync.LottoTicketReplica.ItemId(ticketId);
+            if (_items.TryGetValue(id, out var old))
+            {
+                if (old.Body != body) throw new System.InvalidOperationException("Lotto item ID collision.");
+                return;
+            }
+            if (_trackedBodies.ContainsKey(body)) throw new System.InvalidOperationException("Lotto body already registered.");
+            _trackedBodies[body] = true;
+            var item = new SyncedItem { Id = id, Body = body, Path = ScenePath.Of(body.transform),
+                LastPosition = body.transform.position, LastMovedAt = Time.unscaledTime };
+            _items.Add(id, item);
+            _ticketItemIds.Add(id);
+            if (_pendingItemPoses.TryGetValue(id, out var pose))
+            {
+                _pendingItemPoses.Remove(id);
+                if (Time.unscaledTime < pose.ExpiresAt) ApplySnapshotPose(item, pose.Position, pose.Rotation);
+            }
+        }
+
+        internal void UnregisterTicket(string ticketId)
+        {
+            uint id = WinterMP.Net.Sync.LottoTicketReplica.ItemId(ticketId);
+            if (!_ticketItemIds.Remove(id)) return;
+            if (!_items.TryGetValue(id, out var item)) return;
+            if (item.Body != null)
+            {
+                if (item.KinematicSaved) item.Body.isKinematic = item.OriginalKinematic;
+                _trackedBodies.Remove(item.Body);
+            }
+            _items.Remove(id);
+        }
 
         /// <summary>
         /// A player was (re)admitted — its per-item sequence counters restarted. Downgrade
@@ -40,6 +75,7 @@ namespace WinterMP.Core.Sync
                 {
                     item.LastRemoteSequenceOwner = WorldSyncIds.NoOwner;
                     item.LastRemoteSequence = 0;
+                    item.LastRemoteReleaseAt = -999f;
                 }
                 if (item.LastDamageSequenceOwner == playerId)
                 {
@@ -84,21 +120,23 @@ namespace WinterMP.Core.Sync
             return true;
         }
 
-        internal IEnumerable<uint> SessionDespawnedIds => _sessionDespawnedItems;
+        internal IEnumerable<uint> SessionDespawnedIds => _spawnLifecycle.RetiredIds;
         internal IDictionary<uint, SyncedItem> Items => _items;
         public int ItemCount => _items.Count;
 
         internal void Clear()
         {
+            ClearReplacementParts();
+            ClearPackages();
+            ClearTrophyFactories();
             _vehicles?.ClearDamageHooks();
             _items.Clear();
             _trackedBodies.Clear();
+            _ticketItemIds.Clear();
             _pendingItemPoses.Clear();
-            _sessionDespawnedItems.Clear();
-            _pendingDespawnedItems.Clear();
+            _spawnLifecycle.Clear();
             _cargoCandidates.Clear();
             _pendingSpawns.Clear();
-            _handledSpawns.Clear();
             _hostSpawnManifests.Clear();
             _snapshotSeenIds.Clear();
             _spawnEpochs.Clear();
@@ -138,11 +176,14 @@ namespace WinterMP.Core.Sync
                 SetSeatBlocked(item, false);
             }
 
+            ClearReplacementParts();
+            ClearPackages();
+            ClearTrophyFactories();
             _pendingItemPoses.Clear();
-            _pendingDespawnedItems.Clear();
+            _spawnLifecycle.Clear();
 
             // Spawn bookkeeping is session-scoped: a restarted host re-mints from
-            // epoch 1, so a surviving _handledSpawns would drop its first manifests
+            // epoch 1, so surviving manifest receipts would drop its first manifests
             // as "duplicates" (same container, same epoch, same hashed ids), and a
             // stale _snapshotSeenIds would poison the steal-soundness test on the
             // next join. Parked capture/offer clones go back to the scanner.
@@ -154,7 +195,6 @@ namespace WinterMP.Core.Sync
                 }
             }
             _pendingSpawns.Clear();
-            _handledSpawns.Clear();
             _hostSpawnManifests.Clear();
             _snapshotSeenIds.Clear();
             _spawnEpochs.Clear();

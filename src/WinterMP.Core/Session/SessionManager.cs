@@ -55,7 +55,7 @@ namespace WinterMP.Core.Session
         private readonly Dictionary<PeerId, float> _nextObjectStateRequestAt = new Dictionary<PeerId, float>();
         private bool _failedSessionCleanupPending;
 
-        private readonly Dictionary<byte, PassengerState> _passengerOccupancy = new Dictionary<byte, PassengerState>();
+        private readonly PassengerSeatLedger _passengerSeats = new PassengerSeatLedger();
 
         /// <summary>Stable player ids + disconnect tracking for mid-session guest rejoin (PLAN.md §4.5).</summary>
         private sealed class GuestSlot
@@ -126,10 +126,7 @@ namespace WinterMP.Core.Session
         {
             if (!IsHost) return;
 
-            if (state.IsSeated)
-                _passengerOccupancy[state.PlayerId] = state;
-            else
-                _passengerOccupancy.Remove(state.PlayerId);
+            _passengerSeats.Record(state);
         }
 
         private float _failedAt = -1f;
@@ -173,7 +170,7 @@ namespace WinterMP.Core.Session
             _nextSnapshotRequestAt.Clear();
             _nextResyncRequestAt.Clear();
             _nextObjectStateRequestAt.Clear();
-            _passengerOccupancy.Clear();
+            _passengerSeats.Clear();
             _guestSlotsBySteam.Clear();
             _nextPlayerId = 1;
             LocalPlayerId = 0;
@@ -408,7 +405,7 @@ namespace WinterMP.Core.Session
                     _playersByPeer.Remove(peer);
                     if (IsHost)
                     {
-                        _passengerOccupancy.Remove(player.PlayerId);
+                        _passengerSeats.ForgetPlayer(player.PlayerId);
                         Sync.WorldSyncManager.Instance?.OnPlayerDeparted(player.PlayerId);
                     }
                     AddChatLine($"* {player.Name} left ({reason})");

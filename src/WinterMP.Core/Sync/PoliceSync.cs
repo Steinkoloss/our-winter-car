@@ -250,7 +250,7 @@ namespace WinterMP.Core.Sync
             _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
             try
             {
-                var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
+                var fsms = ScenePath.ScanFsms();
                 foreach (var obj in fsms)
                 {
                     var fsm = obj as PlayMakerFSM;

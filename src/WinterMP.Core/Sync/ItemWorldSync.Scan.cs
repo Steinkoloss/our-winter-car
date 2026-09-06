@@ -10,18 +10,24 @@ namespace WinterMP.Core.Sync
     {
         internal int ScanItems()
         {
+            int initialCount = _items.Count;
+            RefreshTrophyFactories();
+            RefreshPackageFactories();
+            RefreshReplacementFactories();
+            ScanNativeParts();
             // Collect new candidates first so same-path clones (six sausages at the
             // scene root...) get deterministic ordinals from one consistent batch.
             var newcomers = new List<SyncedItem>();
-            var bodies = Resources.FindObjectsOfTypeAll(typeof(Rigidbody));
+            var bodies = ScenePath.ScanRigidbodies();
             foreach (var obj in bodies)
             {
                 var body = obj as Rigidbody;
-                if (body == null || _trackedBodies.ContainsKey(body)) continue;
+                if (body == null) continue;
 
                 try
                 {
                     if (!body.gameObject.activeInHierarchy) continue;
+                    if (TryScanTrophy(body) || TryScanPackage(body) || TryScanNativePart(body) || _trackedBodies.ContainsKey(body)) continue;
 
                     bool isVehicle = SyncCatalog.IsVehicleRoot(body);
                     bool isItem = !isVehicle && SyncCatalog.IsPickableRigidbody(body);
@@ -41,7 +47,8 @@ namespace WinterMP.Core.Sync
                 }
             }
 
-            if (newcomers.Count == 0) return 0;
+            int nativeAdded = Math.Max(0, _items.Count - initialCount);
+            if (newcomers.Count == 0) return nativeAdded;
 
             // Same-path groups: ordinal by initial position (same save => same order
             // on every machine). Quantized to 1 mm so float noise can't flip ties.
@@ -68,12 +75,12 @@ namespace WinterMP.Core.Sync
                     item.Id = StableHash.Fnv1a32(idSource);
                     _trackedBodies[item.Body] = true;
 
-                    if (_pendingDespawnedItems.Contains(item.Id))
+                    if (_spawnLifecycle.IsRetired(item.Id))
                     {
-                        _pendingDespawnedItems.Remove(item.Id);
+                        _trackedBodies.Remove(item.Body);
                         UnityEngine.Object.Destroy(item.Body.gameObject);
                         WinterMPPlugin.Log.LogInfo(
-                            $"WorldSync: item '{item.Path}' removed from snapshot despawn list.");
+                            $"WorldSync: item '{item.Path}' removed by session retirement.");
                         continue;
                     }
 
@@ -102,7 +109,7 @@ namespace WinterMP.Core.Sync
                 }
             }
 
-            return added;
+            return added + nativeAdded;
         }
 
         private void TryRegisterConsumableHooks(SyncedItem item)

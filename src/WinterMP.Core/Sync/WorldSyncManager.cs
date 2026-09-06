@@ -52,6 +52,7 @@ namespace WinterMP.Core.Sync
         private readonly VenttiSync _ventti = new VenttiSync();
         private readonly UtilityBillSync _utilityBills = new UtilityBillSync();
         private readonly LotterySync _lottery = new LotterySync();
+        private LottoTicketSync? _lottoTickets;
         private readonly RepairShopSync _repairShop = new RepairShopSync();
         private readonly FleaSaleSync _fleaSale = new FleaSaleSync();
         private readonly TaxiJobSync _taxiJob = new TaxiJobSync();
@@ -136,6 +137,7 @@ namespace WinterMP.Core.Sync
 
             _bridge = new WorldSyncBridge(this, _hookedFsms);
             _items = new ItemWorldSync(_bridge);
+            _lottoTickets = new LottoTicketSync(_items, _lottery);
             _vehicles = new VehicleWorldSync(_bridge, _items);
             _fluids = new FluidContainerSync(_items);
             _kilju = new KiljuSync(_items);
@@ -153,10 +155,14 @@ namespace WinterMP.Core.Sync
 
         private void OnDestroy()
         {
-            _wallet.Reset();
             if (_syncReady) _vehicles.ClearDamageHooks();
             _gambling.Clear();
             _poker.Clear();
+            _ventti.Clear();
+            _lottoTickets?.Clear();
+            _lottery.Clear();
+            _hockey.Clear();
+            _wallet.Reset();
             _welfare.Clear();
             if (Instance == this) Instance = null;
         }
@@ -185,6 +191,8 @@ namespace WinterMP.Core.Sync
             try
             {
                 _vehicles.LateUpdateRemoteVehicles(Time.unscaledTime);
+                var session = SessionManager.Instance;
+                if (session != null) _ventti.LateUpdate(session);
             }
             catch (Exception e)
             {
@@ -311,6 +319,7 @@ namespace WinterMP.Core.Sync
             _ventti.Update(session!);
             _utilityBills.Update(session!);
             _lottery.Update(session!);
+            _lottoTickets?.Update(session!);
             _repairShop.Update(session!);
             _fleaSale.Update(session!);
             _taxiJob.Update(session!);
@@ -368,6 +377,7 @@ namespace WinterMP.Core.Sync
             if (!_syncReady) return;
 
             _fsm.Clear();
+            _bridge.PartIdentities.Clear();
             _items.Clear();
             _npcTraffic.Clear();
             _fluids.Clear();
@@ -392,6 +402,7 @@ namespace WinterMP.Core.Sync
             _ventti.Clear();
             _poker.Clear();
             _utilityBills.Clear();
+            _lottoTickets?.Clear();
             _lottery.Clear();
             _repairShop.Clear();
             _fleaSale.Clear();
@@ -426,7 +437,7 @@ namespace WinterMP.Core.Sync
 
             try
             {
-                var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
+                var fsms = ScenePath.ScanFsms();
                 foreach (var obj in fsms)
                 {
                     var fsm = obj as PlayMakerFSM;
@@ -676,6 +687,7 @@ namespace WinterMP.Core.Sync
             _items.ReleaseSession();
             _npcTraffic.ReleaseSession();
             _fsm.Clear();
+            _bridge.PartIdentities.Clear();
             _police.Clear();
             _homeStereo.Clear();
             _rally.Clear();
@@ -686,6 +698,7 @@ namespace WinterMP.Core.Sync
             _ventti.Clear();
             _poker.Clear();
             _utilityBills.Clear();
+            _lottoTickets?.Clear();
             _lottery.Clear();
             _repairShop.Clear();
             _fleaSale.Clear();

@@ -25,22 +25,16 @@ namespace WinterMP.Core.Sync
             foreach (uint id in partIds)
             {
                 if (!_parts.TryGetValue(id, out var part)) continue;
-                ReadPartVars(part, out byte flags, out byte tightness, out byte wear);
-                crc = StableHash.Combine(crc, id);
-                crc = StableHash.Combine(crc, flags);
-                crc = StableHash.Combine(crc, tightness);
-                crc = StableHash.Combine(crc, wear);
+                var state = ReadPartState(id, part);
+                if (state != null) crc = PartStatePolicy.MixChecksum(crc, state);
             }
 
             var boltIds = new List<uint>(_bolts.Keys);
             boltIds.Sort();
             foreach (uint id in boltIds)
             {
-                if (!_bolts.TryGetValue(id, out var bolt)) continue;
-                ReadBoltVars(bolt, out ushort tightness, out ushort screwInt);
-                crc = StableHash.Combine(crc, id);
-                crc = StableHash.Combine(crc, tightness);
-                crc = StableHash.Combine(crc, screwInt);
+                var state = BuildBoltState(id);
+                if (state != null) crc = WinterMP.Net.Sync.BoltStatePolicy.MixChecksum(crc, state);
             }
 
             return crc;
@@ -93,7 +87,10 @@ namespace WinterMP.Core.Sync
             if (_buys.TryGetValue(netId, out var buy))
                 return buy.LastSyncedState ?? TryReadActiveSyncedState(buy.Fsm, buy.ResultStates);
             if (_parts.TryGetValue(netId, out var part))
-                return part.LastSyncedState ?? TryReadActiveSyncedState(part.Fsm, part.SyncedStates);
+            {
+                string? state = part.LastSyncedState ?? TryReadActiveSyncedState(part.Fsm, part.SyncedStates);
+                return IsDerivedPartState(state) ? null : state;
+            }
             return null;
         }
 

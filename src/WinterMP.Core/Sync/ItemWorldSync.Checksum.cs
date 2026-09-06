@@ -12,7 +12,7 @@ namespace WinterMP.Core.Sync
             ids.Sort();
             foreach (uint id in ids)
             {
-                if (!_items.TryGetValue(id, out var item) || item.Body == null || item.IsVehicle) continue;
+                if (!_items.TryGetValue(id, out var item) || item.Body == null || item.IsVehicle || !CanSyncItemMotion(item)) continue;
                 if (item.LocallyOwned || item.RemoteOwner != WorldSyncIds.NoOwner) continue;
                 // Cargo mid-ride is streamed state sampled at different instants per peer;
                 // like owned/remote items it never checksums identically, so skip it. (The
@@ -58,19 +58,7 @@ namespace WinterMP.Core.Sync
                 // false "checksum mismatch" resyncs. Mirrors the ComputeItemCrc guard.
                 if (item.LocallyOwned || item.RemoteOwner != WorldSyncIds.NoOwner) continue;
 
-                if (!_vehicles.TryReadVehicleChecksum(item, out byte flags,
-                        out ushort rpm, out byte fuel, out byte coolant, out byte frost, out byte fog, out byte cabinTemp))
-                {
-                    continue;
-                }
-
-                // Only fold genuinely-stable state for an unowned car. rpm/coolant/frost/fog/cabinTemp
-                // change continuously (idle revs, accumulating frost) and are sampled at different
-                // instants on host vs guest, so including them caused perpetual false-mismatch resyncs.
-                // The live VehicleState/VehicleClimate stream covers those dynamic values instead.
-                crc = StableHash.Combine(crc, id);
-                crc = StableHash.Combine(crc, flags);
-                crc = StableHash.Combine(crc, fuel);
+                crc = _vehicles.FoldVehicleChecksum(crc, item);
             }
 
             return crc;

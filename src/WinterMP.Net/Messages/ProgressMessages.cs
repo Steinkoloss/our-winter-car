@@ -459,6 +459,8 @@ namespace WinterMP.Net.Messages
         /// <summary>0 = start; 1-6 = numbered checkpoint.</summary>
         public byte Checkpoint;
         public ushort Sequence;
+        /// <summary>Fresh nonzero token for this guest connection; retries retain it.</summary>
+        public ulong ReportToken;
 
         public MessageId Id => MessageId.RallyIntent;
 
@@ -468,6 +470,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(Stage);
             writer.WriteByte(Checkpoint);
             writer.WriteUInt16(Sequence);
+            writer.WriteUInt64(ReportToken);
         }
 
         public void Read(NetReader reader)
@@ -476,6 +479,7 @@ namespace WinterMP.Net.Messages
             Stage = reader.ReadByte();
             Checkpoint = reader.ReadByte();
             Sequence = reader.ReadUInt16();
+            ReportToken = reader.ReadUInt64();
         }
     }
 
@@ -493,6 +497,11 @@ namespace WinterMP.Net.Messages
         public ushort Sequence;
         /// <summary>Host elapsed time since valid start, in centiseconds.</summary>
         public uint ElapsedCentiseconds;
+        public uint Revision;
+        public ulong ReportToken;
+        public ushort ReportSequence;
+        public byte Flags;
+        public const byte HasReport = 1;
 
         public MessageId Id => MessageId.RallyState;
 
@@ -504,6 +513,10 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(Checkpoint);
             writer.WriteUInt16(Sequence);
             writer.WriteUInt32(ElapsedCentiseconds);
+            writer.WriteUInt32(Revision);
+            writer.WriteUInt64(ReportToken);
+            writer.WriteUInt16(ReportSequence);
+            writer.WriteByte(Flags);
         }
 
         public void Read(NetReader reader)
@@ -514,6 +527,10 @@ namespace WinterMP.Net.Messages
             Checkpoint = reader.ReadByte();
             Sequence = reader.ReadUInt16();
             ElapsedCentiseconds = reader.ReadUInt32();
+            Revision = reader.ReadUInt32();
+            ReportToken = reader.ReadUInt64();
+            ReportSequence = reader.ReadUInt16();
+            Flags = reader.ReadByte();
         }
     }
 

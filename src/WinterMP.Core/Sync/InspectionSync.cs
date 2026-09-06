@@ -202,7 +202,7 @@ namespace WinterMP.Core.Sync
             if (_inspectFsm != null && _resultsFsm != null
                 && _standardPlateFsm != null && _museumPlateFsm != null) return;
 
-            var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
+            var fsms = ScenePath.ScanFsms();
             foreach (var obj in fsms)
             {
                 var fsm = obj as PlayMakerFSM;

@@ -1,5 +1,162 @@
 {
+  "hockeyBetting": {
+    "bettingPath": "Systems/HockeyGames/Betting",
+    "bettingFsm": "Logic",
+    "seasonPath": "Systems/HockeyGames/Runkosarja",
+    "seasonFsm": "Data",
+    "result": "Result",
+    "gamesPlayed": "GamesPlayed",
+    "kurpaWins": "KurPaWins",
+    "ints": [
+      "LatestRound",
+      "GameIndex",
+      "Team1ID",
+      "Team2ID"
+    ],
+    "floats": [
+      "Team1Odds",
+      "Team2Odds",
+      "TieOdds"
+    ],
+    "lists": [
+      "PairsNew",
+      "Pairs",
+      "ResultsGame",
+      "ResultsOdds",
+      "ResultsPair",
+      "Order",
+      "GamesString",
+      "GoalsString",
+      "PointsString"
+    ],
+    "tables": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+    ],
+    "keys": [
+      "1",
+      "X",
+      "2"
+    ],
+    "bettingIdle": [
+      "State 1",
+      "State 6"
+    ],
+    "seasonIdle": [
+      "Day",
+      "Time",
+      "Reset points"
+    ],
+    "displays": [
+      "Systems/TV/Teletext/VKTekstiTV/PAGES/240/Texts",
+      "Systems/TV/Teletext/VKTekstiTV/PAGES/241/Texts",
+      "Systems/TV/Teletext/VKTekstiTV/PAGES/302/Texts"
+    ]
+  },
   "gameBuild": "curated",
+  "lottoTickets": {
+    "payPath": "Sheets/LottoTicket/Pay",
+    "payFsm": "Button",
+    "requestState": "Check money",
+    "commitState": "Date 2",
+    "closeState": "Close",
+    "fundsState": "No money",
+    "payTotal": "Total",
+    "payRound": "Round",
+    "spawnerPath": "PERAPORTTI/ActiveFunctions/Voittous/Lotto/SpawnLottery",
+    "spawnerFsm": "Spawn",
+    "spawnerIdle": "Idle",
+    "prefab": "Prefab",
+    "spawnPoint": "Spawn",
+    "counter": "ObjectNumberInt",
+    "saveId": "SaveID",
+    "database": "AddDatabase",
+    "paper": "AddPaper",
+    "useFsm": "Use",
+    "dataFsm": "Data",
+    "ticketId": "ID",
+    "ticketRound": "TicketRound",
+    "winnings": "Winnings",
+    "ticketDatabase": "Database",
+    "ticketPaper": "Paper",
+    "ticketName": "lottery ticket(lotte)",
+    "line1": "PlayerLine1",
+    "line2": "PlayerLine2",
+    "line3": "PlayerLine3",
+    "claimPath": "PERAPORTTI/Building/LOD100/Store/VoittousArea/TrashTrigger",
+    "claimFsm": "Logic",
+    "claimState": "State 4",
+    "claimReset": "Reset",
+    "claimObject": "Object",
+    "destroyState": "Destroy",
+    "loadState": "Load",
+    "saveState": "Save",
+    "deleteState": "State 6",
+    "useIdle": "Wait player 2",
+    "dataIdle": "State 16",
+    "linePrice": 3,
+    "bankThreshold": 1000
+  },
+  "lottoDraw": {
+    "path": "Systems/Lottery",
+    "fsm": "Numbers",
+    "drawDone": "DrawDone",
+    "resultsPath": "Systems/TV/Teletext/VKTekstiTV/PAGES/301/Texts",
+    "scalars": [
+      "CurrentRound",
+      "TicketRound",
+      "NationalPot",
+      "NationalPotMin",
+      "NationalPotFull"
+    ],
+    "winnerVariables": [
+      "NationalLine7",
+      "NationalLine6+1",
+      "NationalLine6",
+      "NationalLine5",
+      "NationalLine4"
+    ],
+    "lists": [
+      "Results",
+      "ResultsBonus",
+      "ResultsLinesWinnings",
+      "ResultsLinesWon"
+    ],
+    "stableStates": [
+      "Reset points",
+      "Day",
+      "Time",
+      "State 35"
+    ]
+  },
+  "rallyProgress": {
+    "timingFsm": "Timing",
+    "startedVariable": "Start",
+    "markerFsm": "Checkpoint",
+    "commitState": "Set bool",
+    "completedState": "Idle",
+    "stages": [
+      {
+        "timingPath": "RACES/RALLY/SS1/TimingSS1",
+        "startPath": "RACES/RALLY/SS1/TimingSS1/JumpStartLineSS1",
+        "checkpoints": ["Checkpoint01", "Checkpoint02", "Checkpoint03", "Checkpoint04"]
+      },
+      {
+        "timingPath": "RACES/RALLY/SS2/TimingSS2",
+        "startPath": "RACES/RALLY/SS2/TimingSS2/JumpStartLineSS2",
+        "checkpoints": ["Checkpoint01", "Checkpoint02", "Checkpoint03", "Checkpoint04", "Checkpoint05", "Checkpoint06"]
+      },
+      {
+        "timingPath": "RACES/RALLY/SS3/TimingSS3",
+        "startPath": "RACES/RALLY/SS3/TimingSS3/JumpStartLineSS3",
+        "checkpoints": ["Checkpoint01", "Checkpoint02", "Checkpoint03", "Checkpoint04"]
+      }
+    ]
+  },
   "debtLetter": {
     "rentPath": "Systems/Expenses",
     "rentFsm": "Rent",
@@ -768,6 +925,352 @@
       ]
     }
   ],
+  "partsPackages": {
+    "factoryPath": "Spawner/CreatePartsPackages",
+    "itemFsm": "Use",
+    "itemIdVariable": "ID",
+    "contentsVariable": "CreateItemsDB",
+    "quantityVariable": "Quantity",
+    "openState": "Create Plug",
+    "openReadyStates": ["Wait player 2", "Wait button 2"],
+    "contentsFsm": "Spawn",
+    "contentsEvent": "SPAWNITEM",
+    "contentsCountVariable": "NumberOfProducts",
+    "contentsCounterVariable": "ObjectNumberInt",
+    "minimumWearVariable": "MinimumWear",
+    "spawnPointVariable": "PartSpawnPoint",
+    "checkQuantityState": "Check quantity",
+    "openFeedbackState": "MP box opened",
+    "itemIdleState": "Wait player 2",
+    "emptyState": "Empty",
+    "garbageState": "Is garbage",
+    "garbageEvent": "GARBAGE",
+    "saveEvent": "SAVEGAME",
+    "saveState": "Save",
+    "deleteEvent": "CONSUMED",
+    "deleteState": "State 6",
+    "readyStates": [
+      "Wait player 2",
+      "Wait button 2",
+      "Delay",
+      "Empty"
+    ],
+    "factories": [
+      {
+        "fsm": "Alternator",
+        "prefix": "boxalternator0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Alternator133",
+        "capacity": 1
+      },
+      {
+        "fsm": "AlternatorPerf",
+        "prefix": "boxalternatorperf0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/AlternatorPerf",
+        "capacity": 1
+      },
+      {
+        "fsm": "AuxSprocket",
+        "prefix": "boxauxsprocket0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/AuxShaftSprocket109",
+        "capacity": 1
+      },
+      {
+        "fsm": "Auxshaft",
+        "prefix": "boxauxshaft0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/AuxShaft110",
+        "capacity": 1
+      },
+      {
+        "fsm": "Cam",
+        "prefix": "boxcamshaft0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Camshaft115",
+        "capacity": 1
+      },
+      {
+        "fsm": "CamSprocket",
+        "prefix": "boxcamsprocket0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/CamshaftSprocket116",
+        "capacity": 1
+      },
+      {
+        "fsm": "CamTuneA",
+        "prefix": "boxcamtunea0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneA",
+        "capacity": 1
+      },
+      {
+        "fsm": "CamTuneB",
+        "prefix": "boxcamtuneb0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneB",
+        "capacity": 1
+      },
+      {
+        "fsm": "CamTuneC",
+        "prefix": "boxcamtunec0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneC",
+        "capacity": 1
+      },
+      {
+        "fsm": "CamTuneD",
+        "prefix": "boxcamtuned0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneD",
+        "capacity": 1
+      },
+      {
+        "fsm": "Carb2BRL",
+        "prefix": "boxcarb2brl0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/Carb2BRLa",
+        "capacity": 1
+      },
+      {
+        "fsm": "Carb4BRL",
+        "prefix": "boxcarb4brl0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/Carb4BRLa",
+        "capacity": 1
+      },
+      {
+        "fsm": "Clutchdisc",
+        "prefix": "boxclutchdisc0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/ClutchDisc121",
+        "capacity": 1
+      },
+      {
+        "fsm": "CrankPulley",
+        "prefix": "boxcrankpulley0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/CrankPulley105",
+        "capacity": 1
+      },
+      {
+        "fsm": "Crankshaft",
+        "prefix": "boxcrankshaft0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Crankshaft102",
+        "capacity": 1
+      },
+      {
+        "fsm": "Distributor",
+        "prefix": "boxdistributor0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Distributor131",
+        "capacity": 1
+      },
+      {
+        "fsm": "Fuelpump",
+        "prefix": "boxfuelpump0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Fuelpump125",
+        "capacity": 1
+      },
+      {
+        "fsm": "FuelpumpRacing",
+        "prefix": "boxfuelpumpracing0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/FuelpumpRacing",
+        "capacity": 1
+      },
+      {
+        "fsm": "Headgasket",
+        "prefix": "boxheadgasket0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Headgasket134",
+        "capacity": 1
+      },
+      {
+        "fsm": "Mainbearing",
+        "prefix": "boxmainbearing0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/MainBearing104",
+        "capacity": 5
+      },
+      {
+        "fsm": "Oilpump",
+        "prefix": "boxoilpump0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Oilpump132",
+        "capacity": 1
+      },
+      {
+        "fsm": "Pistons",
+        "prefix": "boxpistons0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Piston103",
+        "capacity": 4
+      },
+      {
+        "fsm": "Revlimiter",
+        "prefix": "boxrevlimiter0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/Revlimiter",
+        "capacity": 1
+      },
+      {
+        "fsm": "Rockers",
+        "prefix": "boxrockers0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/RockerArm117",
+        "capacity": 8
+      },
+      {
+        "fsm": "Starter",
+        "prefix": "boxstarter0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Starter130",
+        "capacity": 1
+      },
+      {
+        "fsm": "Thermostat",
+        "prefix": "boxthermostat0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Thermostat129",
+        "capacity": 1
+      },
+      {
+        "fsm": "ThermostatHousing",
+        "prefix": "boxthermostathousing0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/ThermostatHousing128",
+        "capacity": 1
+      },
+      {
+        "fsm": "TimingBelt",
+        "prefix": "boxtimingbelt",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/TimingBelt107",
+        "capacity": 1
+      },
+      {
+        "fsm": "Waterpump",
+        "prefix": "boxwaterpump0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Waterpump126",
+        "capacity": 1
+      },
+      {
+        "fsm": "WaterpumpPulley",
+        "prefix": "boxwaterpumppulley0",
+        "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/WaterpumpPulley127",
+        "capacity": 1
+      }
+    ],
+    "prefabVariable": "Prefab",
+    "spawnerVariable": "Spawner",
+    "outputVariable": "New",
+    "idVariable": "ID",
+    "createState": "Create product",
+    "factoryIdleState": "Idle",
+    "ownerVariable": "Owner",
+    "capacityVariable": "QuantityMax",
+    "itemName": "package(Clone)",
+    "emptyName": "empty(itemx)",
+    "itemInitState": "State 2",
+    "loadCreateState": "Create"
+  },
+  "trophyFactories": {
+    "prefabVariable": "CreatePrefab",
+    "prefixVariable": "ObjectCreateName",
+    "outputVariable": "New",
+    "idVariable": "ID",
+    "createState": "State 7",
+    "factoryIdleState": "State 6",
+    "itemFsm": "Use",
+    "itemIdVariable": "ID",
+    "itemInitState": "State 1",
+    "itemReadyState": "State 3",
+    "itemLoadState": "Load",
+    "itemSaveState": "Save",
+    "factories": [
+      {
+        "path": "Spawner/CreateTrophiesAmateur",
+        "fsm": "Bronze",
+        "prefix": "trophybronze",
+        "prefabName": "3rd place trophy",
+        "itemName": "3rd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesAmateur",
+        "fsm": "Gold",
+        "prefix": "trophygold",
+        "prefabName": "1st place trophy",
+        "itemName": "1st place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesAmateur",
+        "fsm": "Silver",
+        "prefix": "trophysilver",
+        "prefabName": "2nd place trophy",
+        "itemName": "2nd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesIcerace",
+        "fsm": "Bronze",
+        "prefix": "iceracebronze",
+        "prefabName": "trophyice3rd",
+        "itemName": "3rd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesIcerace",
+        "fsm": "Gold",
+        "prefix": "iceracegold",
+        "prefabName": "trophyice1st",
+        "itemName": "1st place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesIcerace",
+        "fsm": "Silver",
+        "prefix": "iceracesilver",
+        "prefabName": "trophyice2nd",
+        "itemName": "2nd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesJunior",
+        "fsm": "Bronze",
+        "prefix": "trophybronzejr",
+        "prefabName": "3rd place trophy jr",
+        "itemName": "3rd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesJunior",
+        "fsm": "Gold",
+        "prefix": "trophygoldjr",
+        "prefabName": "1st place trophy jr",
+        "itemName": "1st place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesJunior",
+        "fsm": "Silver",
+        "prefix": "trophysilverjr",
+        "prefabName": "2nd place trophy jr",
+        "itemName": "2nd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesRallyAMA",
+        "fsm": "Bronze",
+        "prefix": "rallybronzeama",
+        "prefabName": "trophyrallyA3rd",
+        "itemName": "3rd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesRallyAMA",
+        "fsm": "Gold",
+        "prefix": "rallygoldama",
+        "prefabName": "trophyrallyA1st",
+        "itemName": "1st place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesRallyAMA",
+        "fsm": "Silver",
+        "prefix": "rallysilverama",
+        "prefabName": "trophyrallyA2nd",
+        "itemName": "2nd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesRallyJR",
+        "fsm": "Bronze",
+        "prefix": "rallybronzejr",
+        "prefabName": "trophyrallyJR3rd",
+        "itemName": "3rd place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesRallyJR",
+        "fsm": "Gold",
+        "prefix": "rallygoldjr",
+        "prefabName": "trophyrallyJR1st",
+        "itemName": "1st place trophy(itemx)"
+      },
+      {
+        "path": "Spawner/CreateTrophiesRallyJR",
+        "fsm": "Silver",
+        "prefix": "rallysilverjr",
+        "prefabName": "trophyrallyJR2nd",
+        "itemName": "2nd place trophy(itemx)"
+      }
+    ]
+  },
   "spawnContainers": [
     {
       "fsmName": "Use",
@@ -1493,25 +1996,6 @@
       ]
     },
     {
-      "pathContains": "LottoTicket/Pay",
-      "fsmName": "Button",
-      "requireStates": [
-        "Check money",
-        "Date 2",
-        "No money"
-      ],
-      "entryGuards": [
-        {
-          "state": "Check money",
-          "event": "PAY"
-        }
-      ],
-      "resultStates": [
-        "Date 2",
-        "Close"
-      ]
-    },
-    {
       "pathContains": "MegavetoTicket/Pay",
       "fsmName": "Button",
       "requireStates": [
@@ -1805,64 +2289,1110 @@
       ]
     },
     {
-      "pathContains": "Voittous/Lotto/LotteryTicket",
-      "fsmName": "Use",
-      "requireStates": [
-        "Wait player 2",
-        "Wait button 2",
-        "State 5"
-      ],
-      "entryGuards": [
-        {
-          "state": "Wait button 2",
-          "event": "USE"
-        }
-      ],
-      "resultStates": [
-        "State 5"
-      ]
-    },
-    {
-      "pathContains": "Voittous/Lotto/BuyLotto",
-      "fsmName": "Use",
-      "requireStates": [
-        "Wait player",
-        "Wait button",
-        "State 1"
-      ],
-      "entryGuards": [
-        {
-          "state": "Wait button",
-          "event": "USE"
-        }
-      ],
-      "resultStates": [
-        "State 1"
-      ]
-    },
-    {
-      "pathContains": "Voittous/Megaveto/BuyMegaveto",
-      "fsmName": "Use",
-      "requireStates": [
-        "Wait player",
-        "Wait button",
-        "State 1"
-      ],
-      "entryGuards": [
-        {
-          "state": "Wait button",
-          "event": "USE"
-        }
-      ],
-      "resultStates": [
-        "State 1"
-      ]
-    },
-    {
       "template": "shopBuy",
       "fsmName": "Buy"
     }
   ],
+  "replacementParts": {
+    "installPointVariable": "InstallPoint",
+    "mountPartVariable": "ActivePart",
+    "mountPointVariable": "AssemblyPoint",
+    "mountInstalledVariable": "Installed",
+    "factoryFsm": "Spawn",
+    "prefabVariable": "Prefab",
+    "outputVariable": "New",
+    "idVariable": "ID",
+    "createState": "Create product",
+    "loadCreateState": "Create",
+    "factoryIdleState": "Idle",
+    "itemFsm": "Data",
+    "itemInitState": "Init",
+    "itemStatusState": "Status",
+    "itemIdleState": "Idle",
+    "itemStopState": "Stop",
+    "itemIdVariable": "ID",
+    "assemblyVariable": "AssemblyID",
+    "installedVariable": "Installed",
+    "consumedVariable": "Consumed",
+    "garbageState": "Is garbage",
+    "garbageEvent": "GARBAGE",
+    "saveState": "Save",
+    "deleteState": "Delete save",
+    "loadState": "Load",
+    "freshEvent": "BACK",
+    "boltsVariable": "Bolts",
+    "fitEvent": "ASSEMBLING",
+    "fitCheckState": "Another part?",
+    "fitOwnerVariable": "Owner",
+    "fitMountCheckEvent": "CHECK",
+    "fitMountIdleState": "Idle",
+    "fitAllowState": "Allow install?",
+    "fitNearState": "Near",
+    "fitFarState": "Far",
+    "fitConfirmEvent": "PROCEED",
+    "fitCancelEvent": "BACK",
+    "fitInstallState": "Install 1",
+    "fitInstallEvent": "INSTALL",
+    "fitDistanceVariable": "Distance",
+    "fitToleranceVariable": "PartsAssemblyTolerance",
+    "removeColliderVariable": "Collider",
+    "removeTightnessState": "Tightness?",
+    "removeTightnessVariable": "Tightness",
+    "removeUnboltedState": "Unbolted",
+    "removeBoltedState": "Bolted",
+    "removeMouseOffState": "Mouse off",
+    "removeMouseOverState": "Mouse over",
+    "removeState": "Remove",
+    "removeEvent": "REMOVE",
+    "removeAllowState": "Allow removal?",
+    "removeRecheckEvent": "BOLTING",
+    "removeHandPath": "Pivot/AnimPivot/Camera/FPSCamera/1Hand_Assemble/Hand",
+    "removeHandFsm": "PickUp",
+    "removeHandIdleState": "Look for object",
+    "slotDatabasePath": "CORRIS/AssembyDatabase",
+    "slotDatabaseVariable": "AssemblyDatabase",
+    "slotReferenceVariable": "ArrayReference",
+    "slotInstallerFsm": "Installer",
+    "slotInstallerIdleState": "State 1",
+    "slotInstallerReferenceVariable": "Reference",
+    "slotInstallerIndexVariable": "Index",
+    "slotAllowVariable": "AllowInstall",
+    "slotStopEvent": "STOP",
+    "factories": [
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Alternator133",
+        "prefix": "VIN133",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "SettingRotation"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "SetRotation",
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/AlternatorPerf",
+        "prefix": "ALTERNATOR0",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "SettingRotation"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "SetRotation",
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/AuxShaftSprocket109",
+        "prefix": "VIN109",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/AuxShaft110",
+        "prefix": "VIN110",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Camshaft115",
+        "prefix": "VIN115",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "EnableFSM",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/CamshaftSprocket116",
+        "prefix": "VIN116",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneA",
+        "prefix": "CAMTUNEa0",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneB",
+        "prefix": "CAMTUNEb0",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneC",
+        "prefix": "CAMTUNEc0",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneD",
+        "prefix": "CAMTUNEd0",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/Carb2BRLa",
+        "prefix": "CARB2BRLa0",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "SettingMixture"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "RandomFloat",
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/Carb4BRLa",
+        "prefix": "CARB4BRLa0",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/ClutchDisc121",
+        "prefix": "VIN121",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          },
+          {
+            "target": "PartBlocking",
+            "source": "PartBlocking"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/CrankPulley105",
+        "prefix": "VIN105",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Crankshaft102",
+        "prefix": "VIN102",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          },
+          {
+            "target": "PartBlocking",
+            "source": "PartBlocking"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "EnableFSM",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Distributor131",
+        "prefix": "VIN131",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "SparkAngle"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "RandomFloat",
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Fuelpump125",
+        "prefix": "VIN125",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/FuelpumpRacing",
+        "prefix": "FUELPUMP0",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Headgasket134",
+        "prefix": "VIN134",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          },
+          {
+            "target": "PartBlocking",
+            "source": "PartBlocking"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "EnableFSM",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/MainBearing104",
+        "prefix": "VIN104",
+        "slotReference": "MainBearings",
+        "slotCount": 5,
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "EnableFSM",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Oilpump132",
+        "prefix": "VIN132",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Piston103",
+        "prefix": "VIN103",
+        "slotReference": "Pistons",
+        "slotCount": 4,
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "EnableFSM",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/Revlimiter",
+        "prefix": "REVLIMITER0",
+        "scalars": [
+          "Tightness",
+          "SettingRPM"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "FloatClamp",
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/RockerArm117",
+        "prefix": "VIN117",
+        "slotReference": "Rockers",
+        "slotCount": 8,
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Starter130",
+        "prefix": "VIN130",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          },
+          {
+            "target": "PartBlocking",
+            "source": "PartBlocking"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Thermostat129",
+        "prefix": "VIN129",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          },
+          {
+            "target": "PartBlocking",
+            "source": "PartBlocking"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/ThermostatHousing128",
+        "prefix": "VIN128",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/TimingBelt107",
+        "prefix": "VIN107",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          },
+          {
+            "target": "PartBlocking",
+            "source": "PartBlocking"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Waterpump126",
+        "prefix": "VIN126",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/WaterpumpPulley127",
+        "prefix": "VIN127",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      }
+    ]
+  },
+  "partIdentity": {
+    "fsm": "Data",
+    "idVariable": "ID",
+    "assemblyVariable": "AssemblyID",
+    "consumedVariable": "Consumed",
+    "assemblyKeyVariable": "UTAssemblyID",
+    "positionKeyVariable": "UTPos",
+    "assemblyKeySuffix": "AID",
+    "positionKeySuffix": "POS",
+    "initializingStates": ["Init", "Load", "Status"]
+  },
   "parts": [
     {
       "pathContains": "(VINXX)",
@@ -1905,6 +3435,382 @@
       "KEKMET",
       "BACHGLOTZ"
     ]
+  },
+  "venttiTable": {
+    "rules": {
+      "cardValues": [
+        0,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3,
+        3,
+        4,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        5,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        8,
+        8,
+        8,
+        8,
+        9,
+        9,
+        9,
+        9,
+        10,
+        10,
+        10,
+        10,
+        11,
+        11,
+        11,
+        11,
+        12,
+        12,
+        12,
+        12,
+        13,
+        13,
+        13,
+        13
+      ],
+      "betIncrement": 50,
+      "propertyThreshold": 4000,
+      "winLimitIncrease": 50,
+      "opponentLossLimit": 7000,
+      "propertyWinLoss": 6000,
+      "propertyLoseLoss": 0
+    },
+    "tablePath": "PERAJARVI/Kunnalliskoti/Functions/RoomVenttiPig/Ventti/Table",
+    "betPath": "GAME/Gamestuff/Bet",
+    "playerPath": "GAME/Gamestuff/HitPlayer",
+    "housePath": "GAME/Gamestuff/HitHouse",
+    "standPath": "GAME/Gamestuff/Stand",
+    "managerPath": "GameManager",
+    "fsm": "Use",
+    "resultFsm": "LoseText",
+    "stake": "Bet",
+    "playerHand": "Hand",
+    "houseHand": "Hand",
+    "result": "Status",
+    "wagerCar": "BetCar",
+    "wagerHouse": "BetHouse",
+    "winText": "YOU WIN",
+    "loseText": "YOU LOSE",
+    "winCarText": "YOU WON A CAR",
+    "loseCarText": "YOU LOST THE SATSUMA",
+    "winHouseText": "YOU WON THIS CABIN",
+    "loseHouseText": "YOU LOST YOUR HOME",
+    "betMaximum": "BetMax",
+    "propertyStage": "BetStage",
+    "opponentLoss": "OpponentLoss",
+    "cardStage": "Stage",
+    "deckPath": "GAME/Gamestuff/Cards/CardsInDeck",
+    "usedDeckPath": "GAME/Gamestuff/Cards/CardsInPlay",
+    "playerCardsPath": "GAME/Gamestuff/Player",
+    "houseCardsPath": "GAME/Gamestuff/House",
+    "texturesPath": "GAME/Gamestuff/Cards/Textures",
+    "textureProperty": "_MainTex",
+    "stressGlobal": "PlayerStress",
+    "interactionGlobal": "GUIinteraction",
+    "useGlobal": "GUIuse",
+    "resetState": "Reset",
+    "materialIndex": 1,
+    "cardSlots": 9,
+    "pickDistance": 1,
+    "winStress": 3.3,
+    "loseStress": 10,
+    "idleStates": [
+      "Check hand",
+      "State 4"
+    ],
+    "outcomes": [
+      {
+        "state": "Win",
+        "actionTypes": [
+          "ArrayListGetRandom",
+          "MasterAudioPlaySound",
+          "GetFsmFloat",
+          "FloatAdd",
+          "FloatSubtract",
+          "FloatMultiply",
+          "FloatAdd",
+          "AddFsmFloat"
+        ],
+        "suppressActions": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      {
+        "state": "Lose",
+        "actionTypes": [
+          "ArrayListGetRandom",
+          "MasterAudioPlaySound",
+          "GetFsmFloat",
+          "FloatAdd",
+          "FloatSubtract",
+          "SendEventByName"
+        ],
+        "suppressActions": [
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "state": "Win car",
+        "actionTypes": [
+          "SetFsmString",
+          "FloatSubtract",
+          "IntAdd",
+          "SetIntValue",
+          "SetFloatValue"
+        ],
+        "suppressActions": [
+          1,
+          2,
+          4
+        ]
+      },
+      {
+        "state": "Lose car",
+        "actionTypes": [
+          "SetFsmString",
+          "FloatAdd",
+          "IntAdd",
+          "SetIntValue",
+          "SendEventByName",
+          "SetFloatValue"
+        ],
+        "suppressActions": [
+          1,
+          2,
+          4,
+          5
+        ]
+      },
+      {
+        "state": "Win house",
+        "actionTypes": [
+          "ActivateGameObject",
+          "ActivateGameObject",
+          "ActivateGameObject",
+          "EnableFSM",
+          "SetFsmString",
+          "FloatSubtract",
+          "IntAdd",
+          "SetIntValue",
+          "SetIntValue",
+          "SetFloatValue"
+        ],
+        "suppressActions": [
+          5,
+          6,
+          9
+        ]
+      },
+      {
+        "state": "Lose house",
+        "actionTypes": [
+          "ActivateGameObject",
+          "ActivateGameObject",
+          "ActivateGameObject",
+          "FloatAdd",
+          "SetFsmString",
+          "IntAdd",
+          "SetIntValue",
+          "SetIntValue",
+          "SendEventByName",
+          "SendEventByName",
+          "SendEventByName",
+          "SetFloatValue"
+        ],
+        "suppressActions": [
+          3,
+          5,
+          10,
+          11
+        ]
+      }
+    ],
+    "reactions": {
+      "rootPath": "PERAJARVI/Kunnalliskoti/Functions/RoomVenttiPig/Ventti",
+      "poses": [
+        "PIG/VenttiPig",
+        "Table",
+        "Chair",
+        "PIG/VenttiPig/AudioClips",
+        "PIG/VenttiPig/Pivot",
+        "PIG/VenttiPig/Pivot/Char",
+        "PIG/VenttiPig/Pivot/Char/bodymesh",
+        "PIG/VenttiPig/Pivot/Char/skeleton",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/Smoking",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/Smoking/BreathSmoke",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/Smoking/Cigarette",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/Smoking/Cigarette/Filter",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/Smoking/Cigarette/Shaft",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/Smoking/Cigarette/Shaft/RedHot",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/Smoking/Cigarette/Shaft/Smoke",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/eye_glasses_dark",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head/latsa",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_left/shoulder_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_left/shoulder_left/arm_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_left/shoulder_left/arm_left/hand_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_left/shoulder_left/arm_left/hand_left/finger_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_left/shoulder_left/arm_left/hand_left/finger_left/HandCollider",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_right",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right/hand_right",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right/hand_right/fingers_right",
+        "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right/hand_right/fingers_right/HandCollider",
+        "PIG/VenttiPig/Pivot/Char/skeleton/thig_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/thig_left/knee_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/thig_left/knee_left/ankle_left",
+        "PIG/VenttiPig/Pivot/Char/skeleton/thig_right",
+        "PIG/VenttiPig/Pivot/Char/skeleton/thig_right/knee_right",
+        "PIG/VenttiPig/Pivot/Char/skeleton/thig_right/knee_right/ankle_right",
+        "PIG/VenttiPig/Pivot/LookTarget",
+        "PIG/VenttiPig/Pivot/OriginalPos",
+        "PIG/VenttiPig/Pivot/RayPivot",
+        "PIG/VenttiPig/Pivot/RayPivot/Ray",
+        "PIG/VenttiPig/TargetPoint",
+        "PIG/VenttiPig/TargetSelf"
+      ],
+      "sounds": [
+        "MasterAudio/Pig/venttipig_lose01",
+        "MasterAudio/Pig/venttipig_lose02",
+        "MasterAudio/Pig/venttipig_lose03",
+        "MasterAudio/Pig/venttipig_lose04",
+        "MasterAudio/Pig/venttipig_lose05",
+        "MasterAudio/Pig/venttipig_win01",
+        "MasterAudio/Pig/venttipig_win02",
+        "MasterAudio/Pig/venttipig_win03",
+        "MasterAudio/Pig/venttipig_win04",
+        "MasterAudio/Pig/venttipig_win05",
+        "MasterAudio/HouseFoley/cards_gather",
+        "MasterAudio/Pig/venttipig_megalose01",
+        "MasterAudio/Pig/venttipig_megalose02",
+        "MasterAudio/Pig/pig1",
+        "MasterAudio/Pig/pig2",
+        "MasterAudio/Pig/pig3",
+        "MasterAudio/Pig/pig4",
+        "MasterAudio/Pig/pig5",
+        "MasterAudio/Pig/pig6",
+        "MasterAudio/Pig/pig7",
+        "MasterAudio/Pig/pig8"
+      ],
+      "sources": [
+        {
+          "path": "Table/GameManager",
+          "fsm": "Use",
+          "state": "Win",
+          "actionIndex": 1,
+          "origin": "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head",
+          "group": "Pig",
+          "variable": "AudioClipName",
+          "variation": "",
+          "delay": 0
+        },
+        {
+          "path": "Table/GameManager",
+          "fsm": "Use",
+          "state": "Lose",
+          "actionIndex": 1,
+          "origin": "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head",
+          "group": "Pig",
+          "variable": "AudioClipName",
+          "variation": "",
+          "delay": 0
+        },
+        {
+          "path": "Table/GameManager",
+          "fsm": "Use",
+          "state": "Anim",
+          "actionIndex": 0,
+          "origin": "Table/GameManager",
+          "group": "HouseFoley",
+          "variable": "",
+          "variation": "cards_gather",
+          "delay": 0
+        },
+        {
+          "path": "Table/GameManager",
+          "fsm": "Use",
+          "state": "Delay",
+          "actionIndex": 0,
+          "origin": "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head",
+          "group": "Pig",
+          "variable": "",
+          "variation": "venttipig_megalose01",
+          "delay": 3
+        },
+        {
+          "path": "Table/GameManager",
+          "fsm": "Use",
+          "state": "Anim 3",
+          "actionIndex": 0,
+          "origin": "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head",
+          "group": "Pig",
+          "variable": "",
+          "variation": "venttipig_megalose02",
+          "delay": 0
+        },
+        {
+          "path": "PIG/VenttiPig",
+          "fsm": "Speak",
+          "state": "State 1",
+          "actionIndex": 0,
+          "origin": "PIG/VenttiPig/Pivot/Char/skeleton/pelvis/spine_middle/spine_upper/HeadPivot/head",
+          "group": "Pig",
+          "variable": "ClipName",
+          "variation": "",
+          "delay": 0
+        }
+      ]
+    }
+  },
+  "venttiProperty": {
+    "managerPath": "PERAJARVI/Kunnalliskoti/Functions/RoomVenttiPig/Ventti/Table/GameManager",
+    "managerFsm": "Use",
+    "rusckoKey": "PlayerKeyRuscko",
+    "satsumaKey": "PlayerKeySatsuma",
+    "homeKey": "PlayerKeyHome",
+    "sleepPath": "CABIN/LOD/Sleep",
+    "hatchPath": "CABIN/Cabin/woodstove/HatchPivot/woodstove_hatch/Handle",
+    "loggingPath": "CABIN/LOD/Logging/Logwall",
+    "loggingFsm": "Use"
   },
   "pickables": {
     "excludeNameContains": [

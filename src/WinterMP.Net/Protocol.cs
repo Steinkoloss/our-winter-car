@@ -221,7 +221,36 @@ namespace WinterMP.Net
         //      private high/low cards and acknowledged wallet settlements.
         // v94: Debt-letter quotes and acknowledged payments (170–172) use the
         //      host's rent debt and fees, including inactive/relocated envelopes.
-        public const ushort Version = 94;
+        // v95: accepted passenger seats survive delayed poses; rejected claims clear
+        //      canonical occupancy on all peers, and stale requests cannot eject riders.
+        // v96: parked-vehicle checksums include reconciled damage and tire/drivetrain
+        //      condition; tire pressure rounds to a stable hundredth-bar wire value.
+        // v97: host-owned Ventti property keys and cabin access (173), including
+        //      late bindings and join snapshots without guest wager replay.
+        // v98: Ventti table observations (174) preserve full stakes and native outcomes,
+        //      with ordered deferred application; legacy GamblingState (93) is retired.
+        // v99: Ventti host ledger/state/acknowledgments (175–177) replace native
+        //      button replay (94); guests never charge or draw locally.
+        // v100: Ventti NPC/furniture poses (178) and live host-selected sounds (179).
+        // v101: Rally crossings retry until an exact connection-scoped acknowledgment;
+        //       progress revisions are per player, with host-verified crossing history.
+        // v102: complete native Lotto lists, pots, rounds and visibility (180); retire incorrect string layout 96.
+        // v103: host-issued Lotto tickets, immutable selected rows and acknowledged cash/bank claims (181–183).
+        // v104: HockeyBettingState appends complete odds/results, pairings and standings; guest season is paused.
+        // v105: item removals survive deferred creation; item resync replays live spawn manifests.
+        // v106: native trophy factory ItemSpawn identities, persistence isolation and replay.
+        // v107: full native part wear/tightness, authoritative host observations and part resync.
+        // v108: persistent package item IDs; reserve native boxes from generic cloning and preserve disposal saves.
+        // v109: PackageState (184), host box creation and quantity with isolated guest replicas.
+        // v110: native save IDs route part bodies and their FSMs independently of hierarchy/name.
+        // v111: replacement-part creation state (185), with isolated loose-part replicas.
+        // v112: acknowledged host-owned box opening (186/187), one native output per request.
+        // v113: fitting preserves native part lifetime; replacement Installed means AssemblyId > 0.
+        // v114: host-resolved bolt turns; absolute array/part total state in 44 and 123.
+        // v115: replacement parts carry stable attachment roots and relative pose/scale.
+        // v116: acknowledged replacement fitting requests; generic guest replacement-part state replay is refused.
+        // v117: part requests include install/remove operation; replacement state advertises native removal availability.
+        public const ushort Version = 118;
     }
 
     /// <summary>

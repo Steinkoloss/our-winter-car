@@ -23,8 +23,10 @@ namespace WinterMP.Core.Sync
         }
 
         public Dictionary<PlayMakerFSM, bool> HookedFsms { get; }
+        internal NativePartIdentity PartIdentities { get; } = new NativePartIdentity();
 
         public void BindItems(ItemWorldSync items) => _items = items;
+        public bool IsReplacementPart(PlayMakerFSM data) => _items.IsReplacementPart(data);
 
         private WalletSync _wallet = null!;
         public void BindWallet(WalletSync wallet) => _wallet = wallet;

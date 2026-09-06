@@ -49,6 +49,7 @@ namespace WinterMP.Net
                 case MessageId.VehicleClimate:
                 case MessageId.VehicleCargo:
                 case MessageId.NpcTransform:
+                case MessageId.VenttiSceneState:
                     return channel == Channel.ReliableOrdered || channel == Channel.UnreliableSequenced;
 
                 default:

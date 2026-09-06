@@ -71,7 +71,7 @@ namespace WinterMP.Core.Sync
             // Native dealing reparents cards between used/unused decks while we
             // wait for a hand to finish. Rebuild paths instead of retaining aliases.
             _fsms.Clear();
-            foreach (var obj in Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM)))
+            foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
                 if (fsm == null) continue;

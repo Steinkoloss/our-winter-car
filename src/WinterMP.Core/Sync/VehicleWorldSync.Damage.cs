@@ -44,6 +44,7 @@ namespace WinterMP.Core.Sync
                     && VehicleDamagePolicy.SameCondition(item.LastSentDamage, state)) return;
                 item.NextDamageKeepAliveAt = now + DamageKeepAliveSeconds;
                 item.LastSentDamage = state;
+                state.Sequence = ++item.OutDamageSequence;
                 session.SendWorldMessage(state, Channel.ReliableOrdered);
             }
             else if (item.PendingDamage != null)
@@ -122,7 +123,7 @@ namespace WinterMP.Core.Sync
         {
             var state = new VehicleDamage
             {
-                VehicleId = item.Id, OwnerPlayerId = owner, Sequence = ++item.OutDamageSequence,
+                VehicleId = item.Id, OwnerPlayerId = owner,
             };
             uint broken = 0;
             for (int bit = 0; bit < VehicleDamage.PartSlots; bit++)
@@ -138,17 +139,24 @@ namespace WinterMP.Core.Sync
             return state;
         }
 
-        internal VehicleDamage? TryBuildDamageSnapshot(SyncedItem item, byte owner)
+        private VehicleDamage? TryReadDamageState(SyncedItem item, byte owner)
         {
             if (item.DamageSyncDisabled || item.Body == null) return null;
             try
             {
                 EnsureVehicleSystemsProbe(item);
                 if (item.PartBreakagesFsm == null) return null;
-                // Snapshot reads must not advance the periodic change baseline.
                 return ReadDamageState(item, owner);
             }
             catch (Exception e) { DisableDamageSync(item, e); return null; }
+        }
+
+        internal VehicleDamage? TryBuildDamageSnapshot(SyncedItem item, byte owner)
+        {
+            // Snapshot/checksum reads must not advance the periodic change baseline.
+            var state = TryReadDamageState(item, owner);
+            if (state != null) state.Sequence = ++item.OutDamageSequence;
+            return state;
         }
 
         public bool TryAcceptGuestVehicleDamage(VehicleDamage message, byte playerId)

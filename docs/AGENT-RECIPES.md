@@ -34,6 +34,16 @@ Run: `dotnet test src/WinterMP.Net.Tests`
 
 Rules are data; runtime registration is in `FsmWorldSync.Registry.cs` + `SyncCatalog.cs`.
 
+For buys, inspect the guard's **actions**, not just its state name. Hooks fire on
+state entry: a state still waiting for GetButtonDown/GetMouseButtonDown or a
+mouse-click event emits an intent before the press if registered as a guard.
+Keep form-only openers local and guard actual payment/commit states after input.
+Run `python3 tools/check_fsm_bindings.py /path/to/action-evidence.json
+--purchase-catalog catalog/sync-catalog.json` to flag this mistake. Unverified
+bindings are not a passing gameplay audit; still trace amount/selection payloads,
+result replay, spawned items and claims end-to-end.
+
+
 ---
 
 ## Hook a PlayMaker FSM state (host-only or consent gating)
@@ -43,7 +53,7 @@ Rules are data; runtime registration is in `FsmWorldSync.Registry.cs` + `SyncCat
    - `FsmHook.HasState(fsm, stateName)`
    - `FsmHook.OnStateEnter(fsm, stateName, callback)`
 3. Resolve stable paths with `ScenePath.Of(transform)` when matching by path fragment.
-4. Probe with `Resources.FindObjectsOfTypeAll<PlayMakerFSM>()` on a timer — objects may load late.
+4. Probe with `ScenePath.ScanFsms()` on a timer — objects may load late. Enumerate it synchronously with `foreach`: its path index exists only for that scan and avoids repeated sibling walks for thousands of FSMs. Use `ScenePath.ScanRigidbodies()` for body discovery. Do not retain the enumerator across frames or mutate object names/parents while matching paths.
 5. Wrap probe/update in try/catch; **never let one subsystem kill the whole plugin** (see `PlayerSyncManager`).
 
 Examples: `PlayerSleepHook.cs`, `FsmWorldSync.Registry.cs`.

@@ -4,8 +4,8 @@
 game's title. One player hosts with their savefile; friends join through Steam
 **Join Game**. Everyone shares the same world, money, and progress while connected.
 
-For **0.1.31 tester packages**, start with [TESTING.md](TESTING.md). This package
-targets My Winter Car **v.260516-01**, Steam build **23268598** (protocol **94**).
+For **0.1.32 tester packages**, start with [TESTING.md](TESTING.md). This package
+targets My Winter Car **v.260516-01**, Steam build **23268598** (protocol **118**).
 Use the downloads supplied by your test organizer. The GitHub links below lead to
 public releases, which may still list an older version.
 

@@ -110,15 +110,16 @@ namespace WinterMP.Net.Messages
         IceRaceResultsState = 91,
         /// <summary>Host -> guests: exact fixed-radiator thermostat rotation.</summary>
         RadiatorThermostatState = 92,
-        /// <summary>Host -> guests: legacy Ventti display. Slot use retired in v92.</summary>
+        /// <summary>Retired display layout: slots moved in v92, Ventti in v98. Never reuse.</summary>
         GamblingState = 93,
-        /// <summary>Guest -> host: legacy Ventti controls. Slot use retired in v92.</summary>
+        /// <summary>Retired in v99. Kept decodable for diagnostics; never reuse.</summary>
         GamblingIntent = 94,
         /// <summary>Host -> guests: utility meter (electricity/phone) unpaid total + power/line state.</summary>
         UtilityBillState = 95,
         /// <summary>Host -> guests: shared kitchen-appliance (oven/stove) cooking + fire + fuse state.</summary>
         ApplianceState = 99,
         /// <summary>Host -> guests: national lottery draw (round + winning numbers + pot).</summary>
+        /// <summary>Retired incorrect Lotto string layout. Never reuse.</summary>
         LotteryDrawState = 96,
         /// <summary>Host -> guests: shared repair-shop (Fleetari) order record + service results.</summary>
         FleetariOrderState = 97,
@@ -171,8 +172,8 @@ namespace WinterMP.Net.Messages
         /// <summary>Host -> guests: JOKKIS banger-race lap/time/checkpoint state.</summary>
         JokkisRaceState = 151,
 
-        // 160-179: economy round 2 (93-99 and 104 are full)
-        /// <summary>Host -> guests: hockey betting round (matchup, odds, result, KurPa flag).</summary>
+        // 160-183: economy round 2 (93-99 and 104 are full)
+        /// <summary>Host -> guests: complete hockey odds/results, pairings and standings.</summary>
         HockeyBettingState = 160,
         /// <summary>Guest -> host: the sender's own oven sim rolled an ignition (fire report).</summary>
         ApplianceFireReport = 161,
@@ -189,6 +190,25 @@ namespace WinterMP.Net.Messages
         DebtLetterState = 170,
         DebtPaymentIntent = 171,
         DebtPaymentResult = 172,
+        VenttiPropertyState = 173,
+        VenttiTableState = 174,
+        VenttiLedgerState = 175,
+        VenttiRequest = 176,
+        VenttiReceipt = 177,
+        VenttiSceneState = 178,
+        VenttiSoundCue = 179,
+        LottoDrawState = 180,
+        LottoTicketRequest = 181,
+        LottoTicketReceipt = 182,
+        LottoTicketState = 183,
+
+        // Standard parts-package identity, creation and quantity.
+        PackageState = 184,
+        ReplacementPartState = 185,
+        PackageOpenRequest = 186,
+        PackageOpenReceipt = 187,
+        PartFitRequest = 188,
+        PartFitReceipt = 189,
 
         // Reserved ranges for future subsystems:
         //   63-79 vehicles (attachment, fuel/damage)

@@ -16,7 +16,7 @@ namespace WinterMP.Core.Sync
             var banking = SyncCatalog.Banking;
             if (_cash == null && banking != null)
                 _cash = FsmVariables.GlobalVariables.FindFsmFloat(banking.CashGlobal);
-            foreach (var obj in Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM)))
+            foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
                 if (fsm == null) continue;

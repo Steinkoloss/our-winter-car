@@ -4,6 +4,7 @@ using UnityEngine;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
@@ -77,40 +78,53 @@ namespace WinterMP.Core.Sync
                     $"WorldSync: dropped guest raw event {message.NetId:X8} '{message.EventName}'.");
                 return false;
             }
-            if (!IsGuestNear(SessionManager.Instance, playerId, bolt.Fsm.transform.position))
+            if (!IsGuestNearBolt(SessionManager.Instance, playerId, bolt.Fsm.transform.position))
             {
                 WinterMPPlugin.Log.LogWarning(
                     $"WorldSync: dropped distant guest bolt event {message.NetId:X8} '{message.EventName}'.");
                 return false;
             }
 
-            OnRemoteRawEvent(message);
+            // Guest intents must be executable now; never park a turn for a later
+            // installation or relay relative operations to other guests.
+            if (!BoltReady(bolt) || NativePartIdentity.Phase(bolt.PartData) != NativePartPhase.Fitted) return false;
+            if (IsBoltTimingAdjustment(bolt, message.EventName))
+            {
+                QueueHostBoltReport(message.NetId);
+                return false;
+            }
+            if (!TryApplyRawEvent(message.NetId, message.EventName)) return false;
+            QueueHostBoltReport(message.NetId);
             return true;
         }
 
-        /// <summary>Host gate for settled bolt state sent after a valid local turn.</summary>
+        /// <summary>Guest reports request a correction; only the host's native turn changes the bolt.</summary>
         public bool TryAcceptGuestBoltState(BoltState message, byte playerId)
         {
-            if (!_bolts.TryGetValue(message.NetId, out var bolt) || bolt.Fsm == null
-                || !IsGuestNear(SessionManager.Instance, playerId, bolt.Fsm.transform.position))
+            if (!BoltStatePolicy.Valid(message) || !_bolts.TryGetValue(message.NetId, out var bolt) || !BoltReady(bolt)
+                || !IsGuestNearBolt(SessionManager.Instance, playerId, bolt.Fsm.transform.position))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: dropped guest bolt state {message.NetId:X8}.");
                 return false;
             }
-            OnRemoteBoltState(message);
+            QueueHostBoltReport(message.NetId, message);
             return true;
         }
 
-        /// <summary>Host gate for install/tightness/wear snapshots from a nearby guest.</summary>
+        /// <summary>A nearby guest asks for the host's settled part scalars. Native
+        /// install/bolt events already run on the host; reports cannot rewrite its wear.</summary>
         public bool TryAcceptGuestPartState(PartState message, byte playerId)
         {
-            if (!_parts.TryGetValue(message.NetId, out var part) || part.Fsm == null
+            if (!PartStatePolicy.Valid(message) || !_parts.TryGetValue(message.NetId, out var part) || part.Fsm == null
+                || !part.Fsm.gameObject.activeInHierarchy || !part.Fsm.enabled
                 || !IsGuestNear(SessionManager.Instance, playerId, part.Fsm.transform.position))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: dropped guest part state {message.NetId:X8}.");
                 return false;
             }
-            OnRemotePartState(message);
+            // Hooks can report before the same-frame native transition completes.
+            // Resample in ProcessPending after queued interaction events have run.
+            _hostPartReports[message.NetId] = message;
             return true;
         }
 
@@ -192,7 +206,9 @@ namespace WinterMP.Core.Sync
                 return true;
             }
             if (_parts.TryGetValue(netId, out var part) && part.Fsm != null
-                && Array.IndexOf(part.SyncedStates, stateName) >= 0)
+                && !_bridge.IsReplacementPart(part.Fsm)
+                && Array.IndexOf(part.SyncedStates, stateName) >= 0
+                && stateName != "Bolted" && stateName != "Unbolted" && stateName != "Stop")
             {
                 fsm = part.Fsm;
                 path = part.Path;
@@ -349,6 +365,7 @@ namespace WinterMP.Core.Sync
 
             if (_parts.TryGetValue(netId, out var part) && part.Fsm != null)
             {
+                if (IsDerivedPartState(stateName)) return true;
                 if (Array.IndexOf(part.SyncedStates, stateName) < 0)
                 {
                     WinterMPPlugin.Log.LogWarning($"WorldSync: '{stateName}' is not a synced part state of {part.Path}; dropped.");
@@ -402,18 +419,19 @@ namespace WinterMP.Core.Sync
 
         private bool TryApplyRawEvent(uint netId, string eventName)
         {
-            if (!_bolts.TryGetValue(netId, out var bolt) || bolt.Fsm == null) return false;
-            if (!bolt.Fsm.gameObject.activeInHierarchy || !bolt.Fsm.enabled) return false;
+            if (!_bolts.TryGetValue(netId, out var bolt) || !BoltReady(bolt)) return false;
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: bolt {netId:X8} {eventName} (remote).");
+            bool applying = _bridge.ApplyingRemote;
             _bridge.ApplyingRemote = true;
             try
             {
                 bolt.Fsm.SendEvent(eventName);
             }
+            catch (Exception e) { FailBolt(bolt, e); return false; }
             finally
             {
-                _bridge.ApplyingRemote = false;
+                _bridge.ApplyingRemote = applying;
             }
 
             if (_bridge.SelfTest)
@@ -439,6 +457,19 @@ namespace WinterMP.Core.Sync
         internal void ProcessPending()
         {
             var session = SessionManager.Instance;
+
+            if (_pendingBoltStates.Count > 0)
+            {
+                foreach (uint id in new List<uint>(_pendingBoltStates.Keys))
+                {
+                    var pending = _pendingBoltStates[id];
+                    if (ApplyBoltState(id, pending.BoltTightness, pending.ScrewInt, pending.PartTightness, pending.ReceiptOrder))
+                    { _pendingBoltStates.Remove(id); continue; }
+                    if (Time.unscaledTime < pending.ExpiresAt) continue;
+                    _pendingBoltStates.Remove(id);
+                    if (session != null && !session.IsHost) _bridge.RequestObjectState(id);
+                }
+            }
 
             for (int i = _pending.Count - 1; i >= 0; i--)
             {
@@ -480,8 +511,23 @@ namespace WinterMP.Core.Sync
                 }
             }
 
+            if (_pendingPartStates.Count > 0)
+            {
+                var ids = new List<uint>(_pendingPartStates.Keys);
+                foreach (uint id in ids)
+                {
+                    var pending = _pendingPartStates[id];
+                    if (ApplyPartState(id, pending.Flags, pending.Tightness, pending.Wear, pending.ReceiptOrder))
+                    { _pendingPartStates.Remove(id); continue; }
+                    if (Time.unscaledTime < pending.ExpiresAt) continue;
+                    _pendingPartStates.Remove(id);
+                    if (session != null && !session.IsHost) _bridge.RequestObjectState(id);
+                }
+            }
+
             if (session != null && session.IsHost)
             {
+                ProcessHostBoltReports(session);
                 for (int i = _pendingPurchaseIntents.Count - 1; i >= 0; i--)
                 {
                     var intent = _pendingPurchaseIntents[i];
@@ -491,6 +537,18 @@ namespace WinterMP.Core.Sync
                         if (Time.unscaledTime >= intent.ExpiresAt)
                             WinterMPPlugin.Log.LogWarning($"WorldSync: dropping expired buy intent {intent.EventName} for {intent.NetId:X8}.");
                         _pendingPurchaseIntents.RemoveAt(i);
+                    }
+                }
+                if (_hostPartReports.Count > 0)
+                {
+                    var ids = new List<uint>(_hostPartReports.Keys);
+                    foreach (uint id in ids)
+                    {
+                        var current = BuildPartState(id);
+                        if (current == null) continue;
+                        var reply = PartStatePolicy.HostReply(_hostPartReports[id], current);
+                        _hostPartReports.Remove(id);
+                        if (reply != null) session.SendWorldMessage(reply, WinterMP.Net.Channel.ReliableOrdered);
                     }
                 }
             }

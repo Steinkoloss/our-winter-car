@@ -22,8 +22,6 @@ namespace WinterMP.Core.Session
         public float LastTransformTime;
         public ushort LastNeedsSequence;
         public bool HasNeedsReport;
-        public ushort LastPassengerSequence;
-        public bool HasPassengerState;
 
         /// <summary>Round-trip time in milliseconds, measured by the ping loop.</summary>
         public int PingMs = -1;

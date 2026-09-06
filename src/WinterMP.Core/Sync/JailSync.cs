@@ -242,7 +242,7 @@ namespace WinterMP.Core.Sync
             // still binds (its DaysLeft stays 0 until the game activates the jail).
             try
             {
-                var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
+                var fsms = ScenePath.ScanFsms();
                 foreach (var obj in fsms)
                 {
                     var fsm = obj as PlayMakerFSM;

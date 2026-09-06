@@ -69,10 +69,13 @@ namespace WinterMP.Net.Tests
                     existingArray != null && existingArray.Length > 0 ? existingArray.Length : 2));
                 seed += 7;
             }
+            if (target is PartFitRequest fitting) { fitting.Operation = PartFitOperation.Install; fitting.SlotIndex = 3; }
+            if (target is PartFitReceipt fitted) { fitted.Operation = PartFitOperation.Install; fitted.SlotIndex = 3; }
         }
 
         private static object MakeValue(Type t, int seed, int arrayLength = 2)
         {
+            if (t.IsEnum) { var values = Enum.GetValues(t); return values.GetValue(seed % values.Length)!; }
             if (t == typeof(byte)) return (byte)(seed & 0x7F | 1);
             if (t == typeof(sbyte)) return (sbyte)(seed & 0x3F | 1);
             if (t == typeof(bool)) return true;
@@ -87,6 +90,14 @@ namespace WinterMP.Net.Tests
             if (t == typeof(string)) return "str" + seed;
             if (t == typeof(NetVector3)) return new NetVector3(seed + 0.1f, seed + 0.2f, seed + 0.3f);
             if (t == typeof(NetQuaternion)) return new NetQuaternion(seed + 0.1f, seed + 0.2f, seed + 0.3f, seed + 0.4f);
+            if (t == typeof(VenttiPose))
+            {
+                // Scene packets enforce unit quaternions and a 0/1 visibility flag.
+                var q = (NetQuaternion)MakeValue(typeof(NetQuaternion), seed);
+                float norm = (float)Math.Sqrt((double)q.X*q.X + (double)q.Y*q.Y + (double)q.Z*q.Z + (double)q.W*q.W);
+                return new VenttiPose { Position = (NetVector3)MakeValue(typeof(NetVector3), seed),
+                    Rotation = new NetQuaternion(q.X/norm, q.Y/norm, q.Z/norm, q.W/norm), Active = (byte)(seed & 1) };
+            }
             if (t.IsEnum)
             {
                 var values = Enum.GetValues(t);

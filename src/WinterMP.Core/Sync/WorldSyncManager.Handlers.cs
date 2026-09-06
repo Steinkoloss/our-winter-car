@@ -126,6 +126,7 @@ namespace WinterMP.Core.Sync
         /// </summary>
         public void OnPlayerAdmitted(byte playerId)
         {
+            _lottoTickets?.ForgetPlayer(playerId);
             EnsureSyncReady();
             _wanted.ForgetPlayer(playerId);
             _welfare.ForgetDebtPlayer(playerId);
@@ -145,15 +146,19 @@ namespace WinterMP.Core.Sync
             _fsm.ForgetPlayer(playerId);
             _appliances.ForgetPlayer(playerId);
             _items.ForgetPlayerSpawnSequence(playerId);
+            _items.ForgetPackageOpeningPlayer(playerId);
+            _items.ForgetPartFittingPlayer(playerId);
             _items.ForgetPlayerItemSequences(playerId);
             PassengerController.Instance?.ForgetPlayer(playerId);
         }
 
         public void OnPlayerDeparted(byte playerId)
         {
+            _items.ForgetPartFittingPlayer(playerId);
             _welfare.ForgetDebtPlayer(playerId);
             _gambling.ForgetPlayer(playerId);
             _poker.ForgetPlayer(playerId);
+            _ventti.ForgetPlayer(playerId);
         }
 
         public void OnHostApplianceFireReport(ApplianceFireReport message) { EnsureSyncReady(); _appliances.OnHostFireReport(message); }
@@ -244,16 +249,21 @@ namespace WinterMP.Core.Sync
             return _mailOrders.TryBuildIntent(path, fsm, out intent);
         }
         public void ForceHeatSourceBroadcast() { EnsureSyncReady(); _heat.ForceBroadcast(); }
-        public void OnRemoteGamblingState(GamblingState message)
+        public void OnRemoteVenttiTableState(VenttiTableState message)
         {
             EnsureSyncReady();
             _ventti.OnRemoteState(message);
         }
-        public bool OnHostGamblingIntent(GamblingIntent message)
+        public void OnRemoteVenttiPropertyState(VenttiPropertyState message)
         {
             EnsureSyncReady();
-            return _ventti.TryAcceptIntent(message);
+            _ventti.OnPropertyState(message);
         }
+        public void OnVenttiRequest(VenttiRequest message) { EnsureSyncReady(); _ventti.OnRequest(message); }
+        public void OnVenttiGameState(VenttiLedgerState message) { EnsureSyncReady(); _ventti.OnGameState(message); }
+        public void OnVenttiReceipt(VenttiReceipt message) { EnsureSyncReady(); _ventti.OnReceipt(message); }
+        public void OnVenttiSceneState(VenttiSceneState message) { EnsureSyncReady(); _ventti.OnSceneState(message); }
+        public void OnVenttiSoundCue(VenttiSoundCue message) { EnsureSyncReady(); _ventti.OnSoundCue(message); }
         public void OnSlotIntent(SlotMachineIntent message) { EnsureSyncReady(); _gambling.OnIntent(message); }
         public void OnSlotState(SlotMachineState message) { EnsureSyncReady(); _gambling.OnState(message); }
         public void OnSlotResult(SlotMachineResult message) { EnsureSyncReady(); _gambling.OnResult(message); }
@@ -269,7 +279,18 @@ namespace WinterMP.Core.Sync
         }
         public void OnRemoteUtilityBillState(UtilityBillState message) { EnsureSyncReady(); _utilityBills.Apply(message); }
         public void ForceUtilityBillBroadcast() { EnsureSyncReady(); _utilityBills.ForceBroadcast(); }
-        public void OnRemoteLotteryDrawState(LotteryDrawState message) { EnsureSyncReady(); _lottery.Apply(message); }
+        public void OnLottoTicketRequest(LottoTicketRequest message) { EnsureSyncReady(); _lottoTickets?.OnRequest(message); }
+        public void OnLottoTicketReceipt(LottoTicketReceipt message) { EnsureSyncReady(); _lottoTickets?.OnReceipt(message); }
+        public void OnLottoTicketState(LottoTicketState message) { EnsureSyncReady(); _lottoTickets?.OnState(message); }
+        public void OnPackageState(PackageState message) { EnsureSyncReady(); _items.OnPackageState(message); }
+        public void OnHostPartFit(PartFitRequest message, byte playerId) { EnsureSyncReady(); _items.OnHostPartFit(message, playerId); }
+        public void OnPartFitReceipt(PartFitReceipt message) { EnsureSyncReady(); _items.OnPartFitReceipt(message); }
+        internal void DrawPartFitPrompt() => _items.DrawPartFitPrompt();
+
+        public void OnHostPackageOpen(PackageOpenRequest message, byte playerId) { EnsureSyncReady(); _items.OnHostPackageOpen(message, playerId); }
+        public void OnPackageOpenReceipt(PackageOpenReceipt message) { EnsureSyncReady(); _items.OnPackageOpenReceipt(message); }
+        public void OnReplacementPartState(ReplacementPartState message) { EnsureSyncReady(); _items.OnReplacementPartState(message); }
+        public void OnRemoteLottoDrawState(LottoDrawState message) { EnsureSyncReady(); _lottery.Apply(message); }
         public void ForceLotteryBroadcast() { EnsureSyncReady(); _lottery.ForceBroadcast(); }
 
         public void OnRemoteVehicleState(VehicleState message) { EnsureSyncReady(); _vehicles.OnRemoteVehicleState(message); }

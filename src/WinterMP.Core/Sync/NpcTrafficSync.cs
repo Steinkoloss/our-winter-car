@@ -89,7 +89,7 @@ namespace WinterMP.Core.Sync
             int moverAdded = ScanMovers();
 
             var newcomers = new List<SyncedNpc>();
-            var bodies = Resources.FindObjectsOfTypeAll(typeof(Rigidbody));
+            var bodies = ScenePath.ScanRigidbodies();
             foreach (var obj in bodies)
             {
                 var body = obj as Rigidbody;

@@ -50,11 +50,25 @@ namespace WinterMP.Core.Catalog
         internal static SlotMachineData? SlotMachines { get; private set; }
         internal static PokerData? VideoPoker { get; private set; }
         internal static DebtLetterData? DebtLetter { get; private set; }
+        internal static VenttiPropertyData? VenttiProperty { get; private set; }
+        internal static VenttiTableData? VenttiTable { get; private set; }
+        internal static RallyProgressData? RallyProgress { get; private set; }
+        internal static LottoDrawData? LottoDraw { get; private set; }
+        internal static HockeyBettingData? HockeyBetting { get; private set; }
+        internal static LottoTicketsData? LottoTickets { get; private set; }
+        internal static TrophyFactoriesData? TrophyFactories { get; private set; }
+        internal static PartsPackagesData? PartsPackages { get; private set; }
+        internal static PartIdentityData? PartIdentity { get; private set; }
+        internal static ReplacementPartsData? ReplacementParts { get; private set; }
 
         public static void Load()
         {
             _doors.Clear();
             _spawnContainers.Clear();
+            TrophyFactories = null;
+            PartsPackages = null;
+            PartIdentity = null;
+            ReplacementParts = null;
             _controls.Clear();
             _switchRules.Clear();
             _ignitions.Clear();
@@ -71,6 +85,12 @@ namespace WinterMP.Core.Catalog
             SlotMachines = null;
             VideoPoker = null;
             DebtLetter = null;
+            VenttiProperty = null;
+            VenttiTable = null;
+            RallyProgress = null;
+            LottoDraw = null;
+            HockeyBetting = null;
+            LottoTickets = null;
             Loaded = false;
             Hash = 0;
 
@@ -114,6 +134,16 @@ namespace WinterMP.Core.Catalog
                 SlotMachines = data.SlotMachines;
                 VideoPoker = data.VideoPoker;
                 DebtLetter = data.DebtLetter;
+                VenttiProperty = data.VenttiProperty;
+                VenttiTable = data.VenttiTable;
+                RallyProgress = data.RallyProgress;
+                LottoDraw = data.LottoDraw;
+                HockeyBetting = data.HockeyBetting;
+                LottoTickets = data.LottoTickets;
+                TrophyFactories = data.TrophyFactories;
+                PartsPackages = data.PartsPackages;
+                PartIdentity = data.PartIdentity;
+                ReplacementParts = data.ReplacementParts;
             }
             catch (Exception e)
             {

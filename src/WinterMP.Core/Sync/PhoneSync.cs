@@ -124,7 +124,7 @@ namespace WinterMP.Core.Sync
             // ringing never binds, and every relayed call event is dropped at !Ready.
             try
             {
-                var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
+                var fsms = ScenePath.ScanFsms();
                 foreach (var obj in fsms)
                 {
                     var fsm = obj as PlayMakerFSM;

@@ -36,14 +36,25 @@ namespace WinterMP.Core.Sync
         {
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return;
-            _sessionDespawnedItems.Add(itemId);
+            RecordItemRetirement(itemId);
+        }
+
+        private void RecordItemRetirement(uint itemId)
+        {
+            DetachReplacementChildren(itemId);
+            _spawnLifecycle.Retire(itemId);
+            _pendingItemPoses.Remove(itemId);
+            RetireHiddenReplacement(itemId);
         }
 
         public void OnRemoteItemDespawn(ItemDespawn message)
         {
-            TrackSessionDespawn(message.ItemId);
+            // Host-authorized removal may arrive before deferred materialization.
+            RecordItemRetirement(message.ItemId);
 
             if (!_items.TryGetValue(message.ItemId, out var item)) return;
+            if (_ticketItemIds.Contains(message.ItemId) && TicketDespawnHandler != null
+                && TicketDespawnHandler(message.ItemId)) return;
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: item {message.ItemId:X8} despawn (remote).");
             item.DespawnSent = true;
@@ -51,7 +62,7 @@ namespace WinterMP.Core.Sync
             _bridge.ApplyingRemote = true;
             try
             {
-                if (item.Body != null)
+                if (item.Body != null && !TryRetirePackage(item.Body) && !TryRetireReplacement(item.Body))
                     UnityEngine.Object.Destroy(item.Body.gameObject);
             }
             finally
@@ -71,11 +82,13 @@ namespace WinterMP.Core.Sync
         public bool TryAcceptGuestDespawn(ItemDespawn message, byte playerId)
         {
             if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null
+                || !CanSyncItemMotion(item)
                 || (item.RemoteOwner != playerId && item.RemoteOwner != WorldSyncIds.NoOwner))
                 return false;
 
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return false;
+            if (!CanGuestRetireReplacement(message.ItemId)) return false;
             float now = Time.unscaledTime;
             foreach (var player in session.Players)
             {
@@ -94,7 +107,7 @@ namespace WinterMP.Core.Sync
         private void RemoveTrackedItem(uint itemId, Rigidbody? body)
         {
             _items.Remove(itemId);
-            if (body != null)
+            if (!object.ReferenceEquals(body, null))
                 _trackedBodies.Remove(body);
         }
 

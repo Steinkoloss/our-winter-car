@@ -164,23 +164,10 @@ namespace WinterMP.Core.Session
                             $"Dropped PassengerState claiming player {passengerState.PlayerId} from {peer}.");
                         break;
                     }
-                    if (IsHost && !TryAcceptGuestPassengerState(peer, passengerState))
-                    {
-                        WinterMPPlugin.Log.LogWarning(
-                            $"Dropped invalid or stale PassengerState from player {passengerState.PlayerId}.");
-                        SendTo(peer, new PassengerState
-                        {
-                            PlayerId = passengerState.PlayerId,
-                            VehicleId = 0,
-                            SeatIndex = PassengerState.SeatNone,
-                            Sequence = passengerState.Sequence,
-                        }, Channel.ReliableOrdered);
-                        break;
-                    }
-                    RecordPassengerState(passengerState);
-                    Sync.PassengerController.Instance?.OnRemotePassengerState(passengerState);
                     if (IsHost)
-                        Broadcast(passengerState, Channel.ReliableOrdered, except: peer);
+                        HandleGuestPassengerState(peer, passengerState);
+                    else
+                        Sync.PassengerController.Instance?.OnRemotePassengerState(passengerState);
                     break;
 
                 case GuestSpawn guestSpawn when !IsHost:
@@ -281,13 +268,12 @@ namespace WinterMP.Core.Session
                     break;
 
                 case FsmRawEvent rawEvent when IsHost:
-                    if (TryGetPlayerId(peer, out byte rawEventPlayerId)
-                        && Sync.WorldSyncManager.Instance?.OnHostGuestRawEvent(rawEvent, rawEventPlayerId) == true)
-                        Broadcast(rawEvent, Channel.ReliableOrdered, except: peer);
+                    if (TryGetPlayerId(peer, out byte rawEventPlayerId))
+                        Sync.WorldSyncManager.Instance?.OnHostGuestRawEvent(rawEvent, rawEventPlayerId);
                     break;
 
                 case FsmRawEvent rawEvent:
-                    Sync.WorldSyncManager.Instance?.OnRemoteRawEvent(rawEvent);
+                    // v114 distributes settled bolt state, never relative turns from the host.
                     break;
 
                 case RadiatorThermostatState thermostatState when !IsHost:
@@ -295,9 +281,8 @@ namespace WinterMP.Core.Session
                     break;
 
                 case BoltState boltState when IsHost:
-                    if (TryGetPlayerId(peer, out byte boltPlayerId)
-                        && Sync.WorldSyncManager.Instance?.OnHostGuestBoltState(boltState, boltPlayerId) == true)
-                        Broadcast(boltState, Channel.ReliableOrdered, except: peer);
+                    if (TryGetPlayerId(peer, out byte boltPlayerId))
+                        Sync.WorldSyncManager.Instance?.OnHostGuestBoltState(boltState, boltPlayerId);
                     break;
 
                 case BoltState boltState:
@@ -305,9 +290,8 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PartState partState when IsHost:
-                    if (TryGetPlayerId(peer, out byte partPlayerId)
-                        && Sync.WorldSyncManager.Instance?.OnHostGuestPartState(partState, partPlayerId) == true)
-                        Broadcast(partState, Channel.ReliableOrdered, except: peer);
+                    if (TryGetPlayerId(peer, out byte partPlayerId))
+                        Sync.WorldSyncManager.Instance?.OnHostGuestPartState(partState, partPlayerId);
                     break;
 
                 case PartState partState:
@@ -317,7 +301,7 @@ namespace WinterMP.Core.Session
                 case ItemDespawn itemDespawn when IsHost:
                     if (TryGetPlayerId(peer, out byte despawnPlayerId)
                         && Sync.WorldSyncManager.Instance?.OnHostGuestItemDespawn(itemDespawn, despawnPlayerId) == true)
-                        Broadcast(itemDespawn, Channel.ReliableOrdered, except: peer);
+                        Broadcast(itemDespawn, Channel.ReliableOrdered);
                     break;
 
                 case ItemDespawn itemDespawn:
@@ -527,26 +511,80 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnHostHeatSourceIntent(heatIntent);
                     break;
 
-                case GamblingState gamblingState when !IsHost:
-                    Sync.WorldSyncManager.Instance?.OnRemoteGamblingState(gamblingState);
+                case VenttiTableState tableState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVenttiTableState(tableState);
+                    break;
+
+                case VenttiPropertyState propertyState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteVenttiPropertyState(propertyState);
                     break;
 
                 case UtilityBillState utilityBillState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteUtilityBillState(utilityBillState);
                     break;
 
-                case LotteryDrawState lotteryDrawState when !IsHost:
-                    Sync.WorldSyncManager.Instance?.OnRemoteLotteryDrawState(lotteryDrawState);
+                case LottoTicketRequest ticketRequest when IsHost:
+                    if (IsPeerPlayer(peer, ticketRequest.PlayerId)) Sync.WorldSyncManager.Instance?.OnLottoTicketRequest(ticketRequest);
+                    break;
+                case LottoTicketReceipt ticketReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnLottoTicketReceipt(ticketReceipt);
+                    break;
+                case PackageState packageState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnPackageState(packageState);
                     break;
 
-                case GamblingIntent gamblingIntent when IsHost:
-                    if (!IsPeerPlayer(peer, gamblingIntent.PlayerId))
+                case PartFitRequest fitRequest when IsHost:
+                    if (TryGetPlayerId(peer, out byte fittingPlayerId))
+                        Sync.WorldSyncManager.Instance?.OnHostPartFit(fitRequest, fittingPlayerId);
+                    break;
+
+                case PartFitReceipt fitReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnPartFitReceipt(fitReceipt);
+                    break;
+
+                case PackageOpenRequest openRequest when IsHost:
+                    if (TryGetPlayerId(peer, out byte openingPlayerId) && openingPlayerId == openRequest.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostPackageOpen(openRequest, openingPlayerId);
+                    break;
+
+                case PackageOpenReceipt openReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnPackageOpenReceipt(openReceipt);
+                    break;
+
+                case ReplacementPartState replacementState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnReplacementPartState(replacementState);
+                    break;
+                case LottoTicketState ticketState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnLottoTicketState(ticketState);
+                    break;
+
+                case LottoDrawState lottoDrawState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteLottoDrawState(lottoDrawState);
+                    break;
+
+                case VenttiRequest venttiRequest when IsHost:
+                    if (!IsPeerPlayer(peer, venttiRequest.PlayerId))
                     {
-                        WinterMPPlugin.Log.LogWarning(
-                            $"Dropped GamblingIntent claiming player {gamblingIntent.PlayerId} from {peer}.");
+                        WinterMPPlugin.Log.LogWarning($"Dropped VenttiRequest claiming player {venttiRequest.PlayerId} from {peer}.");
                         break;
                     }
-                    Sync.WorldSyncManager.Instance?.OnHostGamblingIntent(gamblingIntent);
+                    Sync.WorldSyncManager.Instance?.OnVenttiRequest(venttiRequest);
+                    break;
+
+                case VenttiLedgerState venttiState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVenttiGameState(venttiState);
+                    break;
+
+                case VenttiSceneState venttiScene when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVenttiSceneState(venttiScene);
+                    break;
+
+                case VenttiSoundCue venttiSound when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVenttiSoundCue(venttiSound);
+                    break;
+
+                case VenttiReceipt venttiReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVenttiReceipt(venttiReceipt);
                     break;
 
                 case SlotMachineIntent slotIntent when IsHost:

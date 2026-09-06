@@ -74,6 +74,7 @@ namespace WinterMP.Core.Sync
 
             var session = SessionManager.Instance;
             if (session == null || session.PlayerCount == 0) return;
+            if (IsDerivedPartState(stateName)) return;
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: part {netId:X8} -> '{stateName}' (local).");
             session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
@@ -297,88 +298,54 @@ namespace WinterMP.Core.Sync
         private void OnPartSettled(uint netId)
         {
             if (_bridge.ApplyingRemote) return;
-            if (!_parts.TryGetValue(netId, out var part)) return;
-
-            ReadPartVars(part, out byte flags, out byte tightness, out byte wear);
             var session = SessionManager.Instance;
-            if (session == null || session.PlayerCount == 0) return;
-
-            WinterMPPlugin.Log.LogInfo(
-                $"WorldSync: part {netId:X8} settled installed={((flags & PartState.FlagInstalled) != 0)} tightness={tightness} wear={wear} (local).");
-            session.SendWorldMessage(new PartState
-            {
-                NetId = netId,
-                Flags = flags,
-                Tightness = tightness,
-                Wear = wear,
-            }, Channel.ReliableOrdered);
+            var state = BuildPartState(netId);
+            if (session == null || session.PlayerCount == 0 || state == null) return;
+            if (session.IsHost)
+                _hostPartReports[netId] = state;
+            else
+                session.SendWorldMessage(state, Channel.ReliableOrdered);
         }
 
-        private static void ReadPartVars(SyncedPart part, out byte flags, out byte tightness, out byte wear)
+        private static PartState? ReadPartState(uint id, SyncedPart part)
         {
-            bool installed = part.InstalledVar != null && part.InstalledVar.Value;
-            flags = installed ? PartState.FlagInstalled : (byte)0;
-            tightness = EncodeUnitFloat(part.TightnessVar != null ? part.TightnessVar.Value : 0f);
-            wear = EncodeUnitFloat(part.WearVar != null ? part.WearVar.Value : 0f);
-        }
-
-        private static byte EncodeUnitFloat(float value) =>
-            (byte)Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(value) * 255f), 0, 255);
-
-        private static float DecodeUnitFloat(byte value) => value / 255f;
-
-        internal static bool ShouldIncludePartSnapshot(SyncedPart part, out byte flags, out byte tightness, out byte wear)
-        {
-            ReadPartVars(part, out flags, out tightness, out wear);
-            if ((flags & PartState.FlagInstalled) != 0) return true;
-            if (tightness > 0) return true;
-            if (wear > 0) return true;
-
-            try
-            {
-                string active = part.Fsm.Fsm.ActiveStateName;
-                return active == "Bolted" || active == "Unbolted";
-            }
-            catch
-            {
-                return false;
-            }
+            if (part.Fsm == null || !part.Fsm.Fsm.Initialized || !part.Fsm.Fsm.Started
+                || !part.Fsm.gameObject.activeInHierarchy || !part.Fsm.enabled) return null;
+            return WinterMP.Net.Sync.PartStatePolicy.Capture(id,
+                part.InstalledVar != null && part.InstalledVar.Value,
+                part.TightnessVar != null ? part.TightnessVar.Value : 0f,
+                part.WearVar != null ? part.WearVar.Value : 0f);
         }
 
         private void OnBoltTurned(uint netId, string eventName)
         {
-            if (_bridge.ApplyingRemote) return;
+            if (_bridge.ApplyingRemote || !_bolts.TryGetValue(netId, out var bolt) || bolt.Failed) return;
             var session = SessionManager.Instance;
             if (session == null || session.PlayerCount == 0) return;
 
+            if (!session.IsHost && IsBoltTimingAdjustment(bolt, eventName))
+            {
+                FsmHook.FireRemoteEntry(bolt.Fsm, "Set pos");
+                SyncEventLog.Record("bolt-timing-deferred", netId.ToString("X8"));
+                return;
+            }
+
             WinterMPPlugin.Log.LogInfo($"WorldSync: bolt {netId:X8} {eventName} (local).");
-            session.SendWorldMessage(new FsmRawEvent { NetId = netId, EventName = eventName }, Channel.ReliableOrdered);
+            if (session.IsHost) QueueHostBoltReport(netId);
+            else session.SendWorldMessage(new FsmRawEvent { NetId = netId, EventName = eventName }, Channel.ReliableOrdered);
         }
 
         private void OnBoltSettled(uint netId)
         {
-            if (_bridge.ApplyingRemote) return;
-            if (!_bolts.TryGetValue(netId, out var bolt)) return;
-
-            ReadBoltVars(bolt, out ushort tightness, out ushort screwInt);
+            if (_bridge.ApplyingRemote || !_bolts.TryGetValue(netId, out var bolt) || bolt.Failed) return;
             var session = SessionManager.Instance;
             if (session == null || session.PlayerCount == 0) return;
-
-            WinterMPPlugin.Log.LogInfo($"WorldSync: bolt {netId:X8} settled tightness={tightness} screw={screwInt} (local).");
-            session.SendWorldMessage(new BoltState
+            if (session.IsHost) QueueHostBoltReport(netId);
+            else
             {
-                NetId = netId,
-                BoltTightness = tightness,
-                ScrewInt = screwInt,
-            }, Channel.ReliableOrdered);
-        }
-
-        internal static void ReadBoltVars(SyncedBolt bolt, out ushort tightness, out ushort screwInt)
-        {
-            int rawTightness = bolt.BoltTightnessVar != null ? bolt.BoltTightnessVar.Value : 0;
-            int rawScrew = bolt.ScrewIntVar != null ? bolt.ScrewIntVar.Value : 0;
-            tightness = (ushort)Mathf.Clamp(rawTightness, 0, ushort.MaxValue);
-            screwInt = (ushort)Mathf.Clamp(rawScrew, 0, ushort.MaxValue);
+                var state = BuildBoltState(netId);
+                if (state != null) session.SendWorldMessage(state, Channel.ReliableOrdered);
+            }
         }
 
         private void OnIgnitionStateEntered(uint netId, string stateName)

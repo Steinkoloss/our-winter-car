@@ -1,10 +1,177 @@
 using System;
 using System.Collections.Generic;
+using WinterMP.Net;
+using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Catalog
 {
     internal static partial class SyncCatalogJson
     {
+        private static HockeyBettingData ParseHockeyBetting(Dictionary<string, object?> obj)
+        {
+            var data = new HockeyBettingData();
+            foreach (string key in HockeyBettingData.RequiredBindings) data.Bindings.Add(key, RequiredString(obj, key));
+            data.Ints = SlotStrings(obj, "ints", 4); data.Floats = SlotStrings(obj, "floats", 3);
+            data.Lists = SlotStrings(obj, "lists", 9); data.Tables = SlotStrings(obj, "tables", 6);
+            data.Keys = SlotStrings(obj, "keys", 3); data.BettingIdle = SlotStrings(obj, "bettingIdle", 2);
+            data.SeasonIdle = SlotStrings(obj, "seasonIdle", 3); data.Displays = SlotStrings(obj, "displays", 3);
+            foreach (var names in new[] { data.Ints, data.Floats, data.Lists, data.Tables, data.Keys,
+                data.BettingIdle, data.SeasonIdle, data.Displays })
+                if (new HashSet<string>(names).Count != names.Length) throw new FormatException("Duplicate hockey binding.");
+            if (!ValidScenePath(data["bettingPath"]) || !ValidScenePath(data["seasonPath"])
+                || data["bettingPath"] == data["seasonPath"]) throw new FormatException("Invalid hockey source paths.");
+            foreach (string path in data.Displays) if (!ValidScenePath(path)) throw new FormatException("Invalid hockey display path.");
+            return data;
+        }
+
+        private static LottoDrawData ParseLottoDraw(Dictionary<string, object?> obj)
+        {
+            var data = new LottoDrawData
+            {
+                Path = RequiredString(obj, "path"), Fsm = RequiredString(obj, "fsm"),
+                DrawDone = RequiredString(obj, "drawDone"), ResultsPath = RequiredString(obj, "resultsPath"),
+                Scalars = SlotStrings(obj, "scalars", 5), WinnerVariables = SlotStrings(obj, "winnerVariables", LottoDrawState.TierCount),
+                Lists = SlotStrings(obj, "lists", 4), StableStates = SlotStrings(obj, "stableStates", 4),
+            };
+            var variables = new HashSet<string>(data.Scalars);
+            foreach (string variable in data.WinnerVariables)
+                if (!variables.Add(variable)) throw new FormatException("Duplicate Lotto variable binding.");
+            if (variables.Count != 10 || !variables.Add(data.DrawDone)
+                || new HashSet<string>(data.Lists).Count != 4 || new HashSet<string>(data.StableStates).Count != 4
+                || !ValidScenePath(data.Path) || !ValidScenePath(data.ResultsPath) || data.Path == data.ResultsPath)
+                throw new FormatException("Invalid/duplicate Lotto binding.");
+            return data;
+        }
+
+        private static VenttiTableData ParseVenttiTable(Dictionary<string, object?> obj)
+        {
+            var data = new VenttiTableData();
+            foreach (string key in VenttiTableData.RequiredBindings)
+                data.Bindings.Add(key, RequiredString(obj, key));
+            var texts = new HashSet<string>();
+            foreach (string key in VenttiTableData.OutcomeBindings)
+                if (!texts.Add(data[key])) throw new FormatException("Ventti result texts must be distinct.");
+            if (new HashSet<string> { data["betPath"], data["playerPath"], data["housePath"], data["standPath"], data["managerPath"] }.Count != 5)
+                throw new FormatException("Ventti table FSMs must have distinct paths.");
+            if (obj.TryGetValue("rules", out var rulesObj))
+            {
+                if (rulesObj is not Dictionary<string, object?> rules) throw new FormatException("Invalid Ventti rules.");
+                try
+                {
+                    data.Rules = new VenttiRules(SlotNumbers(rules, "cardValues", 53, 0, 13),
+                        VenttiNumber(rules, "betIncrement"), VenttiNumber(rules, "propertyThreshold"),
+                        VenttiNumber(rules, "winLimitIncrease"), VenttiNumber(rules, "opponentLossLimit"),
+                        VenttiNumber(rules, "propertyWinLoss"), VenttiNumber(rules, "propertyLoseLoss"));
+                }
+                catch (ArgumentException e) { throw new FormatException("Invalid Ventti rules: " + e.Message, e); }
+            }
+            data.IdleStates = SlotStrings(obj, "idleStates", 2);
+            obj.TryGetValue("materialIndex", out var materialIndex);
+            obj.TryGetValue("cardSlots", out var cardSlots);
+            data.MaterialIndex = SlotNumber(materialIndex, "materialIndex", 0, 8);
+            data.CardSlots = SlotNumber(cardSlots, "cardSlots", 2, 21);
+            if (data.IdleStates[0] == data.IdleStates[1]) throw new FormatException("Duplicate Ventti idle state.");
+            data.PickDistance = VenttiNumber(obj, "pickDistance");
+            data.WinStress = VenttiNumber(obj, "winStress");
+            data.LoseStress = VenttiNumber(obj, "loseStress");
+            if (!(data.PickDistance > 0 && data.PickDistance <= 6)
+                || !BankTransferPolicy.IsFinite(data.WinStress) || data.WinStress < 0
+                || !BankTransferPolicy.IsFinite(data.LoseStress) || data.LoseStress < 0)
+                throw new FormatException("Invalid Ventti interaction settings.");
+            if (!obj.TryGetValue("outcomes", out var effectsObj) || effectsObj is not List<object?> effects || effects.Count != 6)
+                throw new FormatException("Six Ventti outcome bindings are required.");
+            var states = new HashSet<string>();
+            foreach (var entry in effects)
+            {
+                if (entry is not Dictionary<string, object?> effect
+                    || !effect.TryGetValue("actionTypes", out var typesObj) || typesObj is not List<object?> types || types.Count == 0
+                    || !effect.TryGetValue("suppressActions", out var cutsObj) || cutsObj is not List<object?> cuts || cuts.Count == 0)
+                    throw new FormatException("Invalid Ventti outcome actions.");
+                var binding = new VenttiOutcomeData
+                {
+                    State = RequiredString(effect, "state"), ActionTypes = SlotStrings(effect, "actionTypes", types.Count),
+                    SuppressActions = SlotNumbers(effect, "suppressActions", cuts.Count, 0, types.Count - 1),
+                };
+                if (!states.Add(binding.State) || new HashSet<int>(binding.SuppressActions).Count != cuts.Count)
+                    throw new FormatException("Duplicate Ventti outcome binding.");
+                data.Outcomes.Add(binding);
+            }
+            if (obj.TryGetValue("reactions", out var reactions))
+            {
+                if (reactions is not Dictionary<string, object?> reactionObj) throw new FormatException("Invalid Ventti reactions.");
+                data.Reactions = ParseVenttiReactions(reactionObj);
+                if (data.Reactions.RootPath + "/" + data.Reactions.Poses[1] != data["tablePath"])
+                    throw new FormatException("Ventti reaction table must match the game table.");
+            }
+            return data;
+        }
+
+        private static VenttiReactionData ParseVenttiReactions(Dictionary<string, object?> obj)
+        {
+            var data = new VenttiReactionData { RootPath = RequiredString(obj, "rootPath") };
+            if (!ValidScenePath(data.RootPath)) throw new FormatException("Invalid Ventti reaction root.");
+            if (!obj.TryGetValue("poses", out var posesObj) || posesObj is not List<object?> poses
+                || poses.Count < VenttiSceneState.WorldPoseCount || poses.Count > VenttiSceneState.MaxPoses
+                || !obj.TryGetValue("sounds", out var soundsObj) || soundsObj is not List<object?> sounds || sounds.Count < 1 || sounds.Count > 256)
+                throw new FormatException("Invalid Ventti reaction slots.");
+            data.Poses = SlotStrings(obj, "poses", poses.Count);
+            data.Sounds = SlotStrings(obj, "sounds", sounds.Count);
+            for (int i = 0; i < VenttiSceneState.WorldPoseCount; i++)
+                for (int j = 0; j < VenttiSceneState.WorldPoseCount; j++)
+                    if (i != j && data.Poses[i].StartsWith(data.Poses[j] + "/", StringComparison.Ordinal))
+                        throw new FormatException("Ventti world pose roots must not overlap.");
+            var known = new HashSet<string>();
+            foreach (string path in data.Poses)
+            {
+                if (!ValidScenePath(path) || !known.Add(path)) throw new FormatException("Invalid/duplicate Ventti pose path.");
+                if (known.Count > VenttiSceneState.WorldPoseCount)
+                {
+                    int slash = path.LastIndexOf('/');
+                    if (!path.StartsWith(data.Poses[0] + "/", StringComparison.Ordinal) || slash < 0 || !known.Contains(path.Substring(0, slash)))
+                        throw new FormatException("Ventti local poses must follow their NPC parents.");
+                }
+            }
+            if (new HashSet<string>(data.Sounds).Count != sounds.Count) throw new FormatException("Duplicate Ventti sound.");
+            foreach (string path in data.Sounds)
+                if (!ValidScenePath(path) || !path.StartsWith("MasterAudio/", StringComparison.Ordinal)
+                    || path.Split('/').Length != 3) throw new FormatException("Invalid Ventti sound source path.");
+            if (!obj.TryGetValue("sources", out var sourcesObj) || sourcesObj is not List<object?> sources || sources.Count == 0)
+                throw new FormatException("Missing Ventti native sound hooks.");
+            known.Clear();
+            foreach (var entry in sources)
+            {
+                if (entry is not Dictionary<string, object?> source) throw new FormatException("Invalid Ventti sound hook.");
+                source.TryGetValue("actionIndex", out var index);
+                var binding = new VenttiSoundSourceData
+                {
+                    Path = RequiredString(source, "path"), Fsm = RequiredString(source, "fsm"), State = RequiredString(source, "state"),
+                    Origin = RequiredString(source, "origin"), Group = RequiredString(source, "group"),
+                    ActionIndex = SlotNumber(index, "actionIndex", 0, 255), Delay = VenttiNumber(source, "delay"),
+                    Variable = GetString(source, "variable"), Variation = GetString(source, "variation"),
+                };
+                if (!ValidScenePath(binding.Path) || !ValidScenePath(binding.Origin)
+                    || (binding.Variable.Length == 0) == (binding.Variation.Length == 0)
+                    || !BankTransferPolicy.IsFinite(binding.Delay) || binding.Delay < 0 || binding.Delay > 5
+                    || !known.Add(binding.Path + "::" + binding.Fsm + "::" + binding.State + "::" + binding.ActionIndex))
+                    throw new FormatException("Invalid/duplicate Ventti sound hook.");
+                if (binding.Variation.Length != 0 && Array.IndexOf(data.Sounds, "MasterAudio/" + binding.Group + "/" + binding.Variation) < 0)
+                    throw new FormatException("Ventti sound hook names an unlisted sound.");
+                if (!Array.Exists(data.Sounds, path => path.StartsWith("MasterAudio/" + binding.Group + "/", StringComparison.Ordinal)))
+                    throw new FormatException("Ventti sound hook names an unlisted group.");
+                data.Sources.Add(binding);
+            }
+            data.LayoutId = VenttiSceneReplica.Layout(data.RootPath, data.Poses, data.Sounds);
+            return data;
+        }
+
+        private static float VenttiNumber(Dictionary<string, object?> obj, string key)
+        {
+            if (!obj.TryGetValue(key, out var value) || (value is not long && value is not double))
+                throw new FormatException("Missing numeric Ventti rule: " + key);
+            return GetFloat(obj, key, float.NaN);
+        }
+
         private static PokerData ParsePoker(Dictionary<string, object?> obj)
         {
             var data = new PokerData();
@@ -111,6 +278,82 @@ namespace WinterMP.Core.Catalog
                 throw new FormatException("Invalid slot rule value: " + key);
             return (int)number;
         }
+    }
+
+    internal sealed class HockeyBettingData
+    {
+        public static readonly string[] RequiredBindings = { "bettingPath", "bettingFsm", "seasonPath", "seasonFsm",
+            "result", "gamesPlayed", "kurpaWins" };
+        public readonly Dictionary<string, string> Bindings = new Dictionary<string, string>();
+        public string this[string key] => Bindings[key];
+        public string[] Ints = new string[0], Floats = new string[0], Lists = new string[0], Tables = new string[0],
+            Keys = new string[0], BettingIdle = new string[0], SeasonIdle = new string[0], Displays = new string[0];
+    }
+
+    internal sealed class LottoTicketsData
+    {
+        public static readonly string[] RequiredBindings = {
+            "payPath", "payFsm", "requestState", "commitState", "closeState", "fundsState", "payTotal", "payRound",
+            "spawnerPath", "spawnerFsm", "spawnerIdle", "prefab", "spawnPoint", "counter", "saveId", "database", "paper",
+            "useFsm", "dataFsm", "ticketId", "ticketRound", "winnings", "ticketDatabase", "ticketPaper", "ticketName",
+            "line1", "line2", "line3", "claimPath", "claimFsm", "claimState", "claimReset", "claimObject",
+            "destroyState", "loadState", "saveState", "deleteState", "useIdle", "dataIdle",
+        };
+        public readonly Dictionary<string, string> Bindings = new Dictionary<string, string>();
+        public int LinePrice, BankThreshold;
+        public string this[string key] => Bindings[key];
+    }
+
+    internal sealed class LottoDrawData
+    {
+        public string Path = "", Fsm = "", DrawDone = "", ResultsPath = "";
+        // Wire slot order is fixed; a catalog update may rename bindings, never reorder their meaning.
+        public string[] Scalars = new string[0], WinnerVariables = new string[0], Lists = new string[0], StableStates = new string[0];
+    }
+
+    internal sealed class VenttiTableData
+    {
+        public static readonly string[] RequiredBindings = {
+            "tablePath", "betPath", "playerPath", "housePath", "standPath", "managerPath", "fsm", "resultFsm",
+            "stake", "playerHand", "houseHand", "result", "wagerCar", "wagerHouse",
+            "winText", "loseText", "winCarText", "loseCarText", "winHouseText", "loseHouseText",
+            "betMaximum", "propertyStage", "opponentLoss", "cardStage", "deckPath", "usedDeckPath",
+            "playerCardsPath", "houseCardsPath", "texturesPath", "textureProperty", "stressGlobal",
+            "interactionGlobal", "useGlobal", "resetState",
+        };
+        // Indices correspond to the fixed VenttiTableState outcome slots (None has no binding).
+        public static readonly string[] OutcomeBindings = {
+            "winText", "loseText", "winCarText", "loseCarText", "winHouseText", "loseHouseText",
+        };
+        public readonly Dictionary<string, string> Bindings = new Dictionary<string, string>();
+        public VenttiRules? Rules;
+        public VenttiReactionData? Reactions;
+        public string[] IdleStates = new string[0];
+        public readonly List<VenttiOutcomeData> Outcomes = new List<VenttiOutcomeData>();
+        public int MaterialIndex, CardSlots;
+        public float PickDistance, WinStress, LoseStress;
+        public string this[string key] => Bindings[key];
+    }
+
+    internal sealed class VenttiOutcomeData
+    {
+        public string State = "";
+        public string[] ActionTypes = new string[0];
+        public int[] SuppressActions = new int[0];
+    }
+
+    internal sealed class VenttiReactionData
+    {
+        public string RootPath = "";
+        public string[] Poses = new string[0], Sounds = new string[0];
+        public uint LayoutId;
+        public readonly List<VenttiSoundSourceData> Sources = new List<VenttiSoundSourceData>();
+    }
+    internal sealed class VenttiSoundSourceData
+    {
+        public string Path = "", Fsm = "", State = "", Origin = "", Group = "", Variable = "", Variation = "";
+        public int ActionIndex;
+        public float Delay;
     }
 
     internal sealed class SlotMachineData

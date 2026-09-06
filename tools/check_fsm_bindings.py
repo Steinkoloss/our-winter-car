@@ -12,6 +12,12 @@ Covers literal bindings, `cond ? "A" : "B"` ternaries, and same-file
 lookups use globalVariables, optionally from a separate --globals asset extract.
 Missing global evidence is reported as unverified. Exit 1 on wrong-type bindings
 or a missing literal global when global evidence is supplied.
+
+Use --purchase-catalog catalog/sync-catalog.json to audit purchase entry guards
+instead: a guard that is still waiting for its own button/key event sends intents
+on hover/state entry before the player presses anything. This mode reports only
+confirmed input waits as failures; missing action evidence and unmatched rules
+are explicitly unverified, including when auditing a partial asset extract.
 """
 
 from __future__ import annotations
@@ -43,6 +49,94 @@ TERNARY = re.compile(r'FindFsm(Float|Int|Bool|String)\(\s*[^()]*?\?\s*"([^"]+)"\
 DYNAMIC = re.compile(r'FindFsm(Float|Int|Bool|String)\(\s*([A-Za-z_][A-Za-z0-9_.\[\]]*)\s*\)')
 ARRAY_DECL = re.compile(r'string\[\]\s+(\w+)\s*=\s*(?:new\s+string\[\]\s*)?\{([^}]*)\}', re.S)
 STR = re.compile(r'"([^"]*)"')
+
+
+INPUT_EVENTS = {
+    "GetButtonDown": ("sendEvent",), "GetButtonUp": ("sendEvent",),
+    "GetMouseButtonDown": ("sendEvent",), "GetMouseButtonUp": ("sendEvent",),
+    "GetKeyDown": ("sendEvent",), "GetKeyUp": ("sendEvent",),
+    "MousePickEvent": ("mouseOver", "mouseDown", "mouseUp", "mouseOff"),
+}
+
+
+def purchase_path_matches(rule: dict, fsm: dict) -> bool:
+    path = fsm.get("path", "")
+    name = fsm.get("objectName", path.rsplit("/", 1)[-1])
+    return (rule.get("fsmName", "") == fsm.get("fsmName")
+            and path.startswith(rule.get("pathPrefix") or "")
+            and (rule.get("pathContains") or "") in path
+            and (rule.get("objectName") is None or rule["objectName"] == name)
+            and (rule.get("objectNameContains") or "").lower() in name.lower()
+            and not any(path.startswith(p) for p in rule.get("excludePathPrefixes") or []))
+
+
+def audit_purchase_guards(catalog: dict, fsms: list) -> dict:
+    """Audit actual guard actions without inferring that an unflagged pipeline is safe."""
+    result = {"checked": 0, "hazards": [], "unverified": [], "unmatched": []}
+    for index, rule in enumerate(catalog.get("buys", [])):
+        matches = [fsm for fsm in fsms if purchase_path_matches(rule, fsm)]
+        if not matches:
+            result["unmatched"].append(index)
+            continue
+        for fsm in matches:
+            location = f"{fsm.get('path')}::{fsm.get('fsmName')}"
+            if rule.get("template"):
+                result["unverified"].append((index, location, "inferred template guards"))
+                continue
+            states = {state["name"]: state for state in fsm.get("states", [])}
+            missing = [name for name in rule.get("requireStates", []) if name not in states]
+            if missing:
+                result["unverified"].append((index, location, "missing required states: " + ", ".join(missing)))
+                continue
+            for guard in rule.get("entryGuards", []):
+                state = states.get(guard.get("state"))
+                detail = location + "/" + guard.get("state", "?")
+                if state is None or "actions" not in state or not isinstance(state["actions"], list):
+                    result["unverified"].append((index, detail, "missing action evidence"))
+                    continue
+                unknown = len(state.get("actionTypes") or []) > len(state["actions"])
+                hazards = []
+                for action in state["actions"]:
+                    if action.get("enabled", True) == False:
+                        continue
+                    kind = (action.get("type") or "").rsplit(".", 1)[-1]
+                    if not kind:
+                        unknown = True
+                        continue
+                    if kind not in INPUT_EVENTS:
+                        continue
+                    parameters = {p.get("field"): p for p in action.get("parameters") or []}
+                    for field in INPUT_EVENTS[kind]:
+                        parameter = parameters.get(field)
+                        if parameter is None or not isinstance(parameter.get("value"), str):
+                            unknown = True
+                        elif parameter["value"] and parameter["value"] == guard.get("event"):
+                            hazards.append(kind + "." + field)
+                if hazards:
+                    result["hazards"].append((index, detail, guard.get("event"), hazards))
+                if unknown:
+                    result["unverified"].append((index, detail, "incomplete input-action parameters"))
+                else:
+                    result["checked"] += 1
+    return result
+
+
+def check_purchase_catalog(catalog_path: str, dump_path: str) -> int:
+    with open(catalog_path, encoding="utf-8") as source:
+        catalog = json.load(source)
+    with open(dump_path, encoding="utf-8") as source:
+        dump = json.load(source)
+    result = audit_purchase_guards(catalog, dump["fsms"] if isinstance(dump, dict) else dump)
+    print(f"Purchase guard input audit: {result['checked']} guards with action evidence; "
+          f"{len(result['unverified'])} unverified bindings; {len(result['unmatched'])} rules not covered.")
+    for index, location, event, actions in result["hazards"]:
+        print(f"EARLY INTENT: buys[{index}] {location} waits for {event} in {', '.join(actions)}. "
+              "The entry hook runs before that input; bind the state reached after the press, "
+              "or keep a local UI opener out of buys.")
+    for index, location, reason in result["unverified"]:
+        print(f"UNVERIFIED: buys[{index}] {location}: {reason}.")
+    print("This checks premature input guards, not purchase amounts, result replay or payout authority.")
+    return 1 if result["hazards"] else 0
 
 
 def load_dump(path: str):
@@ -115,8 +209,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dump", nargs="?", default=os.path.join(repo, "catalog", "dump-23268598.json"))
     parser.add_argument("--globals", dest="global_dump", help="Separate dump or asset extract containing globals")
+    parser.add_argument("--purchase-catalog", help="Audit purchase input guards instead of variable bindings")
     args = parser.parse_args()
     dump_path = args.dump
+    if args.purchase_catalog:
+        return check_purchase_catalog(args.purchase_catalog, dump_path)
     where = load_dump(dump_path)
     globals_ = load_globals(args.global_dump or dump_path)
     core = os.path.join(repo, "src", "WinterMP.Core")

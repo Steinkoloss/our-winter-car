@@ -412,10 +412,12 @@ namespace WinterMP.Net.Messages
 
         public uint NetId;
         public byte Flags;
-        /// <summary>0-255 encoding of the part's Tightness float (0-1 range).</summary>
+        /// <summary>Legacy unit-range hint; v107 receivers use TightnessValue.</summary>
         public byte Tightness;
-        /// <summary>0-255 encoding of the part's Wear float (0-1 range).</summary>
+        /// <summary>Legacy unit-range hint; v107 receivers use WearValue (native wear is about 0-100).</summary>
         public byte Wear;
+        public float TightnessValue;
+        public float WearValue;
 
         public MessageId Id => MessageId.PartState;
 
@@ -425,6 +427,8 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(Flags);
             writer.WriteByte(Tightness);
             writer.WriteByte(Wear);
+            writer.WriteSingle(TightnessValue);
+            writer.WriteSingle(WearValue);
         }
 
         public void Read(NetReader reader)
@@ -433,18 +437,21 @@ namespace WinterMP.Net.Messages
             Flags = reader.ReadByte();
             Tightness = reader.ReadByte();
             Wear = reader.ReadByte();
+            TightnessValue = reader.ReadSingle();
+            WearValue = reader.ReadSingle();
         }
     }
 
     /// <summary>
-    /// Authoritative bolt tightness after a wrench turn settles (Set pos). Receivers
-    /// overwrite Screw FSM variables and replay Set pos for the visual.
+    /// Host result after a wrench turn settles: absolute bolt save-array value,
+    /// visual pose and parent tightness. A guest report requests host correction.
     /// </summary>
     public sealed class BoltState : IMessage
     {
         public uint NetId;
         public ushort BoltTightness;
-        public ushort ScrewInt;
+        public ushort ScrewInt; // Reserved zero since v114; a turn direction is not persistent state.
+        public float PartTightness;
 
         public MessageId Id => MessageId.BoltState;
 
@@ -453,6 +460,7 @@ namespace WinterMP.Net.Messages
             writer.WriteUInt32(NetId);
             writer.WriteUInt16(BoltTightness);
             writer.WriteUInt16(ScrewInt);
+            writer.WriteSingle(PartTightness);
         }
 
         public void Read(NetReader reader)
@@ -460,6 +468,7 @@ namespace WinterMP.Net.Messages
             NetId = reader.ReadUInt32();
             BoltTightness = reader.ReadUInt16();
             ScrewInt = reader.ReadUInt16();
+            PartTightness = reader.ReadSingle();
         }
     }
 
@@ -496,11 +505,16 @@ namespace WinterMP.Net.Messages
         public const int MaxItems = SpawnIntent.MaxItems;
 
         /// <summary>
-        /// Wire v31: join-snapshot replay of an earlier spill. The receiver must NOT
+        /// Wire v31: snapshot replay of an earlier spill (join and item resync in v105). The receiver must NOT
         /// fire its own container to materialize these (that would spend an unrelated,
         /// unopened local bag) — it adopts/instantiates from scene templates instead.
+        /// Replays may recover missing live bodies; session-retired IDs never reappear.
         /// </summary>
         public const byte FlagReplay = 1;
+
+        /// <summary>v106: catalog factory output. ContainerNetId identifies the factory;
+        /// TemplateName carries the persistent native item ID, never a template search hint.</summary>
+        public const byte FlagFactory = 2;
 
         public struct Entry
         {
@@ -531,6 +545,7 @@ namespace WinterMP.Net.Messages
         public ushort OfferSequence;
 
         public bool IsReplay => (Flags & FlagReplay) != 0;
+        public bool IsFactory => (Flags & FlagFactory) != 0;
 
         public MessageId Id => MessageId.ItemSpawn;
 

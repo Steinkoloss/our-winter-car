@@ -177,7 +177,7 @@ namespace WinterMP.Core.Sync
             if (bindings == null) return;
             if (_bankData != null && _atm != null && _cashTrigger != null
                 && _bankHooks.Count == bindings.Mutations.Count) return;
-            foreach (var obj in Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM)))
+            foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
                 if (fsm == null) continue;

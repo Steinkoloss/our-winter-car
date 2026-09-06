@@ -21,6 +21,7 @@ namespace WinterMP.Core.Sync
     public bool RemoteIsDriver;
     public bool RemoteVehicleStream;
     public float LastRemoteAt = -999f;
+    public float LastRemoteReleaseAt = -999f;
     public ushort LastRemoteSequence;
     // The sender id that established the current LastRemoteSequence baseline. Unlike
     // RemoteOwner (scrubbed to NoOwner by a final packet), this is NOT cleared on
@@ -386,9 +387,10 @@ namespace WinterMP.Core.Sync
     internal struct PendingPartState
 {
     public byte Flags;
-    public byte Tightness;
-    public byte Wear;
+    public float Tightness;
+    public float Wear;
     public float ExpiresAt;
+    public ulong ReceiptOrder;
 }
 
     internal struct BuyEntryGuard
@@ -424,15 +426,22 @@ namespace WinterMP.Core.Sync
     public PlayMakerFSM Fsm = null!;
     public string Path = string.Empty;
     public HutongGames.PlayMaker.FsmInt? BoltTightnessVar;
-    public HutongGames.PlayMaker.FsmInt? ScrewIntVar;
     public HutongGames.PlayMaker.FsmFloat? TightnessFVar;
-    public HutongGames.PlayMaker.FsmFloat? ScrewFloatVar;
+    public HutongGames.PlayMaker.FsmInt IndexVar = null!;
+    public HutongGames.PlayMaker.FsmFloat PartTightnessVar = null!;
+    public PlayMakerFSM PartData = null!;
+    public MonoBehaviour ArrayProxy = null!;
+    public System.Reflection.PropertyInfo ArrayProperty = null!;
+    public float PositionDivisor = 1f;
+    public bool UpdatesPart, AdjustsTimingAtLimit, Failed;
 }
 
     internal struct PendingBoltState
 {
     public ushort BoltTightness;
     public ushort ScrewInt;
+    public float PartTightness;
+    public ulong ReceiptOrder;
     public float ExpiresAt;
 }
 
