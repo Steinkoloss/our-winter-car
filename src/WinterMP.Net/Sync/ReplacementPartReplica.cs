@@ -63,6 +63,17 @@ namespace WinterMP.Net.Sync
         public ReplacementPartState? Get(uint id) => !_lifecycle.IsRetired(id) && _states.TryGetValue(id, out var state) ? Copy(state) : null;
         public bool AllowsLooseMotion(uint id) => !_lifecycle.IsRetired(id)
             && (!_states.TryGetValue(id, out var state) || _rules[state.FactoryId].CanCreate(state));
+        public bool Occupies(PartParentKind kind, uint parentId, string path)
+        {
+            if (kind == PartParentKind.None || !PartAttachmentPolicy.ValidPath(path)) return false;
+            foreach (var pair in _states)
+            {
+                var state = pair.Value;
+                if (!_lifecycle.IsRetired(pair.Key) && PartAttachmentPolicy.HasAttachment(state)
+                    && state.ParentKind == kind && state.ParentId == parentId && state.ParentPath == path) return true;
+            }
+            return false;
+        }
         public void Clear() => _states.Clear();
         private bool HasAttachmentCycle(uint id, ReplacementPartState state)
         {

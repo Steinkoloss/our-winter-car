@@ -35,10 +35,10 @@ namespace WinterMP.Net.Tests
             wire[19] = 11; Assert.Throws<ProtocolException>(() => PacketCodec.Decode(wire));
             foreach (var message in new IMessage[] { request, receipt })
             {
-                wire = PacketCodec.Encode(message); wire[wire.Length - 2] = 2;
+                wire = PacketCodec.Encode(message); wire[wire.Length - 2] = 4;
                 Assert.Throws<ProtocolException>(() => PacketCodec.Decode(wire));
             }
-            request.Operation = (PartFitOperation)2; receipt.Operation = (PartFitOperation)2;
+            request.Operation = (PartFitOperation)4; receipt.Operation = (PartFitOperation)4;
             Assert.Throws<ProtocolException>(() => PacketCodec.Encode(request));
             Assert.Throws<ProtocolException>(() => PacketCodec.Encode(receipt));
             var state = Fitted(); wire = PacketCodec.Encode(state);
@@ -91,9 +91,15 @@ namespace WinterMP.Net.Tests
             var removal = Request(); var install = PartFitLedger.Copy(removal); install.Operation = PartFitOperation.Install;
             Assert.Equal(PartFitStatus.Unavailable, PartRemovalPolicy.Check(install, Fitted(), 1, true, true, true));
             Assert.Equal(PartFitStatus.Unavailable, PartFitLedger.Check(removal, Fitted(), true, true, true, true, true, false));
-            removal.Operation = (PartFitOperation)2;
+            foreach (var operation in new[] { PartFitOperation.RotateIncrease, PartFitOperation.RotateDecrease })
+            {
+                removal.Operation = operation;
+                Assert.Equal(PartFitStatus.Unavailable, PartRemovalPolicy.Check(removal, Fitted(), 1, true, true, true));
+                Assert.Equal(PartFitStatus.Unavailable, PartFitLedger.Check(removal, Fitted(), true, true, true, true, true, false));
+            }
+            removal.Operation = (PartFitOperation)4;
             Assert.Null(new PartFitLedger().Begin(removal, 1, PartFitStatus.Pending));
-            Assert.False(new PartFitClient(1).TryBegin(1, 5, 10, (PartFitOperation)2));
+            Assert.False(new PartFitClient(1).TryBegin(1, 5, 10, (PartFitOperation)4));
         }
 
         [Fact]

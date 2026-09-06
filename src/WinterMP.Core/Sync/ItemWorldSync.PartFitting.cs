@@ -47,6 +47,7 @@ namespace WinterMP.Core.Sync
                 return;
             }
             if (request.Operation == PartFitOperation.Remove) { OnHostPartRemoval(request, actor, session); return; }
+            if (PartAdjustmentPolicy.IsRotation(request.Operation)) { OnHostPartAdjustment(request, actor, session); return; }
             try
             {
                 _replacementParts.TryGetValue(request.ItemId, out var part);
@@ -273,8 +274,11 @@ namespace WinterMP.Core.Sync
             if (session == null || session.IsHost || session.State != SessionState.Connected
                 || DeathSyncManager.Instance?.IsLocalDead == true || Time.timeScale == 0) return;
             if (_partFitClient?.Pending == true)
-            { GUI.Box(new Rect(Screen.width / 2f - 140f, Screen.height / 2f + 55f, 280f, 28f), _partFitClient.Operation == PartFitOperation.Remove ? "Waiting for the host to remove the part…" : "Waiting for the host to fit the part…"); return; }
+            { GUI.Box(new Rect(Screen.width / 2f - 140f, Screen.height / 2f + 55f, 280f, 28f),
+                PartAdjustmentPolicy.IsRotation(_partFitClient.Operation) ? "Waiting for the host to adjust the part…"
+                : _partFitClient.Operation == PartFitOperation.Remove ? "Waiting for the host to remove the part…" : "Waiting for the host to fit the part…"); return; }
             if (!TryGetLocalPlayerPosition(out var player)) return;
+            if (DrawPartAdjustmentPrompt(session)) return;
             if (DrawPartRemovalPrompt(session)) return;
             foreach (var pair in _replacementParts)
             {
@@ -289,8 +293,8 @@ namespace WinterMP.Core.Sync
                 var state = _replacementReplica?.Get(pair.Key);
                 if (state == null || !part.Factory.Rule.Identity.CanCreate(state)) continue;
                 var mount = GetPartFitMount(part, out byte slot);
-                if (mount == null || !FitFsmReady(mount) || !PartAtMount(part, mount)
-                    || !SlotInstallerIdle(part) || mount.FsmVariables.FindFsmBool(SyncCatalog.ReplacementParts!["mountInstalledVariable"]).Value) continue;
+                if (mount == null || !PartFitMountReady(mount) || !PartAtMount(part, mount)
+                    || !SlotInstallerIdle(part) || !GuestPartMountFree(mount)) continue;
                 GUI.Box(new Rect(Screen.width / 2f - 140f, Screen.height / 2f + 55f, 280f, 28f), "Left click to fit this part");
                 var input = Event.current;
                 if (input.type == EventType.MouseDown && input.button == 0 && _partFitInputFrame != Time.frameCount)
@@ -317,6 +321,15 @@ namespace WinterMP.Core.Sync
             if (session == null || session.IsHost || receipt.PlayerId != session.LocalPlayerId
                 || _partFitClient?.Receive(receipt) != true) return;
             if (receipt.Status == PartFitStatus.Accepted) return;
+            if (PartAdjustmentPolicy.IsRotation(receipt.Operation))
+            {
+                session.AddSystemChat(receipt.Status == PartFitStatus.Bolted ? "Loosen the alternator's adjusting bolt first."
+                    : receipt.Status == PartFitStatus.Stale ? "The part changed. Try adjusting it again."
+                    : receipt.Status == PartFitStatus.TooFar ? "Move closer to the alternator."
+                    : receipt.Status == PartFitStatus.Busy ? "The alternator is in use. Try again."
+                    : "The host could not adjust the alternator. Check its mounting and rotation limit.");
+                return;
+            }
             if (receipt.Operation == PartFitOperation.Remove)
             {
                 session.AddSystemChat(receipt.Status == PartFitStatus.Bolted ? "Loosen the bolts before removing this part."

@@ -171,6 +171,7 @@ namespace WinterMP.Core.Sync
         private static IList? BoltArray(SyncedBolt bolt) => bolt.ArrayProxy == null ? null : bolt.ArrayProperty.GetValue(bolt.ArrayProxy, null) as IList;
 
         private static bool BoltReady(SyncedBolt bolt) => !bolt.Failed && bolt.Fsm != null && bolt.PartData != null
+            && (bolt.ReplicaGate == null || bolt.ReplicaGate.Attached)
             && bolt.Fsm.Fsm.Initialized && bolt.Fsm.Fsm.Started && bolt.Fsm.enabled && bolt.Fsm.gameObject.activeInHierarchy
             && bolt.PartData.Fsm.Started && bolt.PartData.enabled && bolt.PartData.gameObject.activeInHierarchy
             && NativePartIdentity.Phase(bolt.PartData) == NativePartPhase.Fitted
@@ -190,7 +191,7 @@ namespace WinterMP.Core.Sync
 
         internal BoltState? BuildBoltState(uint id)
         {
-            if (!_bolts.TryGetValue(id, out var bolt) || !BoltReady(bolt)) return null;
+            if (!_bolts.TryGetValue(id, out var bolt) || !BoltReady(bolt) || bolt.ReplicaGate?.Seeded == false) return null;
             try
             {
                 var values = BoltArray(bolt); int index = bolt.IndexVar.Value;
@@ -205,6 +206,11 @@ namespace WinterMP.Core.Sync
         {
             if (bolt.Failed) return;
             bolt.Failed = true;
+            if (bolt.ReplicaGate != null)
+            {
+                if (bolt.ReplicaCollider != null) bolt.ReplicaCollider.enabled = false;
+                if (bolt.Fsm != null) bolt.Fsm.enabled = false;
+            }
             WinterMPPlugin.Log.LogWarning("WorldSync: bolt disabled at " + bolt.Path + ": " + error.Message);
             SyncEventLog.Record("bolt-disabled", bolt.Path + " " + error.Message);
         }
@@ -234,6 +240,7 @@ namespace WinterMP.Core.Sync
             var state = new BoltState { NetId = id, BoltTightness = tightness, ScrewInt = screwInt, PartTightness = partTightness };
             if (!BoltStatePolicy.Valid(state)) return true;
             if (!_bolts.TryGetValue(id, out var bolt) || !BoltReady(bolt)) return false;
+            if (bolt.ReplicaGate != null && !bolt.ReplicaGate.CanReceive(receiptOrder)) return true;
             bool applying = _bridge.ApplyingRemote;
             try
             {
@@ -242,7 +249,7 @@ namespace WinterMP.Core.Sync
                 partTightness = ResolvePartTightness(bolt.PartData, receiptOrder, partTightness);
                 bool changed = previous != tightness || bolt.BoltTightnessVar!.Value != tightness
                     || bolt.PartTightnessVar.Value != partTightness || bolt.TightnessFVar!.Value != tightness / bolt.PositionDivisor;
-                if (!changed) return true;
+                if (!changed && bolt.ReplicaGate == null) return true;
                 if (!BoltStatePolicy.ApplyArray(state, values, index, bolt.PositionDivisor, out float position)) return false;
                 if (_bridge.PartIdentities.TryRootId(bolt.PartData, out uint partId)
                     && PartIdentity.TryFsmId(partId, string.Empty, bolt.PartData.FsmName, out uint dataId))
@@ -256,8 +263,9 @@ namespace WinterMP.Core.Sync
                 bolt.BoltTightnessVar!.Value = tightness;
                 bolt.TightnessFVar!.Value = position;
                 bolt.PartTightnessVar.Value = partTightness;
+                bolt.ReplicaGate?.Received(receiptOrder);
                 FsmHook.FireRemoteEntry(bolt.Fsm, "Set pos");
-                if (bolt.UpdatesPart && NativePartIdentity.Phase(bolt.PartData) == NativePartPhase.Fitted)
+                if (bolt.ReplicaGate == null && bolt.UpdatesPart && NativePartIdentity.Phase(bolt.PartData) == NativePartPhase.Fitted)
                     bolt.PartData.SendEvent("BOLTING");
                 SyncEventLog.Record("bolt-state", id.ToString("X8") + " " + tightness + " total=" + partTightness);
                 return true;

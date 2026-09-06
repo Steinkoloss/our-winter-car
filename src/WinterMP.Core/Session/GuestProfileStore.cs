@@ -172,6 +172,7 @@ namespace WinterMP.Core.Session
 
         private static void TrySave()
         {
+            if (GuestSaveGuard.ProtectWorld || SessionManager.Instance == null || !SessionManager.Instance.IsHost) return;
             try
             {
                 var lines = new List<string>

@@ -103,6 +103,63 @@ public sealed class ItemSpawnLifecycleTests
     }
 
     [Fact]
+    public void PendingCreationRetriesMissingItemsWithoutDuplicatingSuccessesOrRevivingRetirements()
+    {
+        var lifecycle = new ItemSpawnLifecycle(); var message = Manifest();
+        Assert.True(lifecycle.AcceptManifest(message));
+        var pending = new List<ItemSpawn.Entry>(message.Items);
+        var live = new HashSet<uint>(); var available = new HashSet<uint> { 1 };
+        var attempts = new List<uint>();
+        int Deliver() => lifecycle.MaterializePending(pending, live.Contains, entry =>
+        {
+            attempts.Add(entry.NetId);
+            return available.Contains(entry.NetId) && live.Add(entry.NetId);
+        });
+
+        Assert.Equal(1, Deliver());
+        Assert.Equal(new uint[] { 2, 3 }, pending.Select(e => e.NetId));
+        Assert.Equal(0, Deliver());
+        Assert.Equal(new uint[] { 1, 2, 3, 2, 3 }, attempts);
+
+        lifecycle.Retire(3);
+        available.UnionWith(new uint[] { 2, 3 });
+        Assert.Equal(1, Deliver());
+        Assert.Empty(pending);
+        Assert.Equal(new uint[] { 1, 2 }, live.OrderBy(id => id));
+        Assert.Equal(new uint[] { 1, 2, 3, 2, 3, 2 }, attempts);
+        Assert.Equal(0, Deliver());
+    }
+
+    [Fact]
+    public void PendingReplayUsesRefreshedDescriptorsAndSkipsAlreadyLiveAndRetiredItems()
+    {
+        var lifecycle = new ItemSpawnLifecycle(); var message = Manifest();
+        Assert.True(lifecycle.AcceptManifest(message));
+        var pending = new List<ItemSpawn.Entry>(message.Items);
+        Assert.Equal(0, lifecycle.MaterializePending(pending, _ => false, _ => false));
+        Assert.Equal(3, pending.Count);
+
+        var replay = Manifest(true);
+        var refreshed = replay.Items[1]; refreshed.Position = new NetVector3(20, 30, 40);
+        replay.Items[1] = refreshed;
+        Assert.True(lifecycle.AcceptManifest(replay));
+        pending = new List<ItemSpawn.Entry>(replay.Items);
+        lifecycle.Retire(3);
+        var received = new List<ItemSpawn.Entry>();
+        Assert.Equal(1, lifecycle.MaterializePending(pending, id => id == 1, entry =>
+        {
+            received.Add(entry);
+            return true;
+        }));
+        Assert.Empty(pending);
+        var created = Assert.Single(received);
+        Assert.Equal(2u, created.NetId);
+        Assert.Equal(20f, created.Position.X);
+        Assert.Equal(30f, created.Position.Y);
+        Assert.Equal(40f, created.Position.Z);
+    }
+
+    [Fact]
     public void SeededLossRemovalAndReplayConvergeWithoutDuplicatingOrReviving()
     {
         for (int seed = 0; seed < 200; seed++)

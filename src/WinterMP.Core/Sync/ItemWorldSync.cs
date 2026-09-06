@@ -128,6 +128,7 @@ namespace WinterMP.Core.Sync
         {
             ClearReplacementParts();
             ClearPackages();
+            ClearBags();
             ClearTrophyFactories();
             _vehicles?.ClearDamageHooks();
             _items.Clear();
@@ -140,7 +141,6 @@ namespace WinterMP.Core.Sync
             _hostSpawnManifests.Clear();
             _snapshotSeenIds.Clear();
             _spawnEpochs.Clear();
-            _lastGuestSpawnSequences.Clear();
         }
 
         internal void ReleaseSession()
@@ -178,6 +178,7 @@ namespace WinterMP.Core.Sync
 
             ClearReplacementParts();
             ClearPackages();
+            ClearBags();
             ClearTrophyFactories();
             _pendingItemPoses.Clear();
             _spawnLifecycle.Clear();
@@ -198,7 +199,6 @@ namespace WinterMP.Core.Sync
             _hostSpawnManifests.Clear();
             _snapshotSeenIds.Clear();
             _spawnEpochs.Clear();
-            _lastGuestSpawnSequences.Clear();
         }
     }
 }

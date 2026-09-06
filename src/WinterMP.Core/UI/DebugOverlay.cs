@@ -19,6 +19,7 @@ namespace WinterMP.Core.UI
         private static readonly string BadgeVersionLine =
             $"{MyPluginInfo.PLUGIN_NAME} {MyPluginInfo.PLUGIN_VERSION} · protocol v{WinterMP.Net.ProtocolInfo.Version}";
         private static GUIStyle? _richLabel;
+        private static GUIStyle? _saveLabel;
 
         private void OnGUI()
         {
@@ -27,6 +28,7 @@ namespace WinterMP.Core.UI
 
             HandleChatKeys(session);
             DrawSessionBadge(session);
+            DrawSaveProtection(session);
 
             if (Input.GetKey(KeyCode.Tab))
                 DrawPlayerList(session);
@@ -53,6 +55,19 @@ namespace WinterMP.Core.UI
                 $"<color={color}><b>{session.State}</b></color> — {session.StatusText}",
                 RichLabel());
             GUILayout.Label(BadgeVersionLine, RichLabel());
+            GUILayout.EndArea();
+        }
+
+        private static void DrawSaveProtection(SessionManager session)
+        {
+            if (!GuestSaveGuard.ProtectWorld) return;
+            string text = session.State == SessionState.Connected || session.State == SessionState.Connecting
+                ? "Guest session: your local world save is protected."
+                : "Local save protected. Restart the game to play or host your own save.";
+            float top = session.State == SessionState.Idle ? 8f : 58f;
+            if (_saveLabel == null) _saveLabel = new GUIStyle(GUI.skin.label) { wordWrap = true };
+            GUILayout.BeginArea(new Rect(Screen.width - 340f, top, 328f, 56f), GUI.skin.box);
+            GUILayout.Label(text, _saveLabel);
             GUILayout.EndArea();
         }
 

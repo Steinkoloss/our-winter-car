@@ -49,7 +49,7 @@ game dump → `python3 tools/extract_fsm_details.py catalog/dump-23268598.json s
 - **E** — remote-apply write onto a locally-owned object (ownership contamination). Guard every game-state write with `!LocallyOwned` / owner check.
 - **F** — sequence reset on a reused/path-derived id. Handle re-baseline (see `NpcTrafficSync` stale-run detection).
 
-**Reserved protocol id ranges** (current version **v118**; allocate the next free id in-range):
+**Reserved protocol id ranges** (current version **v120**; allocate the next free id in-range):
 `63–79` vehicles · `93–99` economy/appliances · `101–119` NPCs/jobs · `126–139` snapshot/bulk.
 Ranges are tight — if a range fills, extend it in `IMessage.cs` and document it.
 The economy overflow currently uses 160–183; 164–166 are the v92 slot ledger messages,
@@ -77,6 +77,8 @@ v117 appends install/remove operation to 188–189 and removal readiness to 185;
 next free ID remains 190.
 v118 appends SlotIndex to 188–189 for native piston/main-bearing/rocker installation;
 next free ID remains 190.
+v119 adds alternator adjustment operations to 188–189.
+v120 adds shared bags 190–192 and retires guest SpawnIntent 53; next free ID is 193.
 
 **Do NOT work on (verified out-of-scope — see §Appendix):** the in-game computer + its
 fishing minigame, host migration, water wells/taps (per-player thirst), map clock/weather
@@ -883,6 +885,55 @@ Template — **Impact · Game truth · Model · Protocol · Touch · Done when �
 
 #### 7.2 · Spawner manifest completeness  `TODO`
 
+- **v119 guest alternator adjustment implemented; multiplayer checks pending:**
+  both VIN133 and ALTERNATOR0 expose scroll adjustment on owned guest copies with
+  a freshly seeded, loosened adjusting bolt. Requests share the part-operation
+  ledger, so retries and stale competing clicks cannot apply another turn. The
+  host validates native mount/part ownership, fresh nearby player, bolt/pick/hand
+  readiness and 0.1-second cooldown, then uses native 0.5-degree turns within 0–7.
+  Acceptance verifies the saved part, engine mount and pivot agree; state 185
+  updates guest presentation. Native guest HandRotate remains disabled. 1,036
+  protocol/catalog/policy tests, 18 launcher tests and 46 isolated Unity/Wine checks
+  pass; Core and Net builds are clean. **Next:**
+  two-player adjustment/bolt/fit/reconnect checks, other continuous adjustments,
+  operational guest engine references and non-box families; see BUILDING.md.
+
+- **Guest part/mount isolation implemented after 0.1.32; multiplayer checks pending:**
+  the 30 catalogued boxed-part families retain saved originals in inactive storage
+  and release their IDs for host copies. Existing same-ID originals no longer
+  silently bypass host state. Settled native mounts pause with their original
+  references intact; fitting previews use host occupancy, including pending copies.
+  Saved FSMs/item motion are excluded while loading/isolation is pending. Passive
+  PartState views keep host checksum data without native action replay. Cleanup
+  restores original parent/pose/physics/FSM state after owned copies are removed;
+  unexpected nested/unsupported occupants remain preserved. The 30 prefab leaf
+  structures are verified; 1,014 automated tests and 28 isolated Unity/Wine checks
+  (7 restoration, 21 save-library) pass. **Next:** full two-player
+  mount/identity/checksum/reconnect checks, engine references/continuous adjustments,
+  and non-box families. Save protection still requires restart before personal play.
+
+- **Guest save protection implemented after 0.1.32; native gameplay checks pending:**
+  Core guards native ES2 persistence before admitting guests, covering normal saves,
+  LowMemory temporary files, whole-file/tag/folder deletion, renames and direct
+  stream storage. Protection lasts until restart, including shutdown and reconnect;
+  protected processes cannot host. Host/solo persistence and ordinary PlayerPrefs
+  settings remain available. All 21 isolated Unity/Wine save-library checks and
+  1,011 protocol/catalog/policy tests pass; Core and Net builds are clean. No wire
+  change (protocol 118). Part/mount isolation is now implemented above; continuous
+  adjustments/engine behavior and non-box creation remain open. Actual native save/quit,
+  permadeath and two-player checks remain pending; see BUILDING.md.
+
+- **Guest replacement bolt controls implemented after 0.1.32; gameplay checks pending:**
+  55 integer-step controls across 24 replacement families reuse the native spanner/
+  ratchet interface and the existing protocol-118 bolt contract. Owned input/pose
+  graphs send host intents without guest native deltas or engine/timing actions.
+  Fitted trigger picks require fresh host bolt state after each attachment; stale
+  parked observations cannot enable a refitted part. Absolute replies update arrays,
+  poses and ordered parent totals; teardown removes owned registries and triggers.
+  1,008 protocol/catalog tests pass and Core/Net builds are clean. **Next:** guest
+  mount isolation, continuous adjustments/engine behavior and non-box creation.
+  Native two-player/LOD/save validation remains pending; see BUILDING.md.
+
 - **v118 guest array-slot fitting implemented, gameplay checks pending:**
   pistons, main bearings and rockers now use the native shared Installer and their
   catalog-bound arrays. The click's slot index is immutable and must match host
@@ -1089,3 +1140,14 @@ These were audited and are correctly *not* gaps — don't spend tasks on them:
 
 When the game updates (Early Access), re-dump the catalog (F9) and re-run the coverage
 audit against the new build before trusting this list — MWC patches break FSM names/paths.
+
+#### Shopping bag duplication regression (v120, shipped in 0.1.33)
+
+Player report on v0.1.32: host and guest could hold separate bags; the host's spill
+was invisible until the guest opened theirs, then both sets appeared. Fixed the
+peer-local bag identities/independent inventories, scanner capture race, missing
+native-name template lookup and discarded failed materialization. New bag states
+and atomic opening requests use 190–192; old guest SpawnIntent 53 is retired. Exact
+factory outputs are reserved before scanning and split into 32-item packets.
+Native pickup guards release losing/removed copies. Two-player acceptance still
+required; mixed bags containing unsupported native parts remain guarded.

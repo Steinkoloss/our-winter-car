@@ -27,6 +27,18 @@ namespace WinterMP.Core.Sync
 
         public void BindItems(ItemWorldSync items) => _items = items;
         public bool IsReplacementPart(PlayMakerFSM data) => _items.IsReplacementPart(data);
+        private FsmWorldSync _fsms = null!;
+        public void BindFsms(FsmWorldSync fsms) => _fsms = fsms;
+        public void PrepareReplacementBolts(PlayMakerFSM data) => _fsms.PrepareReplacementBolts(data);
+        public void PrepareReplacementPartView(PlayMakerFSM data) => _fsms.PrepareReplacementPartView(data);
+        public void RetireReplacementPartViews(uint id) => _fsms.RetireReplacementPartViews(id);
+        public bool ReplacementBoltsReady(PlayMakerFSM data) => _items.ReplacementBoltsReady(data);
+        public bool ReplacementBoltLoose(PlayMakerFSM fsm) => _fsms.ReplacementBoltLoose(fsm);
+        public void SetReplacementBolts(PlayMakerFSM data, bool fitted, bool changed) => _fsms.SetReplacementBolts(data, fitted, changed);
+        public void ForgetReplacementBolts(PlayMakerFSM? data) => _fsms.ForgetReplacementBolts(data);
+        public void ForgetNativePartBindings(PlayMakerFSM data, bool descendants = true) => _fsms.ForgetNativePartBindings(data, descendants);
+        public void ObserveReplacementTightness(uint id, float value) => _fsms.ObserveReplacementTightness(id, value);
+        public float ReplacementTightness(uint id, float fallback) => _fsms.ReplacementTightness(id, fallback);
 
         private WalletSync _wallet = null!;
         public void BindWallet(WalletSync wallet) => _wallet = wallet;
@@ -72,12 +84,6 @@ namespace WinterMP.Core.Sync
         public void FindLocalPlayer() => _owner.FindLocalPlayer();
 
         public void RequestObjectState(uint netId) => _owner.RequestObjectState(netId);
-
-        public void StartHostSpawnCapture(uint containerId, string stateName, Vector3 near)
-            => _items.StartHostSpawnCapture(containerId, stateName, near);
-
-        public void StartGuestSpawnOffer(uint containerId, string stateName, Vector3 near)
-            => _items.StartGuestSpawnOffer(containerId, stateName, near);
 
         public bool IsLocalPlayerDriving(SyncedItem item) => _items.IsLocalPlayerDriving(item);
 

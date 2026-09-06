@@ -28,6 +28,9 @@ namespace WinterMP.Core.Sync
             public PlayMakerFSM? SlotInstaller;
             public int FitHeldFrame = -10;
             public bool FittedPresentation;
+            public bool BoltsPrepared;
+            public PartHandRotation? HandRotation;
+            public bool HandRotationFailed;
             public Vector3 LooseScale;
             public string LooseTag = string.Empty;
             public readonly List<ReplacementCollider> Colliders = new List<ReplacementCollider>();
@@ -41,7 +44,17 @@ namespace WinterMP.Core.Sync
         private readonly HashSet<uint> _pendingReplacements = new HashSet<uint>();
         private readonly HashSet<PlayMakerFSM> _replacementGarbage = new HashSet<PlayMakerFSM>();
         private ReplacementPartReplica? _replacementReplica;
+        private readonly Dictionary<uint, uint> _replacementTightnessRevisions = new Dictionary<uint, uint>();
         private float _nextReplacementPoll;
+
+        internal bool ReplacementBoltsReady(PlayMakerFSM data)
+        {
+            if (!_bridge.PartIdentities.TryRootId(data, out uint id) || !_replacementParts.TryGetValue(id, out var binding)
+                || binding.Data != data || !binding.Replica || !binding.FittedPresentation || binding.Factory.Failed
+                || !binding.Factory.Suppressor.Active) return false;
+            var state = _replacementReplica?.Get(id);
+            return state != null && PartAttachmentPolicy.HasAttachment(state);
+        }
 
         private void TrackReplacementPart(PlayMakerFSM data, uint id)
         {
@@ -111,7 +124,17 @@ namespace WinterMP.Core.Sync
             var c = SyncCatalog.ReplacementParts; var session = SessionManager.Instance;
             if (c == null || session == null || session.IsHost) return;
             if (_replacementReplica == null) _replacementReplica = new ReplacementPartReplica(c.IdentityRules(), _spawnLifecycle);
-            if (_replacementReplica.Receive(state, out uint id)) _pendingReplacements.Add(id);
+            if (_replacementReplica.Receive(state, out uint id))
+            {
+                if (!_replacementTightnessRevisions.TryGetValue(id, out uint revision) || revision != state.Revision)
+                {
+                    foreach (var rule in c.Factories)
+                        if (rule.Identity.FactoryId == state.FactoryId)
+                            _bridge.ObserveReplacementTightness(id, state.Scalars[rule.Identity.TightnessIndex]);
+                    _replacementTightnessRevisions[id] = state.Revision;
+                }
+                _pendingReplacements.Add(id);
+            }
         }
 
         private void ProcessReplacementParts(SessionManager session)
@@ -120,6 +143,7 @@ namespace WinterMP.Core.Sync
             ProcessReplacementGarbage();
             if (Time.unscaledTime < _nextReplacementPoll) return;
             _nextReplacementPoll = Time.unscaledTime + .2f;
+            IsolateGuestParts(session);
             ProcessNativeParts(session);
             if (session.IsHost)
             {
@@ -151,7 +175,9 @@ namespace WinterMP.Core.Sync
                     {
                         if (data.FsmVariables.FindFsmString(SyncCatalog.ReplacementParts!["itemIdVariable"]).Value != state.NativeId)
                             throw new InvalidOperationException("Replacement overlaps an unrelated item.");
-                        // Already present native parts retain their existing assembly/bolt adapter.
+                        // Defer until the saved original can be isolated. Never
+                        // silently accept its unrelated local assembly or scalars.
+                        continue;
                     }
                     else if (factory.Rule.Identity.CanCreate(state)
                         || (factory.Rule.Identity.CanCreateFitted(state) && ResolveReplacementParent(state) != null))
@@ -244,27 +270,33 @@ namespace WinterMP.Core.Sync
                 if (!_bridge.PartIdentities.TryRootId(data, out uint actual) || actual != id)
                     throw new InvalidOperationException("Replacement initialization did not preserve identity.");
                 TrackNativePart(data, id);
+                GetPartHandRotation(binding);
                 PrepareReplacementPresentation(binding);
                 bool applied = ApplyReplacementState(binding, id, state);
+                _bridge.PrepareReplacementPartView(data);
                 SyncEventLog.Record("replacement-replica", state.NativeId + " " + id.ToString("X8"));
                 return applied;
             }
             catch
             {
                 var data = FindReplacementData(clone, c); data.enabled = false; _bridge.PartIdentities.Forget(data);
+                _bridge.ForgetReplacementBolts(data);
                 RemoveTrackedItem(id, clone.GetComponent<Rigidbody>()); _replacementParts.Remove(id); _nativeParts.Remove(id);
                 clone.SetActive(false); UnityEngine.Object.Destroy(clone); throw;
             }
         }
 
-        private static void ApplyReplacementScalars(ReplacementBinding binding, ReplacementPartState state)
+        private void ApplyReplacementScalars(ReplacementBinding binding, ReplacementPartState state)
         {
+            PartIdentity.TryItemId(state.NativeId, out uint id);
             for (int i = 0; i < state.Scalars.Length; i++)
-                binding.Data.FsmVariables.FindFsmFloat(binding.Factory.Rule.Scalars[i]).Value = state.Scalars[i];
+                binding.Data.FsmVariables.FindFsmFloat(binding.Factory.Rule.Scalars[i]).Value = i == binding.Factory.Rule.Identity.TightnessIndex
+                    ? _bridge.ReplacementTightness(id, state.Scalars[i]) : state.Scalars[i];
         }
 
         private void RetireHiddenReplacement(uint id)
         {
+            _bridge.RetireReplacementPartViews(id);
             if (_items.ContainsKey(id) || !_replacementParts.TryGetValue(id, out var binding)
                 || !binding.Replica || binding.Data == null || binding.Body == null) return;
             TryRetireReplacement(binding.Body);
@@ -286,6 +318,7 @@ namespace WinterMP.Core.Sync
                 if (binding.Replica)
                 {
                     binding.Data.enabled = false; body.gameObject.SetActive(false);
+                    _bridge.ForgetReplacementBolts(binding.Data);
                     _bridge.PartIdentities.Forget(binding.Data);
                     UnityEngine.Object.Destroy(body.gameObject);
                 }
@@ -326,6 +359,7 @@ namespace WinterMP.Core.Sync
                 var binding = pair.Value;
                 if (binding.Replica && binding.Data != null)
                 {
+                    _bridge.ForgetReplacementBolts(binding.Data);
                     binding.Data.enabled = false; binding.Data.gameObject.SetActive(false);
                     _bridge.PartIdentities.Forget(binding.Data);
                     RemoveTrackedItem(pair.Key, binding.Body); UnityEngine.Object.Destroy(binding.Data.gameObject);
@@ -336,11 +370,13 @@ namespace WinterMP.Core.Sync
             foreach (var factory in _replacementFactories.Values)
             {
                 foreach (var hook in factory.Hooks) RemoveReplacementHook(hook.Key, hook.Value);
-                factory.Suppressor.Restore();
             }
+            RestoreIsolatedGuestParts();
+            foreach (var factory in _replacementFactories.Values) factory.Suppressor.Restore();
             _replacementParts.Clear(); _replacementFactories.Clear(); _replacementOutputs.Clear(); _unreadyNativeParts.Clear();
             _pendingReplacements.Clear(); _replacementReplica?.Clear(); _replacementReplica = null; _replacementGarbage.Clear();
             _nextReplacementPoll = 0;
+            _replacementTightnessRevisions.Clear();
             _nativeParts.Clear();
         }
 

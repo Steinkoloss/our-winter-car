@@ -13,6 +13,69 @@ namespace WinterMP.Net.Tests
         private static BoltState State(int tightness = 4, float total = 17.25f) => BoltStatePolicy.Capture(123, tightness, total)!;
 
         [Fact]
+        public void ReattachmentRequiresANewHostReceiptEvenWhenTheBoltWasAlreadySeeded()
+        {
+            var gate = new ReplicaBoltGate();
+            gate.Received(1); Assert.False(gate.Seeded);
+            gate.SetAttachment(true, 10);
+            foreach (ulong order in new ulong[] { 0, 1, 9, 10 })
+            {
+                Assert.False(gate.CanReceive(order)); gate.Received(order);
+                Assert.False(gate.CanTurn(4, 1));
+            }
+            Assert.True(gate.CanReceive(11)); gate.Received(11);
+            Assert.True(gate.CanTurn(4, 1)); Assert.True(gate.CanTurn(4, -1));
+            gate.SetAttachment(false, 12); gate.Received(13);
+            Assert.False(gate.Seeded); Assert.False(gate.CanTurn(4, 1));
+            gate.SetAttachment(true, 20); gate.Received(19);
+            Assert.False(gate.CanTurn(4, -1));
+            gate.Received(21); Assert.True(gate.CanTurn(4, -1));
+            gate.SetAttachment(true, 22); Assert.False(gate.Seeded);
+        }
+
+        [Theory]
+        [InlineData(0, -1, false)] [InlineData(0, 1, true)]
+        [InlineData(7, 1, true)] [InlineData(8, 1, false)] [InlineData(8, -1, true)]
+        [InlineData(-1, 1, false)] [InlineData(9, -1, false)]
+        [InlineData(4, 0, false)] [InlineData(4, 2, false)] [InlineData(4, -2, false)]
+        public void ReplicaTurnsStayWithinNativeBoundsAndCannotEnterTimingAdjustment(int tightness, int direction, bool allowed)
+        {
+            var gate = new ReplicaBoltGate();
+            gate.SetAttachment(true, 1); gate.Received(2);
+            Assert.Equal(allowed, gate.CanTurn(tightness, direction));
+            // Input admission never predicts a turn or consumes a host observation.
+            Assert.Equal(allowed, gate.CanTurn(tightness, direction)); Assert.True(gate.Seeded);
+        }
+
+        [Theory]
+        [InlineData("Bolt0", 4, 1, 2, 0, true)] [InlineData("bolt1", 4, 1, 2, 1, true)]
+        [InlineData("Bolt12", 4, 2, 13, 12, true)] [InlineData("Bolt2", 4, 1, 2, 2, false)]
+        [InlineData("Bolt", 4, 1, 2, 0, false)] [InlineData("BoltX", 4, 1, 2, 0, false)]
+        [InlineData("Bolt-1", 4, 2, 2, 0, false)] [InlineData("Bolt1", -1, 1, 2, 0, false)]
+        [InlineData("Bolt1", 4, 0, 2, 0, false)] [InlineData("Bolt1", 4, 1, 0, 0, false)]
+        [InlineData("Bolt1", int.MaxValue, 2, 2, 0, false)]
+        [InlineData("Bolt9999999999", 4, 10, int.MaxValue, 0, false)]
+        public void ReplicaVisualIndexCannotEscapeTheNativeArray(string name, int start, int length, int count, int expected, bool valid)
+        {
+            Assert.Equal(valid, ReplicaBoltGate.TryIndex(name, start, length, count, out int index));
+            if (valid) Assert.Equal(expected, index);
+        }
+
+        [Fact]
+        public void DelayedReplacementPresentationCannotRollBackALaterBoltTotal()
+        {
+            var totals = new PartTightnessReceipts();
+            Assert.Equal(5, totals.Latest(42, 5));
+            totals.Resolve(42, 10, 4); // Replacement state was received but its mount is not ready.
+            totals.Resolve(42, 12, 6); // Another bolt result arrives before presentation applies.
+            Assert.Equal(6, totals.Latest(42, 4));
+            Assert.Equal(6, totals.Resolve(42, 11, 5));
+            Assert.Equal(0, totals.Resolve(42, 13, 0)); // Host removal clears the aggregate.
+            Assert.Equal(0, totals.Latest(42, 6));
+            totals.Clear(); Assert.Equal(9, totals.Latest(42, 9));
+        }
+
+        [Fact]
         public void LiveWireAppendsParentTotalAfterTheLegacyBoltPrefix()
         {
             var state = State(); byte[] bytes = PacketCodec.Encode(state);

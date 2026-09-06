@@ -367,7 +367,7 @@ changed bindings log and disable that adapter. The two timing bolts validate the
 at-limit ADJUST route but guard extra guest turns until timing state is replicated.
 See the v114 checklist in `docs/BUILDING.md`; static bindings do not prove gameplay.
 
-### Replacement-part factories (v111; presentation v115; fitting/removal v116–v118)
+### Replacement-part factories (v111; presentation v115; fitting/removal v116–v118; adjustment v119)
 
 `replacementParts` describes the 30 `CARPARTS/PARTSYSTEM/SPAWNERS_*::Spawn` contents
 factories used by standard boxes. Each rule names the exact prefab/save prefix,
@@ -464,3 +464,38 @@ the initialized variables; replaying those stale action defaults would overprodu
 Host/guest box opening uses the same guarded native path. Guest feedback reuses only
 native audio/GUI actions after a matching acceptance, without local decrement/spawn.
 Installed-part/bolt reconstruction and native two-player/save testing remain open.
+
+### Guest replacement bolt bindings (post-0.1.32)
+
+`replacementParts.replicaRepairVariable` names global `RepairMode`. Owned copies use
+catalog-matched integer `Screw` controls only after validating the native action
+layout, visual child/index substring, local bolt-size/pose space, live integer-array
+slot and layer-12 SphereCollider trigger. Build 23268598 evidence matches 55 controls
+across 24 boxed replacement families. Its spanner/ratchet `2Spanner/Raycast::Check`
+reads `Screw.Boltsize` and sends TIGHTEN / UNTIGHTEN; the guest keeps that interface
+but replaces all native child states with input/pose callbacks. Continuous rocker,
+mixture and other adjustment controls remain disabled. Owned copies keep native Data save and engine actions disabled; only host bolt
+results update them. Saved guest parts are now isolated and persistence is guarded
+until restart; full guest engine reconstruction remains unfinished.
+See the post-0.1.32 checklist in BUILDING.md for runtime acceptance cases.
+
+### Alternator hand adjustment (v119)
+
+VIN133 and ALTERNATOR0 have an optional `handRotation` binding containing the
+relative pivot path, HandRotate FSM name, saved scalar and adjusting-bolt path.
+Both paths must be nonempty relative paths, the scalar must belong to the family's
+published floats, and array-slot families cannot use this adapter. The native
+Clockwise/Counterwise/Wait graphs must retain their local half-degree rotation,
+0–7 clamp, part/mount scalar targets and synchronous writes. Changed layouts disable
+only that part's adjustment. The layer-19 pivot SphereCollider stays disabled on
+guests; its shape supplies picking, and the matching integer bolt's fresh host state
+gates scroll input. Protocol 119 operations 2/3 carry requests; the existing state
+185 scalar and pose path carries the result. See BUILDING.md for the native probe
+and outstanding two-player acceptance checks.
+
+The `shoppingBags` adapter (v120) binds Store/Fleetari bag factories, persistent
+`Use.ID`, native contents dispatches and local pickup states. `spillFactoryPaths`
+identify exact output owners; prefab `SetName` actions map template names to live
+names. Native products without a validated replica adapter are rejected before
+opening a bag. The old `spawnContainers` descriptors are retained as catalog history;
+runtime bag synchronization uses the new adapter and does not salt IDs by scan order.

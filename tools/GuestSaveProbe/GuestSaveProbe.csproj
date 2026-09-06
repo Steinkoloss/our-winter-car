@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>WinterMP.GuestSaveProbe</AssemblyName>
+    <MwcManaged>$(MwcGamePath)/mywintercar_Data/Managed</MwcManaged>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="UnityEngine" HintPath="$(MwcManaged)/UnityEngine.dll" Private="false" />
+    <Reference Include="ES2" HintPath="$(MwcManaged)/ES2.dll" Private="false" />
+    <Reference Include="PlayMaker" HintPath="$(MwcManaged)/PlayMaker.dll" Private="false" />
+    <ProjectReference Include="../../src/WinterMP.Core/WinterMP.Core.csproj" />
+  </ItemGroup>
+</Project>

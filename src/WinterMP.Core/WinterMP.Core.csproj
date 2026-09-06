@@ -9,7 +9,7 @@
     <!-- BepInEx.PluginInfoProps consumes these to generate MyPluginInfo. -->
     <BepInExPluginGuid>com.ourwintercar.wintermp</BepInExPluginGuid>
     <BepInExPluginName>Our Winter Car</BepInExPluginName>
-    <Version>0.1.32</Version>
+    <Version>0.1.33</Version>
     <MwcManaged>$(MwcGamePath)/mywintercar_Data/Managed</MwcManaged>
   </PropertyGroup>
 
@@ -28,6 +28,10 @@
     <!-- Build deployment is optional; release builds use DeployToGame=false. -->
     <Reference Include="PlayMaker">
       <HintPath>$(MwcManaged)/PlayMaker.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ES2">
+      <HintPath>$(MwcManaged)/ES2.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass" Condition="Exists('$(MwcManaged)/Assembly-CSharp-firstpass.dll')">

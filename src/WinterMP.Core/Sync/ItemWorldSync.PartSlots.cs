@@ -12,7 +12,7 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class ItemWorldSync
     {
-        private static PlayMakerFSM? GetPartSlotMount(ReplacementBinding part, out byte slot)
+        private PlayMakerFSM? GetPartSlotMount(ReplacementBinding part, out byte slot)
         {
             slot = 0;
             var c = SyncCatalog.ReplacementParts!;
@@ -61,7 +61,7 @@ namespace WinterMP.Core.Sync
                 if (part.FitMount != null && part.FitMount.gameObject == selected) return part.FitMount;
                 foreach (var mount in selected.GetComponents<PlayMakerFSM>())
                 {
-                    if (mount.FsmName != c["itemFsm"] || !FitFsmReady(mount)) continue;
+                    if (mount.FsmName != c["itemFsm"] || !PartFitMountReady(mount)) continue;
                     ValidatePartFitMount(mount, c, true);
                     RequireFit(mount.FsmVariables.FindFsmGameObject(c["mountPointVariable"])?.Value == selected);
                     part.FitMount = mount;
@@ -117,7 +117,7 @@ namespace WinterMP.Core.Sync
             actions.Insert(0, fitting.SelectionGuard); fitting.SelectionState.Actions = actions.ToArray();
         }
 
-        private static bool PartSlotSelectionMatches(PartFitting fitting)
+        private bool PartSlotSelectionMatches(PartFitting fitting)
         {
             var c = SyncCatalog.ReplacementParts!;
             var installer = fitting.Part.SlotInstaller;
@@ -132,7 +132,7 @@ namespace WinterMP.Core.Sync
             return GetPartFitMount(fitting.Part, out byte slot) == fitting.Mount && slot == fitting.Request.SlotIndex;
         }
 
-        private static bool PartSlotCandidateMatches(PartFitting fitting)
+        private bool PartSlotCandidateMatches(PartFitting fitting)
         {
             var c = SyncCatalog.ReplacementParts!;
             return PartSlotSelectionMatches(fitting)

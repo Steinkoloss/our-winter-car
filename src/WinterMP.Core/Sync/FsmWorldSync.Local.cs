@@ -27,44 +27,6 @@ namespace WinterMP.Core.Sync
             session.SendWorldMessage(new FsmStateEnter { NetId = netId, StateName = stateName }, Channel.ReliableOrdered);
         }
 
-        private void OnSpawnStateEntered(uint netId, string stateName)
-        {
-            // The bag fired naturally on THIS machine — spawns are never applied
-            // remotely (the bag's "Confirm" state bounces remote entries back to
-            // "Wait player" without a live player interaction, so replicating a
-            // spill means capturing clones, not firing FSMs). This hook runs before
-            // the state's spawn actions; the spill lands within the capture window.
-            if (_bridge.ApplyingRemote) return;
-
-            var session = SessionManager.Instance;
-            if (session == null) return;
-            if (!_spawnContainers.TryGetValue(netId, out var spawn) || spawn.Fsm == null) return;
-
-            Vector3 near = spawn.Fsm.transform.position;
-            if (session.State == SessionState.Hosting)
-            {
-                // Deliberately NOT gated on PlayerCount: a host that shops before the
-                // friend joins must still capture — otherwise the scanner grabs the
-                // clones under ordinal ids the guest can never resolve (invisible
-                // items + a checksum-mismatch resync loop), and the retained manifest
-                // is exactly what the join-snapshot replay needs.
-                WinterMPPlugin.Log.LogInfo($"WorldSync: spawn-container {netId:X8} -> '{stateName}' (host).");
-                Util.BootTrace.Crumb($"SPAWN-FIRE host {netId:X8} -> '{stateName}'");
-                SyncEventLog.Record("spawn-fsm", $"{netId:X8} -> {stateName}");
-                _bridge.StartHostSpawnCapture(netId, stateName, near);
-                return;
-            }
-
-            if (session.State != SessionState.Connected) return;
-
-            // Guest: let the spill run, capture the clones, offer them to the host —
-            // it mints ids and answers with the manifest that binds them for everyone.
-            WinterMPPlugin.Log.LogInfo($"WorldSync: spawn-container {netId:X8} -> '{stateName}' (guest, offering).");
-            Util.BootTrace.Crumb($"SPAWN-OFFER guest {netId:X8} -> '{stateName}'");
-            SyncEventLog.Record("spawn-offer", $"{netId:X8} -> {stateName}");
-            _bridge.StartGuestSpawnOffer(netId, stateName, near);
-        }
-
         private void OnPartStateEntered(uint netId, string stateName)
         {
             if (_bridge.ApplyingRemote) return;
@@ -307,8 +269,9 @@ namespace WinterMP.Core.Sync
                 session.SendWorldMessage(state, Channel.ReliableOrdered);
         }
 
-        private static PartState? ReadPartState(uint id, SyncedPart part)
+        private PartState? ReadPartState(uint id, SyncedPart part)
         {
+            if (part.Replica) return ReadReplicaPart(id, part);
             if (part.Fsm == null || !part.Fsm.Fsm.Initialized || !part.Fsm.Fsm.Started
                 || !part.Fsm.gameObject.activeInHierarchy || !part.Fsm.enabled) return null;
             return WinterMP.Net.Sync.PartStatePolicy.Capture(id,

@@ -25,6 +25,8 @@ namespace WinterMP.Core.Sync
                 || item.Body == null || !CanSyncItemMotion(item))
                 return false;
 
+            if (_bags.ContainsKey(message.ItemId) && IsHeldByLocalPlayer(item.Body)) return false;
+
             if (item.RemoteOwner == playerId)
                 return true;
             if (item.RemoteOwner != WorldSyncIds.NoOwner)
@@ -117,6 +119,9 @@ namespace WinterMP.Core.Sync
                 item.LocallyOwned = false;
                 item.LocalDriveActive = false;
             }
+
+            if (_bags.ContainsKey(message.ItemId) && session != null && message.OwnerPlayerId != session.LocalPlayerId)
+                ReleaseHeldBag(item.Body);
 
             bool firstPacket = item.RemoteOwner != message.OwnerPlayerId;
             item.RemoteOwner = message.OwnerPlayerId;
@@ -215,6 +220,9 @@ namespace WinterMP.Core.Sync
 
         private static void ApplyRemoteSmoothing(SyncedItem item, Rigidbody body)
         {
+            // Spawned prefabs may finish native initialization after binding and
+            // restore local physics. A live remote owner still controls this body.
+            if (!body.isKinematic) body.isKinematic = true;
             var transform = body.transform;
             Vector3 target = item.TargetPosition;
             if (item.HasRemoteVelocity)

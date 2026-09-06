@@ -1271,6 +1271,68 @@
       }
     ]
   },
+  "shoppingBags": {
+    "factoryFsm": "ShoppingBag",
+    "prefabVariable": "CreatePrefab",
+    "prefixVariable": "SaveID",
+    "outputVariable": "New",
+    "idVariable": "ID",
+    "createState": "Create product",
+    "loadCreateState": "Create",
+    "factoryIdleState": "Idle",
+    "itemFsm": "Use",
+    "itemIdVariable": "ID",
+    "itemInitState": "State 2",
+    "itemIdentityState": "State 1",
+    "itemLoadState": "Load",
+    "itemName": "shopping bag(itemx)",
+    "itemIdleState": "Wait player",
+    "confirmState": "Confirm",
+    "oneState": "Spawn one",
+    "allState": "Spawn all",
+    "garbageState": "Is garbage",
+    "garbageEvent": "GARBAGE",
+    "saveState": "Save",
+    "saveEvent": "SAVEGAME",
+    "deleteState": "State 6",
+    "consumedEvent": "CONSUMED",
+    "conditionVariable": "Condition",
+    "consumedVariable": "Consumed",
+    "ownerVariable": "Owner",
+    "contentsVariable": "ProductSpawner",
+    "contentsFsm": "Logic",
+    "currentBagVariable": "CurrentBag",
+    "keysReference": "Keys",
+    "valuesReference": "Values",
+    "oneEvent": "SPAWNRANDOM",
+    "allEvent": "SPAWNALL",
+    "contentsIdleState": "Idle",
+    "contentsStartState": "State 1",
+    "spillCreateState": "Create product",
+    "spillIdleState": "Idle",
+    "spillPrefabVariable": "Prefab",
+    "spillOutputVariable": "New",
+    "spillProductVariable": "ProductName",
+    "spillSpawnPointVariable": "ShoppingBagSpawn",
+    "spillEvent": "SPAWNITEM",
+    "spillFactoryPaths": ["Spawner/CreateItems", "Spawner/CreateSprayCans", "Spawner/CreatePartsPackages"],
+    "pickupPath": "PLAYER/Pivot/AnimPivot/Camera/FPSCamera/1Hand_Assemble/Hand",
+    "pickupFsm": "PickUp",
+    "pickupEntryState": "Set pivot 2",
+    "pickupIdleState": "Look for object",
+    "pickupHeldState": "Item picked",
+    "pickupDropState": "Drop part",
+    "pickupDropEvent": "DROP_PART",
+    "pickupObjectVariable": "PickedObject",
+    "pickupJointVariable": "Joint",
+    "pickupPivotVariable": "ItemPivot",
+    "pickupEmptyVariable": "HandEmpty",
+    "readyStates": ["Wait player", "Wait button", "Confirm", "Spawn one", "Spawn all", "In car?", "Spoil 2", "In Fridge"],
+    "factories": [
+      { "path": "Spawner/CreateBagStore", "prefix": "shoppingbag", "contentsPath": "Spawner/BagContentsStore" },
+      { "path": "Spawner/CreateBagFleetari", "prefix": "shoppingbagfleetari", "contentsPath": "Spawner/BagContentsFleetari" }
+    ]
+  },
   "spawnContainers": [
     {
       "fsmName": "Use",
@@ -2321,6 +2383,7 @@
     "loadState": "Load",
     "freshEvent": "BACK",
     "boltsVariable": "Bolts",
+    "replicaRepairVariable": "RepairMode",
     "fitEvent": "ASSEMBLING",
     "fitCheckState": "Another part?",
     "fitOwnerVariable": "Owner",
@@ -2362,6 +2425,12 @@
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Alternator133",
         "prefix": "VIN133",
+        "handRotation": {
+          "path": "Pivot",
+          "fsm": "HandRotate",
+          "scalar": "SettingRotation",
+          "boltPath": "Pivot/alternator/BoltPM"
+        },
         "scalars": [
           "Wear",
           "Tightness",
@@ -2398,6 +2467,12 @@
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/AlternatorPerf",
         "prefix": "ALTERNATOR0",
+        "handRotation": {
+          "path": "Pivot",
+          "fsm": "HandRotate",
+          "scalar": "SettingRotation",
+          "boltPath": "Pivot/alternator/BoltPM"
+        },
         "scalars": [
           "Wear",
           "Tightness",

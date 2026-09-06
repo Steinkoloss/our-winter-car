@@ -348,6 +348,7 @@ namespace WinterMP.Core.Sync
         {
             if (!PartStatePolicy.Valid(flags, tightness, wear)) return false;
             if (!_parts.TryGetValue(netId, out var part) || part.Fsm == null) return false;
+            if (part.Replica) return ApplyReplicaPartState(netId, part, flags, tightness, wear, order);
             if (!part.Fsm.Fsm.Initialized || !part.Fsm.Fsm.Started
                 || !part.Fsm.gameObject.activeInHierarchy || !part.Fsm.enabled) return false;
 

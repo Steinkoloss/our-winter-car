@@ -1,6 +1,19 @@
 # WinterMP wire protocol
 
-Protocol version: **118** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+Protocol version: **120** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+
+v120 adds BagState (190), BagOpenRequest (191) and BagOpenReceipt (192).
+Shopping bags use the host's persistent factory/native identity. Guests request
+one/all openings against a revision; only the host consumes inventory and creates
+outputs. SpawnIntent (53) is retired and ignored; its ID is never reused. ItemSpawn
+(52) keeps its layout, with host ownership and offerSequence=0 for bag spills.
+
+v119 adds RotateIncrease=2 and RotateDecrease=3 to the existing part-operation
+request/receipt (188–189), with slot zero. The two catalogued alternators use
+native half-degree hand rotation within 0–7 degrees. Identity/revision, settled
+mount ownership, fresh guest proximity, the loosened adjusting bolt and native
+readiness gate each request; retries only recover its receipt. Absolute scalar
+and pivot updates continue through ReplacementPartState (185). Layouts are unchanged.
 
 v118 appends SlotIndex to PartFitRequest/PartFitReceipt (188–189) and adds guest
 fitting for the piston, main-bearing and rocker arrays. The requested native slot
@@ -221,8 +234,8 @@ transforms to other guests and is authoritative for all world state.
 | 49 | WorldObjectStateRequest | 0 | guest -> host: netId — host replies with the object state it has (final ItemTransform, VehicleState/Climate, FsmStateEnter, PartState, or BoltState); v107 part replies include both the known FSM state and native scalar state; guests auto-request after a pending FSM event expires (5 s cooldown per id), while the host admits at most four requests per second per guest |
 | 50 | HeatSourceState | 0 | host -> all (v28): sourceId (scene-path hash of the source container), flags (bit 0 = lit/embers), fuel (0-255 firewood), heatOutput (0-255), saunaTemp (sauna heat ×100, ushort; 0 for non-sauna). Host-authoritative shared state for the cabin woodstove (`CABIN/Cabin/woodstove/Fireplace`), sauna kiuas (`COTTAGE/Stuff/Sauna/Stove` — `SaunaHeat`/`StoveHeat`), and cottage/living-room fireplaces. Broadcast on change + ~20 s keepalive from whoever hosts; guests write the values back onto their local FSMs so each client's own position-derived body-temp calc warms consistently |
 | 51 | HeatSourceIntent | 0 | guest -> host (v49): sourceId, action (0 light, 1 feed wood, 2 grill, 3 löyly/steam), authenticated player id, sequence — anyone-triggers. The guest emits this when it locally enters the source's lighting/feeding/grilling/steam FSM state (debounced 0.75 s); the host accepts only the sender's fresh next sequence *for that source* (per-player-per-source latch; guests count intents per source) while their pose is within 8 m of the exact source, then fires the matching game event (`USE`/`WOOD`/`SAUSAGE`/`STEAM`) on its authoritative FSM. Invalid source/action, stale/replayed packet, and distant player reports are dropped; the resulting HeatSourceState carries accepted progression back. |
-| 52 | ItemSpawn | 0 | host -> guests (v29): containerNetId, epoch, ownerPlayerId, stateName, count (≤32) + entries (netId, templateName, pos, rot), **flags (appended v31: bit 0 = replay; v106 bit 1 = native catalog factory, see below)**, **offerSeq (appended v32: echoes SpawnIntent.seq when answering an offer, else 0 — two quick same-bag offers are indistinguishable by container+state alone; an offer whose entries all failed is answered with an EMPTY manifest so the guest releases its parked clones immediately)** — manifest for items a container FSM (grocery bag "Spawn all"/"Spawn one") just spilled; runtime clones exist in neither save, so the host is sole authority for their identity. `ownerPlayerId` is the **spiller** (host, or the guest whose offer produced this manifest — v32): the spiller binds its own captured clones to these ids by template name and streams them as owner; every other peer **materializes** each entry — adopt an untracked same-named clone within 3 m of the pose, steal a stale scanner-registered clone (replay / own-offer only: the id must be provably host-unnamed), else instantiate from an exact- or base-name-matched scene template ("shopping bagx" ↔ "shopping bag(itemx)": masters carry an `x` suffix, live instances `(itemx)`; the clone is renamed to the manifest's templateName) — and holds them owner-followed/kinematic until a final ItemTransform rests them. **No receiver ever fires a bag FSM (v32)** — the bag's "Confirm" state bounces remote entries back to "Wait player" without a live player interaction, and the spiller's bag-consumption despawn destroys replica bags anyway. Deduped by (containerNetId, epoch); excluded from the world checksum. **Replay manifests (v31)** ride the join snapshot: the host re-sends its session's spills live-refreshed (eaten entries dropped, poses updated) so late joiners get the items |
-| 53 | SpawnIntent | 0 | guest -> host (v29): playerId, containerNetId, stateName, seq, **count + entries (templateName, pos, rot) (appended v32)** — the guest's own bag spilled **naturally** (no abort since v32); after a ~0.3 s-stable capture of the clones near its bag it offers their names + poses. The host accepts only a fresh next sequence from the authenticated player, with 1–32 finite/template-backed entries within 12 m of that player, then materializes matching copies from its own scene templates at those poses, mints ids under a fresh epoch (one per-container epoch counter serves host spills and guest offers alike), and answers with the ItemSpawn manifest (52) echoing `seq`. Runtime bag ids and contents are deliberately peer-local, so the host cannot re-derive the exact inventory; these bounds prevent malformed/replayed/map-wide offers without inventing a false inventory check. The offering guest pairs the answer to the exact offer by that echo, binds its parked clones to the minted entries by template name, and keeps streaming them as owner. Unanswered offers release their clones back to the local scanner after 6 s (local-only fallback, never lost). Host spills are captured **regardless of connected peers** — a host shopping before the friend joins still mints, so the retained manifest can replay at join |
+| 52 | ItemSpawn | 0 | host → guests: containerNetId (uint32), epoch (uint16), ownerPlayerId (byte), stateName (string), count (byte, ≤32), entries (netId uint32, templateName string, position vec3, rotation quat), flags (byte: bit0 replay, bit1 catalog trophy factory), offerSequence (uint16, zero for bags in v120). Exact native host outputs; duplicate receipts cannot create another item. Missing templates retry, and join/resync replays refresh live entries. |
+| 53 | SpawnIntent — retired v120 | — | Former guest spill offers. Ignored by the session dispatcher; ID remains reserved. Guests use BagOpenRequest (191). |
 | 54 | FluidContainerState | 0 | owner -> host -> others: tracked fuel-container item id, owner player id, sequence, flags (bit 0 pouring), fuel level, capacity. The host accepts and relays a guest update only while its item-transform ownership still names that guest, its owner-local sequence advances, and flags/level/capacity are finite and in range; rejected packets never reach other peers. |
 | 55 | WorldProgressState | 0 | host -> guests: compact scalar mirror of a host-owned M8 system. `kind` 1 = classifieds (`phase` job stage; primary delivered; secondary sheets; tertiary day; value salary); 2 = factory (employment stage; empty/total packages; paychecks; worked minutes); 3 = Marketti magazine (layout type; day/index/issue). |
 | 56 | JobSiteState | 0 | host -> guests: stable FSM-path id, kind, flags, sequence, primary and secondary values. Kind 1 sewage site: bit 0 `Called`, `ShitLevel`, `BasePrice`; kind 2 firewood site: bit 0 `Order`, `Surplus`, `Penalty`; **kind 3 (v35) GIFU sewage truck**: bit 0 `PumpRunning`, bit 1 `HoseAttached`, bit 2 `HoseInShit`, bit 3 `Sucking`, `ShitLevel`, `PumpEfficiency`. Every registered site and the truck pump are included in join snapshots. | **v67: kind 4 = farm (Primary=int JobStage, Active=Done).**
@@ -305,8 +318,11 @@ transforms to other guests and is authoritative for all world state.
 | 185 | ReplacementPartState | 0 | host -> guests: revision:u32, factoryId:u32, nativeId:string, assemblyId:i32, installed:byte 0/1, scalarCount:byte (≤8), native f32 scalars, world position:vec3/rotation:quat; v115 appends parentKind:byte, parentId:u32, parentPath:string, local position:vec3/rotation:quat/scale:vec3; v117 appends removalAllowed:byte 0/1. Creates loose copies or fitted presentation at ready unoccupied mounts; join/item resync and targeted replies included. |
 | 186 | PackageOpenRequest | 0 | guest -> host (v112): playerId (byte), token (uint64), sequence (uint32), itemId (uint32), expectedRevision (uint32). One requested native box opening. |
 | 187 | PackageOpenReceipt | 0 | host -> guests (v112): playerId (byte), token (uint64), sequence (uint32), itemId (uint32), status (byte), producedItemId (uint32). Exact request outcome; only the matching guest acts on it. |
-| 188 | PartFitRequest | 0 | guest -> host (v116; extended v117–v118): playerId (byte), token (uint64), sequence (uint32), itemId (uint32), expectedRevision (uint32), operation (byte: 0 install, 1 remove), slotIndex (byte). One request to fit a loose replacement at its native fixed mount or selected catalog slot, or remove a fitted replacement. |
-| 189 | PartFitReceipt | 0 | host -> guests (v116; extended v117–v118): playerId (byte), token (uint64), sequence (uint32), itemId (uint32), status (byte), operation (byte: 0 install, 1 remove), slotIndex (byte). Acknowledged outcome; only the matching guest acts on it. |
+| 188 | PartFitRequest | 0 | guest -> host (v116; extended v117–v119): playerId (byte), token (uint64), sequence (uint32), itemId (uint32), expectedRevision (uint32), operation (byte: 0 install, 1 remove, 2 rotate increase, 3 rotate decrease), slotIndex (byte). One request to fit, remove or hand-adjust a catalogued replacement. |
+| 189 | PartFitReceipt | 0 | host -> guests (v116; extended v117–v119): playerId (byte), token (uint64), sequence (uint32), itemId (uint32), status (byte), operation (byte: 0 install, 1 remove, 2 rotate increase, 3 rotate decrease), slotIndex (byte). Acknowledged outcome; only the matching guest acts on it. |
+| 190 | BagState | 0 | host → guests: itemId (uint32), factoryId (uint32), nativeId (string), revision (uint32), remaining (uint16), condition (float32), position (vec3), rotation (quat). |
+| 191 | BagOpenRequest | 0 | guest → host: playerId (byte), sequence (uint32), itemId (uint32), expectedRevision (uint32), openAll (bool). |
+| 192 | BagOpenReceipt | 0 | host → guests: same fields/order as191, followed by status (byte: 0 Pending, 1 Applied, 2 Stale, 3 Unavailable, 4 Busy, 5 OutOfReach, 6 NotOwner, 7 Failed). |
 | 150 | RallyResultsState | 0 | host -> guests (**v73**): seq, timeSS1/2/3 (int stage times), playerTimeTotal (float), playerClassLevel (int), timePenalty (float), flags (bit0 raceOver, bit1 winner, bit2 registered, bit3 secondDay). Host owns the rally results ledger + enroll + parc-fermé penalty; guests apply. In the join snapshot. Reward rides the existing host-gated race price triggers. |
 | 151 | JokkisRaceState | 0 | host -> guests (**v74**): seq, laps (int), timeCentiseconds (int), flags (bit0/1 checkpoint 1/2). Host owns the JOKKIS banger race lap/time/checkpoint; guests apply. In the join snapshot. |
 
@@ -390,13 +406,13 @@ overwritten on every message (host wins). When `dayOfWeek` changes, guests
 broadcast the matching global weekday event (MONDAY…SUNDAY) so TV/HUD/job
 schedulers stay aligned.
 
-`ItemSpawn` net ids are minted by the host as `hash("spawn:" + containerNetId +
-":" + epoch + ":" + ordinal)` — for its own spills from the clones captured
-within ~2 s / 6 m of its bag (already-tracked bodies excluded), for guest offers
-from the offered entry list. Container ids never need to match across peers
-(bags are runtime clones with salted per-peer ids); they only scope the local
-capture and key the (containerNetId, epoch) manifest dedup. Once bound, spawned
-items behave as ordinary synced pickables (claim/cargo/despawn).
+`ItemSpawn` net IDs are minted by the host as `hash("spawn:" + containerNetId +
+":" + epoch + ":" + ordinal)`. For bags, the container ID is the shared persistent
+bag item ID; outputs are observed directly at native factory completion before
+ordinary scanning. Large spills use multiple ≤32-entry manifests with separate
+epochs. Retries retain an epoch; already-bound bodies never receive a second ID.
+Native package outputs keep their PackageState identity and are excluded from
+these generic manifests. Spawned pickables use ordinary transform/cargo/despawn.
 
 `VehicleState` / `VehicleClimate` sequence (v26): the live stream uses a
 per-stream `Sequence` that receivers dedup against (stale/duplicate dropped).
@@ -668,18 +684,30 @@ No opening is replayed as part of cleanup. This enables unpacking and loose-item
 carrying; it does not enable the still-deferred full fitted-part/bolt graph. Native
 two-player, save/reload and simultaneous host/guest interaction tests are pending.
 
-### Guest replacement fitting/removal v116–v118
+### Guest replacement fitting/removal/adjustment v116–v119
 
 PartFitRequest (188) is 25 bytes including its uint16 message ID; PartFitReceipt
 (189) is 22 bytes. Field order is exactly the table above. Both use reliable ordered
 channel 0. Requests contain no arbitrary mount path, pose, assembly state or condition.
 SlotIndex is appended after Operation: zero for fixed-mount installation and all
-removal requests, 1–32 for catalog array installation. Framing rejects larger values
-and any nonzero removal slot. Application requires the family's actual slot count
+removal/rotation requests, 1–32 for catalog array installation. Framing rejects larger values
+and any nonzero removal/rotation slot. Application requires the family's actual slot count
 and the host's nearest slot to match. Current arrays have 4, 5 and 8 slots.
 Receipt statuses are Pending=0, Accepted=1, Busy=2, Unavailable=3, Stale=4,
 NotLoose=5, TooFar=6, Blocked=7, Failed=8, NotFitted=9 and Bolted=10. Status bytes
-above 10 and operation bytes other than Install=0/Remove=1 are invalid framing.
+above 10 and operation bytes other than Install=0/Remove=1/RotateIncrease=2/RotateDecrease=3 are invalid framing.
+
+Rotation operations are admitted only for a catalogued `handRotation` binding.
+The requested revision must still describe the same fitted part; its Data,
+InstallPoint, actual parent and mount Part/Mpoint/Installed references must agree.
+The host requires a fresh living guest within 3 m, an enabled native HandRotate
+and pick collider, and adjusting-bolt tightness 0–7. Native Wait/turn states and
+the 0.1-second cooldown are busy. An accepted request enters one native Clockwise
+or Counterwise state; both part and mount SettingRotation and the pivot pose must
+settle at the expected half-degree step (clamped to 0–7). No guest supplies an
+absolute angle or changes mount references. A turn at a limit is Blocked; a
+tightened adjusting bolt is Bolted. State 185 precedes the final receipt. The
+guest's original HandRotate stays disabled, and its pose uses absolute host state.
 
 The claimed player must match the authenticated sender and token must be nonzero.
 Each admission retains one immutable request/outcome per player. A uint32 sequence
@@ -899,6 +927,16 @@ two-player/save tests remain open. Guest opening is implemented in v112; v114
 restores individual bolt arrays for native parts already present on both peers.
 
 ### Native bolt authority and reconciliation v114
+
+Post-0.1.32 implementation note (still protocol 118): owned replacement copies use
+these same 41/44/123 messages and stable part/child IDs for spanner/ratchet input.
+They do not predict native turns or run parent/engine actions. Their presentation
+arrays and poses change only from host absolute replies. Tool picks wait for a fresh
+host observation after an attachment change; older queued observations are discarded
+and the existing targeted object-state request obtains a current bolt reply. Receipt
+ordering also includes accepted replacement-part revisions (185), preventing a later
+application of an older replacement scalar from rolling back a bolt's parent total.
+No fields, message IDs or wire authority semantics change in this implementation.
 
 BoltState (44) preserves its eight-byte legacy payload and appends the parent
 Data.Tightness float; including the message ID it is 14 bytes. WorldBoltSnapshot
@@ -1182,3 +1220,35 @@ destroyed. Main form and claim hooks are restored, including a pending request's
 held state. Binding failures contain the fault to Lotto ticket interactions.
 This is implemented but requires the two-player/save/LOD matrix in BUILDING.md;
 Megaveto purchase selections and claims are not covered by messages 181–183.
+
+### Host-authoritative shopping bags v120
+
+Bag item IDs use `FactoryItemIdentity.ItemId(factoryId, nativeId)`, where factoryId
+hashes the catalog factory path and FSM name. The bag's native `Use.ID` survives
+pickup/reparenting and display-name changes. A BagState requires a matching derived
+item ID, valid catalog prefix, finite pose and condition 0–100. Identity fields are
+immutable; stale revisions and contradictory equal-revision inventory are ignored.
+Join, item resync and targeted replies include bag states and terminal removals.
+Guest save bags are preserved inactive; isolated replicas skip native save/loading
+and inventory mutation while retaining native short/long use-button gestures.
+
+The host authenticates the requester, validates the observed revision, remaining
+inventory, a living guest pose ≤2 seconds old within 3 m, and current bag ownership.
+Host and guest openings share one reservation. Native contents factories use shared
+scratch globals, so spills are serialized until their native work and exact output
+capture finish. The host sets `CurrentBag` explicitly and enters the validated
+one/all spill state; the player-input `Confirm` state is never replayed remotely.
+A duplicate request recovers its immutable receipt; busy/rejected sequences cannot
+become successful later. Changed revisions cannot spend the same inventory twice.
+The capture survives timeouts while native work remains active.
+
+The scanner never names bag outputs by hierarchy or position ordinal. Native product
+names are discovered from the factory prefab's display-name actions, including
+`chips` → `potato chips(itemx)`. Remote materialization retries unresolved entries
+at 0.5-second intervals, drops retired/live entries, and reports failures at most
+once every 30 seconds. Pickup guards prevent a remotely held bag from attaching to
+the local hand; accepted remote ownership/removal releases that exact held bag.
+
+Unsupported native part products fail opening preflight before inventory mutation.
+This adapter does not yet establish complete condition/state replication for every
+possible product in a mixed shopping bag; see the building guide's acceptance matrix.

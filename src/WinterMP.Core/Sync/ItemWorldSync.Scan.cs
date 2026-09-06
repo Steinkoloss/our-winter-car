@@ -11,6 +11,7 @@ namespace WinterMP.Core.Sync
         internal int ScanItems()
         {
             int initialCount = _items.Count;
+            RefreshBagFactories();
             RefreshTrophyFactories();
             RefreshPackageFactories();
             RefreshReplacementFactories();
@@ -27,7 +28,7 @@ namespace WinterMP.Core.Sync
                 try
                 {
                     if (!body.gameObject.activeInHierarchy) continue;
-                    if (TryScanTrophy(body) || TryScanPackage(body) || TryScanNativePart(body) || _trackedBodies.ContainsKey(body)) continue;
+                    if (TryScanBag(body) || TryScanTrophy(body) || TryScanPackage(body) || TryScanNativePart(body) || _trackedBodies.ContainsKey(body)) continue;
 
                     bool isVehicle = SyncCatalog.IsVehicleRoot(body);
                     bool isItem = !isVehicle && SyncCatalog.IsPickableRigidbody(body);

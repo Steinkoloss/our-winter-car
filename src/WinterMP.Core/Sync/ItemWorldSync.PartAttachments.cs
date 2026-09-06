@@ -85,8 +85,8 @@ namespace WinterMP.Core.Sync
             foreach (var pair in _nativeParts)
             {
                 if (pair.Key == id || pair.Value == null || !pair.Value.gameObject.activeInHierarchy) continue;
-                // Preserve a different guest-save occupant until full mount isolation
-                // exists; overlaying it would present two parts in one assembly slot.
+                // Supported saved originals are already isolated. Preserve any
+                // other occupant instead of presenting two parts in one slot.
                 if (pair.Value.transform.parent == parent && NativePartIdentity.Phase(pair.Value) == NativePartPhase.Fitted)
                     return null;
             }
@@ -127,6 +127,8 @@ namespace WinterMP.Core.Sync
                 return false;
             }
             bool restoreLoosePose = binding.FittedPresentation || !obj.activeSelf || !_items.ContainsKey(id);
+            bool attachmentChanged = binding.FittedPresentation == loose || obj.transform.parent != parent
+                || binding.Data.FsmVariables.FindFsmInt(SyncCatalog.ReplacementParts!["assemblyVariable"]).Value != state.AssemblyId;
             bool applying = _bridge.ApplyingRemote;
             try
             {
@@ -166,6 +168,15 @@ namespace WinterMP.Core.Sync
                     obj.transform.localPosition = state.LocalPosition.ToUnity();
                     obj.transform.localRotation = state.LocalRotation.ToUnity();
                 }
+                // Native discovery only registers bolts after their first fitting.
+                // Registering a loose copy's inactive bolts would add guest-only IDs.
+                if (!loose && !binding.BoltsPrepared)
+                {
+                    _bridge.PrepareReplacementBolts(binding.Data);
+                    binding.BoltsPrepared = true;
+                }
+                SetReplacementBoltGroups(binding, !loose);
+                _bridge.SetReplacementBolts(binding.Data, !loose, attachmentChanged);
                 SyncEventLog.Record("replacement-attachment", state.NativeId + (loose ? " loose" : " fitted " + state.ParentId.ToString("X8")));
                 return true;
             }
@@ -178,6 +189,16 @@ namespace WinterMP.Core.Sync
             binding.Data.transform.SetParent(null, true);
             binding.Data.gameObject.SetActive(false);
             binding.FittedPresentation = true;
+            _bridge.SetReplacementBolts(binding.Data, false, true);
+        }
+
+        private static void SetReplacementBoltGroups(ReplacementBinding binding, bool fitted)
+        {
+            string name = SyncCatalog.ReplacementParts!["boltsVariable"];
+            foreach (var variable in binding.Data.FsmVariables.GameObjectVariables)
+                if ((variable.Name == name || variable.Name == name + "2") && variable.Value != null
+                    && ScenePath.RelativeTo(variable.Value.transform, binding.Data.transform) != null)
+                    variable.Value.SetActive(fitted);
         }
 
         private void RefreshReplacementAttachmentReadiness()

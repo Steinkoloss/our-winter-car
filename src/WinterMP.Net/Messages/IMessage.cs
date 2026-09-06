@@ -57,7 +57,7 @@ namespace WinterMP.Net.Messages
         HeatSourceIntent = 51,
         /// <summary>Host -> guests: manifest of items a container FSM (grocery bag) just spawned.</summary>
         ItemSpawn = 52,
-        /// <summary>Guest -> host: "I opened a grocery bag; you spawn it authoritatively".</summary>
+        /// <summary>Retired in v120: legacy guest spill offers; ID remains reserved.</summary>
         SpawnIntent = 53,
         /// <summary>Owner -> host -> others: liquid amount in a tracked container.</summary>
         FluidContainerState = 54,
@@ -209,6 +209,9 @@ namespace WinterMP.Net.Messages
         PackageOpenReceipt = 187,
         PartFitRequest = 188,
         PartFitReceipt = 189,
+        BagState = 190,
+        BagOpenRequest = 191,
+        BagOpenReceipt = 192,
 
         // Reserved ranges for future subsystems:
         //   63-79 vehicles (attachment, fuel/damage)

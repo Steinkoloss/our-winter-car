@@ -37,6 +37,7 @@ namespace WinterMP.Core.Sync
         internal bool CanSyncItemMotion(SyncedItem item)
         {
             if (!_nativeParts.TryGetValue(item.Id, out var data)) return true;
+            if (IsPendingGuestPartIsolation(data)) return false;
             return NativePartIdentity.Phase(data) == NativePartPhase.Loose && data.gameObject.activeInHierarchy
                 && data.GetComponent<Rigidbody>() == item.Body
                 && (_replacementReplica == null || _replacementReplica.AllowsLooseMotion(item.Id));
@@ -53,6 +54,7 @@ namespace WinterMP.Core.Sync
                 {
                     if (pair.Value == null && _replacementParts.TryGetValue(pair.Key, out var replica) && replica.Replica)
                     {
+                        _bridge.ForgetReplacementBolts(pair.Value);
                         // A local parent graph can disappear before its host update.
                         // Losing a temporary child is not authority to dispose of the host part.
                         _bridge.PartIdentities.Forget(pair.Value);
@@ -118,6 +120,7 @@ namespace WinterMP.Core.Sync
             try
             {
                 TrackNativePart(data, id);
+                if (IsPendingGuestPartIsolation(data)) return true;
                 if (NativePartIdentity.Phase(data) != NativePartPhase.Loose
                     || (_replacementReplica != null && !_replacementReplica.AllowsLooseMotion(id))) return true;
                 if (_items.TryGetValue(id, out var previous))

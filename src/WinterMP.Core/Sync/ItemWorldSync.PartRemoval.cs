@@ -231,18 +231,23 @@ namespace WinterMP.Core.Sync
                 FsmHook.FireRemoteEntry(removal.Part.Data, c["itemStopState"]);
         }
 
-        private bool DrawPartRemovalPrompt(SessionManager session)
+        private bool PartInteractionHandFree()
         {
             var c = SyncCatalog.ReplacementParts;
             var player = _bridge.LocalPlayer;
-            var camera = Camera.main;
-            if (c == null || player == null || camera == null) return false;
+            if (c == null || player == null) return false;
             var hand = ScenePath.FindRelative(player, c["removeHandPath"]);
             if (hand == null || !hand.gameObject.activeInHierarchy) return false;
             bool free = false;
             foreach (var fsm in hand.GetComponents<PlayMakerFSM>())
                 if (fsm.FsmName == c["removeHandFsm"] && FitFsmReady(fsm) && fsm.ActiveStateName == c["removeHandIdleState"]) free = true;
-            if (!free) return false;
+            return free;
+        }
+
+        private bool DrawPartRemovalPrompt(SessionManager session)
+        {
+            var camera = Camera.main;
+            if (camera == null || !PartInteractionHandFree()) return false;
             var ray = camera.ScreenPointToRay(Input.mousePosition);
             float nearest = 1f;
             if (Physics.Raycast(ray, out var hit, nearest, 1 << 19)) nearest = hit.distance;

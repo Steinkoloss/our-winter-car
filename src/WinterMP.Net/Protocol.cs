@@ -250,7 +250,10 @@ namespace WinterMP.Net
         // v115: replacement parts carry stable attachment roots and relative pose/scale.
         // v116: acknowledged replacement fitting requests; generic guest replacement-part state replay is refused.
         // v117: part requests include install/remove operation; replacement state advertises native removal availability.
-        public const ushort Version = 118;
+        // v118: part requests include the observed native array slot.
+        // v119: acknowledged native alternator hand rotation through part operations 2/3.
+        // v120: shared persistent bags, atomic host-owned openings (190–192); retire guest spill offers53.
+        public const ushort Version = 120;
     }
 
     /// <summary>

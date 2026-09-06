@@ -42,7 +42,7 @@ namespace WinterMP.Core.Sync
             catch (Exception e) { DisablePartFit(part, e.Message); }
         }
 
-        private static PlayMakerFSM? GetPartFitMount(ReplacementBinding part, out byte slot)
+        private PlayMakerFSM? GetPartFitMount(ReplacementBinding part, out byte slot)
         {
             slot = 0;
             var c = SyncCatalog.ReplacementParts;
@@ -61,7 +61,7 @@ namespace WinterMP.Core.Sync
             if (part.FitMount != null && part.FitMount.gameObject == install) return part.FitMount;
             foreach (var mount in install.GetComponents<PlayMakerFSM>())
             {
-                if (mount.FsmName != c["itemFsm"] || !FitFsmReady(mount)) continue;
+                if (mount.FsmName != c["itemFsm"] || !PartFitMountReady(mount)) continue;
                 try
                 {
                     ValidatePartFitMount(mount, c);

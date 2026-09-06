@@ -14,6 +14,7 @@ namespace WinterMP.Core.Sync
         private readonly Dictionary<PlayMakerFSM, uint> _ids = new Dictionary<PlayMakerFSM, uint>();
         private readonly HashSet<PlayMakerFSM> _warnings = new HashSet<PlayMakerFSM>();
         private readonly HashSet<PlayMakerFSM> _replicas = new HashSet<PlayMakerFSM>();
+        private readonly HashSet<PlayMakerFSM> _isolated = new HashSet<PlayMakerFSM>();
 
         internal static bool IsData(PlayMakerFSM fsm)
         {
@@ -53,7 +54,7 @@ namespace WinterMP.Core.Sync
         {
             id = 0;
             var c = SyncCatalog.PartIdentity;
-            if (c == null || data == null || !data.Fsm.Initialized || !data.Fsm.Started
+            if (c == null || data == null || _isolated.Contains(data) || !data.Fsm.Initialized || !data.Fsm.Started
                 || Array.IndexOf(c.InitializingStates, data.ActiveStateName) >= 0) return false;
             var vars = data.FsmVariables;
             string nativeId = vars.FindFsmString(c["idVariable"]).Value;
@@ -97,12 +98,15 @@ namespace WinterMP.Core.Sync
         }
 
         internal void MarkReplica(PlayMakerFSM data) => _replicas.Add(data);
+        internal bool IsReplica(PlayMakerFSM data) => _replicas.Contains(data);
+        internal void MarkIsolated(PlayMakerFSM data) { Forget(data); _isolated.Add(data); }
+        internal void UnmarkIsolated(PlayMakerFSM data) => _isolated.Remove(data);
         internal void Forget(PlayMakerFSM? data)
         {
             if (data is null) return;
             if (_ids.TryGetValue(data, out uint id) && _owners.TryGetValue(id, out var owner) && owner == data) _owners.Remove(id);
             _ids.Remove(data); _warnings.Remove(data); _replicas.Remove(data);
         }
-        internal void Clear() { _owners.Clear(); _ids.Clear(); _warnings.Clear(); _replicas.Clear(); }
+        internal void Clear() { _owners.Clear(); _ids.Clear(); _warnings.Clear(); _replicas.Clear(); _isolated.Clear(); }
     }
 }

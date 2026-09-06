@@ -66,5 +66,35 @@ namespace WinterMP.Core.Sync
             foreach (var fsm in _registeredFsms) _bridge.HookedFsms.Remove(fsm);
             _registeredFsms.Clear();
         }
+
+        internal void ForgetNativePartBindings(PlayMakerFSM root, bool descendants)
+        {
+            var fsms = new HashSet<PlayMakerFSM>(descendants
+                ? root.GetComponentsInChildren<PlayMakerFSM>(true) : new[] { root });
+            RequireNoPartEntries(_controls, fsms, x => x.Fsm);
+            RequireNoPartEntries(_doors, fsms, x => x.Fsm);
+            RequireNoPartEntries(_buys, fsms, x => x.Fsm);
+            RequireNoPartEntries(_ignitions, fsms, x => x.Fsm);
+            RequireNoPartEntries(_starters, fsms, x => x.Fsm);
+            foreach (var fsm in fsms)
+            {
+                RetainIsolatedPartView(fsm);
+                RemoveOwnedHooks(fsm);
+                _bridge.HookedFsms.Remove(fsm); _registeredFsms.Remove(fsm);
+            }
+            RemovePartEntries(_bolts, fsms, x => x.Fsm);
+        }
+
+        private static void RequireNoPartEntries<T>(Dictionary<uint, T> entries, HashSet<PlayMakerFSM> fsms, Func<T, PlayMakerFSM> getFsm)
+        {
+            foreach (var entry in entries.Values)
+                if (fsms.Contains(getFsm(entry))) throw new InvalidOperationException("Native part contains another synchronized subsystem.");
+        }
+
+        private static void RemovePartEntries<T>(Dictionary<uint, T> entries, HashSet<PlayMakerFSM> fsms, Func<T, PlayMakerFSM> getFsm)
+        {
+            foreach (uint id in new List<uint>(entries.Keys))
+                if (fsms.Contains(getFsm(entries[id]))) entries.Remove(id);
+        }
     }
 }

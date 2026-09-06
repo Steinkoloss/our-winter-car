@@ -11,48 +11,17 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class ItemWorldSync
     {
-        // Container-spawned items (grocery-bag "Spawn all"/"Spawn one") exist in
-        // neither save, so they cannot be discovered by stable scene path. The peer
-        // whose player physically opens the bag lets the game spill naturally and
-        // captures the clones; the host mints a net id per clone and broadcasts an
-        // ItemSpawn manifest; every OTHER peer materializes matching objects from
-        // its own scene (adopt / steal / instantiate from a template) and binds
-        // them. Nobody drives a remote bag FSM: the bag's "Confirm" state bounces
-        // straight back to "Wait player" without a live player interaction, and the
-        // spiller's bag-consumption despawn destroys the replica bags on the other
-        // peers before a manifest could use them (both observed in-game, v29-v31).
-        //
-        // COVERAGE-ROADMAP 7.2 — Spawner/* completeness audit (14 subroots):
-        //   COVERED (bag "Spawn one/all" capture flow above):
-        //     BagContentsStore, BagContentsFleetari, CreateBagStore, CreateBagFleetari,
-        //     CreateItems, CreateItemsSeparate.
-        //   COVERED (native factory identity, ItemWorldSync.Factories.cs, v106):
-        //     CreateTrophiesAmateur/Icerace/Junior/RallyAMA/RallyJR (15 factories).
-        //   EXCLUDED — SPAWNITEM-event spawners (CreateMooseMeat, CreatePartsPackages,
-        //     CreateSprayCans).
-        //     These fire a SPAWNITEM action on a game event (chop moose, buy part, win race)
-        //     rather than pouring near an opened container, so the bag capture window does
-        //     not apply. Item pose snapshots cannot create missing bodies, including
-        //     for late joiners. These factories still need native identity, contents /
-        //     condition and save/deletion adapters, plus their gameplay authority paths.
-        //     Tracked as the residual of 7.1 (moose meat) / 5.2 (rally parts).
-
-        /// <summary>How far from the container's transform a fresh clone may appear.</summary>
-        private const float SpawnCaptureRadius = 6f;
-
-        /// <summary>Give up gathering a spawn's clones this long after the trigger.</summary>
+        // Bag inventories are host-owned. Exact native factory outputs are captured
+        // in BagSpill; this partial publishes their manifests and creates peer views.
         private const float SpawnCaptureHardSeconds = 2f;
 
         /// <summary>Finalize a capture once the clone count holds steady this long.</summary>
         private const float SpawnCaptureStableSeconds = 0.3f;
 
-        /// <summary>Guest: give up waiting for the host's manifest after an offer.</summary>
-        private const float SpawnOfferManifestSeconds = 6f;
 
-        private const int GuestSpawnMaxItems = SpawnIntent.MaxItems;
-        private const int GuestSpawnMaxTemplateNameLength = 128;
-        private const float GuestSpawnPoseMaxAgeSeconds = 2f;
-        private const float GuestSpawnMaxDistance = 12f;
+        private const float SpawnMaterializeRetrySeconds = 0.5f;
+        private const float SpawnMaterializeLogSeconds = 30f;
+
 
         private sealed class PendingSpawn
         {
@@ -60,9 +29,6 @@ namespace WinterMP.Core.Sync
             public ushort Epoch;
             public string StateName = string.Empty;
             public bool IsHost;
-            public bool IsOffer;            // guest: local spill captured, offered to the host
-            public bool AwaitingManifest;   // offer sent; parked until the manifest binds it
-            public ushort OfferSeq;         // SpawnIntent.Sequence — the manifest echoes it back
             public byte HostOwnerId = WorldSyncIds.NoOwner;
             public List<ItemSpawn.Entry>? Descriptors;
             public bool IsReplay;           // join-snapshot replay — stale-clone rules apply
@@ -70,7 +36,8 @@ namespace WinterMP.Core.Sync
             public Vector3 Near;
             public bool HasNear;
             public float HardDeadline;
-            public int LastCount;
+            public float NextMaterializeAt;
+            public float NextMaterializeLogAt;
             public float StableSince;
             public readonly List<Rigidbody> Captured = new List<Rigidbody>();
         }
@@ -86,16 +53,9 @@ namespace WinterMP.Core.Sync
         // locally but absent here is host-unknown — i.e. a stale clone our scanner
         // grabbed under a per-peer ordinal id — and safe to rebind to a manifest id.
         private readonly HashSet<uint> _snapshotSeenIds = new HashSet<uint>();
-        // Host: next manifest epoch per container id. Lives here (not on the FSM
-        // registration) because guest-offered spills have no host-side registration —
-        // one counter must serve both paths or their (container, epoch) dedup keys
-        // would collide.
+        // One counter also serves additional packets from bags larger than 32 items.
         private readonly Dictionary<uint, ushort> _spawnEpochs = new Dictionary<uint, ushort>();
-        private readonly Dictionary<byte, ushort> _lastGuestSpawnSequences = new Dictionary<byte, ushort>();
-        private ushort _outSpawnSequence;
 
-        /// <summary>Host: a player (re)joined — its spawn counter restarted; drop the stale latch.</summary>
-        public void ForgetPlayerSpawnSequence(byte playerId) => _lastGuestSpawnSequences.Remove(playerId);
 
         private static long SpawnKey(uint containerId, ushort epoch) => ((long)containerId << 16) | epoch;
 
@@ -107,167 +67,7 @@ namespace WinterMP.Core.Sync
             return next;
         }
 
-        /// <summary>Host: the local bag just spilled; gather its clones, then publish the manifest.</summary>
-        internal void StartHostSpawnCapture(uint containerId, string stateName, Vector3 near)
-        {
-            ushort epoch = MintSpawnEpoch(containerId);
-            _pendingSpawns.Add(new PendingSpawn
-            {
-                ContainerId = containerId,
-                Epoch = epoch,
-                StateName = stateName,
-                IsHost = true,
-                Near = near,
-                HasNear = true,
-                HardDeadline = Time.unscaledTime + SpawnCaptureHardSeconds,
-                StableSince = Time.unscaledTime,
-            });
-        }
-
-        /// <summary>
-        /// Guest: the local bag just spilled naturally; gather the clones, then offer
-        /// them to the host, which mints ids and answers with the binding manifest.
-        /// </summary>
-        internal void StartGuestSpawnOffer(uint containerId, string stateName, Vector3 near)
-        {
-            _pendingSpawns.Add(new PendingSpawn
-            {
-                ContainerId = containerId,
-                StateName = stateName,
-                IsOffer = true,
-                Near = near,
-                HasNear = true,
-                HardDeadline = Time.unscaledTime + SpawnCaptureHardSeconds,
-                StableSince = Time.unscaledTime,
-            });
-        }
-
-        /// <summary>
-        /// Host gate for a guest's naturally-spilled bag capture. Runtime bags have
-        /// intentionally peer-local ids, so their contents cannot be re-derived on
-        /// the host; nevertheless an offer must be fresh, bounded, replay-safe, and
-        /// physically close to the player before it can mint shared item identities.
-        /// </summary>
-        internal bool TryAcceptGuestSpawnIntent(SpawnIntent intent, byte playerId)
-        {
-            if (intent.PlayerId != playerId || intent.Items.Count == 0 || intent.Items.Count > GuestSpawnMaxItems)
-                return false;
-
-            var session = SessionManager.Instance;
-            if (session == null || !session.IsHost) return false;
-
-            Vector3 playerPosition = Vector3.zero;
-            bool foundPlayer = false;
-            float now = Time.unscaledTime;
-            foreach (var player in session.Players)
-            {
-                if (player.PlayerId != playerId) continue;
-                if (player.LastTransformTime <= 0f
-                    || now - player.LastTransformTime > GuestSpawnPoseMaxAgeSeconds)
-                    return false;
-                playerPosition = player.Position;
-                foundPlayer = true;
-                break;
-            }
-            if (!foundPlayer) return false;
-
-            for (int i = 0; i < intent.Items.Count; i++)
-            {
-                var entry = intent.Items[i];
-                if (string.IsNullOrEmpty(entry.TemplateName)
-                    || entry.TemplateName.Length > GuestSpawnMaxTemplateNameLength)
-                    return false;
-
-                Vector3 position = entry.Position.ToUnity();
-                Quaternion rotation = entry.Rotation.ToUnity();
-                if (!IsFinite(position) || !TryNormalize(rotation, out rotation)
-                    || (position - playerPosition).sqrMagnitude > GuestSpawnMaxDistance * GuestSpawnMaxDistance
-                    || FindSpawnBodyByName(entry.TemplateName, position, -1f, untrackedOnly: false) == null)
-                    return false;
-
-                entry.Position = new NetVector3(position.x, position.y, position.z);
-                entry.Rotation = new NetQuaternion(rotation.x, rotation.y, rotation.z, rotation.w);
-                intent.Items[i] = entry;
-            }
-
-            ushort lastSequence;
-            if (_lastGuestSpawnSequences.TryGetValue(playerId, out lastSequence))
-            {
-                ushort difference = (ushort)(intent.Sequence - lastSequence);
-                if (difference == 0 || difference > short.MaxValue)
-                {
-                    WinterMPPlugin.Log.LogDebug(
-                        $"WorldSync: dropped stale spawn offer from player {playerId} (sequence {intent.Sequence}).");
-                    return false;
-                }
-            }
-            _lastGuestSpawnSequences[playerId] = intent.Sequence;
-            return true;
-        }
-
-        /// <summary>Host: a guest's bag spilled — materialize its clones here, mint ids, broadcast.</summary>
-        internal void OnHostSpawnIntent(SpawnIntent intent)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || !session.IsHost) return;
-            if (intent.Items.Count == 0)
-            {
-                Util.BootTrace.Crumb($"SPAWN-INTENT-EMPTY host player {intent.PlayerId} {intent.ContainerNetId:X8}");
-                return;
-            }
-
-            ushort epoch = MintSpawnEpoch(intent.ContainerNetId);
-            WinterMPPlugin.Log.LogInfo(
-                $"WorldSync: spawn offer from player {intent.PlayerId}: {intent.ContainerNetId:X8} '{intent.StateName}', {intent.Items.Count} item(s) — minting #{epoch}.");
-            Util.BootTrace.Crumb(
-                $"SPAWN-INTENT-EXEC host player {intent.PlayerId} {intent.ContainerNetId:X8} #{epoch} '{intent.StateName}' offered={intent.Items.Count}");
-
-            var manifest = new ItemSpawn
-            {
-                ContainerNetId = intent.ContainerNetId,
-                Epoch = epoch,
-                OwnerPlayerId = intent.PlayerId,
-                StateName = intent.StateName,
-                OfferSequence = intent.Sequence,
-            };
-
-            float now = Time.unscaledTime;
-            for (int i = 0; i < intent.Items.Count; i++)
-            {
-                var offered = intent.Items[i];
-                uint netId = StableHash.Fnv1a32("spawn:" + intent.ContainerNetId + ":" + epoch + ":" + i);
-                if (_items.ContainsKey(netId))
-                {
-                    WinterMPPlugin.Log.LogWarning($"WorldSync: spawn id collision {netId:X8}, skipping a clone.");
-                    continue;
-                }
-
-                var entry = new ItemSpawn.Entry
-                {
-                    NetId = netId,
-                    TemplateName = offered.TemplateName,
-                    Position = offered.Position,
-                    Rotation = offered.Rotation,
-                };
-                if (!MaterializeSpawnEntry(entry, intent.PlayerId, now, allowSteal: false)) continue;
-                manifest.Items.Add(entry);
-            }
-
-            Util.BootTrace.Crumb(
-                $"SPAWN-MINT host {intent.ContainerNetId:X8} #{epoch} offered={intent.Items.Count} minted={manifest.Items.Count} (guest spill)");
-            SyncEventLog.Record("spawn", $"{intent.ContainerNetId:X8} #{epoch} x{manifest.Items.Count} (player {intent.PlayerId})");
-            if (_bridge.SelfTest)
-                SessionManager.Instance?.SendChat($"[ws] spilled {manifest.Items.Count} item(s) (player {intent.PlayerId})");
-
-            if (manifest.Items.Count > 0)
-                _hostSpawnManifests[SpawnKey(intent.ContainerNetId, epoch)] = manifest;
-
-            // Answer even an all-failed offer: the empty manifest releases the guest's
-            // parked clones immediately instead of letting them sit out the 6 s timeout.
-            session.SendWorldMessage(manifest, Channel.ReliableOrdered);
-        }
-
-        /// <summary>Guest: a spawn manifest arrived; bind our own offered clones, or materialize.</summary>
+        /// <summary>Guest: queue host-created contents for materialization.</summary>
         internal void StartGuestSpawnBind(ItemSpawn message)
         {
             if (message.IsFactory && !ValidateTrophyManifest(message)) return;
@@ -291,22 +91,17 @@ namespace WinterMP.Core.Sync
 
             if (message.IsFactory) { QueueTrophyManifest(message); return; }
 
-            var session = SessionManager.Instance;
-            if (session != null && !message.IsReplay
-                && message.OwnerPlayerId == session.LocalPlayerId && TryBindOfferManifest(message))
-                return;
-
             // Repeated resyncs refresh one pending job without postponing it forever.
             foreach (var pending in _pendingSpawns)
             {
-                if (pending.IsHost || pending.IsOffer || pending.ContainerId != message.ContainerNetId || pending.Epoch != message.Epoch) continue;
+                if (pending.ContainerId != message.ContainerNetId || pending.Epoch != message.Epoch) continue;
                 pending.Descriptors = new List<ItemSpawn.Entry>(message.Items);
                 pending.IsReplay |= message.IsReplay;
                 pending.HostOwnerId = message.OwnerPlayerId;
                 return;
             }
 
-            // Someone else's spill (or our own offer already timed out): nothing to
+            // The host's spill has no local outputs: nothing to
             // gather locally — materialize each entry. Processing happens on the next
             // Update tick, so a despawn corpse destroyed in this receive frame is gone
             // before adoption can see it. Join-snapshot replays defer a full capture
@@ -325,95 +120,6 @@ namespace WinterMP.Core.Sync
             });
         }
 
-        /// <summary>The manifest answers one of our own offers: bind the parked clones to its ids.</summary>
-        private bool TryBindOfferManifest(ItemSpawn message)
-        {
-            for (int i = 0; i < _pendingSpawns.Count; i++)
-            {
-                var pending = _pendingSpawns[i];
-                if (!pending.IsOffer || !pending.AwaitingManifest) continue;
-                // Paired by the echoed sequence — (container, state) alone cannot tell
-                // two quick "Spawn one" offers on the same bag apart, and binding the
-                // wrong one would swallow the other's manifest for good.
-                if (pending.OfferSeq != message.OfferSequence) continue;
-                if (pending.ContainerId != message.ContainerNetId || pending.StateName != message.StateName) continue;
-
-                BindOfferClones(pending, message);
-                _pendingSpawns.RemoveAt(i);
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Pair our captured clones with the minted entries by template name (identical
-        /// clones are interchangeable, so first-free wins) and register them as locally
-        /// owned — they are live local physics and we stream them from birth. Clones
-        /// the host could not template stay unpaired and go back to the scanner.
-        /// </summary>
-        private void BindOfferClones(PendingSpawn pending, ItemSpawn message)
-        {
-            float now = Time.unscaledTime;
-            var used = new bool[pending.Captured.Count];
-            int bound = 0;
-
-            for (int d = 0; d < message.Items.Count; d++)
-            {
-                var entry = message.Items[d];
-                for (int c = 0; c < pending.Captured.Count; c++)
-                {
-                    if (used[c]) continue;
-                    var body = pending.Captured[c];
-                    if (body == null) { used[c] = true; continue; }
-                    if (body.gameObject.name != entry.TemplateName) continue;
-
-                    used[c] = true;
-                    if (_spawnLifecycle.IsRetired(entry.NetId))
-                    {
-                        _trackedBodies.Remove(body); UnityEngine.Object.Destroy(body.gameObject);
-                        break;
-                    }
-                    BindOfferedBodyAsOwner(body, entry.NetId, now);
-                    bound++;
-                    break;
-                }
-            }
-
-            int released = 0;
-            for (int c = 0; c < pending.Captured.Count; c++)
-            {
-                if (used[c]) continue;
-                var extra = pending.Captured[c];
-                if (extra != null) { _trackedBodies.Remove(extra); released++; }
-            }
-
-            WinterMPPlugin.Log.LogInfo(
-                $"WorldSync: spawn {message.ContainerNetId:X8} #{message.Epoch} — bound {bound} own clone(s), released {released}.");
-            Util.BootTrace.Crumb(
-                $"SPAWN-OFFER-BIND guest {message.ContainerNetId:X8} #{message.Epoch} bound={bound} released={released}");
-            if (_bridge.SelfTest)
-                SessionManager.Instance?.SendChat($"[ws] spilled {bound} item(s) (guest)");
-        }
-
-        private void BindOfferedBodyAsOwner(Rigidbody body, uint netId, float now)
-        {
-            if (_items.ContainsKey(netId)) return;
-
-            var item = new SyncedItem
-            {
-                Body = body,
-                Path = ScenePath.Of(body.transform),
-                Id = netId,
-                IsVehicle = false,
-                LocallyOwned = true,
-                LastPosition = body.transform.position,
-                LastMovedAt = now,
-            };
-            _items[netId] = item;
-            TryRegisterConsumableHooks(item);
-        }
-
         internal void ProcessPendingSpawns(SessionManager session)
         {
             ProcessPackageRemovals();
@@ -425,155 +131,16 @@ namespace WinterMP.Core.Sync
             if (_pendingSpawns.Count == 0) return;
             float now = Time.unscaledTime;
 
-            // Captures/offers first, materializes second: a gather tracked-locks the
-            // local spill's clones, which is what stops a same-tick manifest's adopt
-            // from hijacking them (two players spilling side-by-side in one frame).
-            for (int i = _pendingSpawns.Count - 1; i >= 0; i--)
-            {
-                var pending = _pendingSpawns[i];
-                if (!pending.IsHost && !pending.IsOffer) continue;
-
-                if (pending.IsOffer && pending.AwaitingManifest)
-                {
-                    if (now >= pending.HardDeadline)
-                    {
-                        // Host never answered: hand the clones back to the scanner so
-                        // they at least stay usable locally instead of parked forever.
-                        int released = ReleaseCapturedBodies(pending);
-                        WinterMPPlugin.Log.LogWarning(
-                            $"WorldSync: spawn offer {pending.ContainerId:X8} '{pending.StateName}' got no manifest; released {released} clone(s).");
-                        Util.BootTrace.Crumb($"SPAWN-OFFER-TIMEOUT guest {pending.ContainerId:X8} released={released}");
-                        _pendingSpawns.RemoveAt(i);
-                    }
-                    continue;
-                }
-
-                GatherSpawnClones(pending);
-
-                if (pending.Captured.Count != pending.LastCount)
-                {
-                    pending.LastCount = pending.Captured.Count;
-                    pending.StableSince = now;
-                }
-
-                bool ready = (pending.Captured.Count > 0 && now - pending.StableSince >= SpawnCaptureStableSeconds)
-                    || now >= pending.HardDeadline;
-                if (!ready) continue;
-
-                if (pending.IsHost)
-                {
-                    FinalizeHostSpawn(session, pending);
-                    _pendingSpawns.RemoveAt(i);
-                }
-                else if (TrySendSpawnOffer(session, pending))
-                {
-                    pending.AwaitingManifest = true;
-                    pending.HardDeadline = now + SpawnOfferManifestSeconds;
-                }
-                else
-                {
-                    ReleaseCapturedBodies(pending);
-                    Util.BootTrace.Crumb($"SPAWN-OFFER-EMPTY guest {pending.ContainerId:X8} '{pending.StateName}'");
-                    _pendingSpawns.RemoveAt(i);
-                }
-            }
-
             // Other peers' spills: their clones live on those machines, so there is
             // nothing to gather here — materialize from the manifest when due.
             for (int i = _pendingSpawns.Count - 1; i >= 0; i--)
             {
                 var pending = _pendingSpawns[i];
-                if (pending.IsHost || pending.IsOffer) continue;
 
-                if (now >= pending.HardDeadline)
+                if (now >= pending.HardDeadline && now >= pending.NextMaterializeAt)
                 {
-                    MaterializeGuestSpawn(pending);
-                    _pendingSpawns.RemoveAt(i);
-                }
-            }
-        }
-
-        private int ReleaseCapturedBodies(PendingSpawn pending)
-        {
-            int released = 0;
-            for (int i = 0; i < pending.Captured.Count; i++)
-            {
-                var body = pending.Captured[i];
-                if (body != null && _trackedBodies.Remove(body)) released++;
-            }
-
-            return released;
-        }
-
-        /// <summary>False when every captured clone died before the send — nothing to offer.</summary>
-        private bool TrySendSpawnOffer(SessionManager session, PendingSpawn pending)
-        {
-            var intent = new SpawnIntent
-            {
-                PlayerId = session.LocalPlayerId,
-                ContainerNetId = pending.ContainerId,
-                StateName = pending.StateName,
-                Sequence = ++_outSpawnSequence,
-            };
-
-            for (int i = 0; i < pending.Captured.Count; i++)
-            {
-                var body = pending.Captured[i];
-                if (body == null) continue;
-                intent.Items.Add(new SpawnIntent.Entry
-                {
-                    TemplateName = body.gameObject.name,
-                    Position = body.transform.position.ToNet(),
-                    Rotation = body.transform.rotation.ToNet(),
-                });
-            }
-
-            if (intent.Items.Count == 0) return false;
-
-            pending.OfferSeq = intent.Sequence;
-            WinterMPPlugin.Log.LogInfo(
-                $"WorldSync: offering {intent.Items.Count} spilled clone(s) of {pending.ContainerId:X8} '{pending.StateName}' to the host.");
-            Util.BootTrace.Crumb($"SPAWN-OFFER-SENT guest {pending.ContainerId:X8} '{pending.StateName}' seq={intent.Sequence} items={intent.Items.Count}");
-            session.SendWorldMessage(intent, Channel.ReliableOrdered);
-            return true;
-        }
-
-        // Known limitation: the capture is a blind radius sweep, so an unrelated
-        // pickable that APPEARS inside 6 m during the 2 s window (e.g. a replicated
-        // store purchase spawning goods at the counter) gets minted into the
-        // manifest; other peers may then hold a duplicate of their own copy. Rare
-        // store-counter coincidence — revisit with a name filter if play surfaces it.
-        private void GatherSpawnClones(PendingSpawn pending)
-        {
-            if (!pending.HasNear) return;
-
-            float radiusSqr = SpawnCaptureRadius * SpawnCaptureRadius;
-            var bodies = Resources.FindObjectsOfTypeAll(typeof(Rigidbody));
-            foreach (var obj in bodies)
-            {
-                if (pending.Captured.Count >= ItemSpawn.MaxItems) break;
-
-                var body = obj as Rigidbody;
-                // Already-tracked bodies are existing save items, not fresh clones —
-                // the tracked-skip is what keeps us from grabbing the player's held
-                // chips or other loose cargo already in range.
-                if (body == null || _trackedBodies.ContainsKey(body)) continue;
-
-                try
-                {
-                    if (!body.gameObject.activeInHierarchy) continue;
-                    if (FindPackageUse(body) != null || NativePartIdentity.FindData(body.transform) != null) continue;
-                    if (!SyncCatalog.IsPickableRigidbody(body)) continue;
-                    if ((body.transform.position - pending.Near).sqrMagnitude > radiusSqr) continue;
-
-                    // Lock it from the periodic scanner immediately so it cannot be
-                    // registered under a position-ordinal id that disagrees per peer.
-                    _trackedBodies[body] = true;
-                    pending.Captured.Add(body);
-                }
-                catch (Exception e)
-                {
-                    WinterMPPlugin.Log.LogDebug($"WorldSync: skipped rigidbody during spawn capture: {e.Message}");
+                    if (MaterializeGuestSpawn(pending)) _pendingSpawns.RemoveAt(i);
+                    else pending.NextMaterializeAt = now + SpawnMaterializeRetrySeconds;
                 }
             }
         }
@@ -595,24 +162,17 @@ namespace WinterMP.Core.Sync
                 if (body == null) continue;
 
                 uint netId = StableHash.Fnv1a32("spawn:" + pending.ContainerId + ":" + pending.Epoch + ":" + i);
-                if (_items.ContainsKey(netId))
+                if (_items.TryGetValue(netId, out var existing))
                 {
-                    WinterMPPlugin.Log.LogWarning($"WorldSync: spawn id collision {netId:X8}, skipping a clone.");
-                    continue;
+                    if (existing.Body != body) throw new InvalidOperationException("Spawn item ID collision.");
                 }
-
-                var item = new SyncedItem
+                else
                 {
-                    Body = body,
-                    Path = ScenePath.Of(body.transform),
-                    Id = netId,
-                    IsVehicle = false,
-                    LocallyOwned = true,
-                    LastPosition = body.transform.position,
-                    LastMovedAt = now,
-                };
-                _items[netId] = item;
-                TryRegisterConsumableHooks(item);
+                    var item = new SyncedItem { Body = body, Path = ScenePath.Of(body.transform), Id = netId,
+                        IsVehicle = false, LocallyOwned = true, LastPosition = body.transform.position, LastMovedAt = now };
+                    _items[netId] = item;
+                    TryRegisterConsumableHooks(item);
+                }
 
                 manifest.Items.Add(new ItemSpawn.Entry
                 {
@@ -693,35 +253,42 @@ namespace WinterMP.Core.Sync
         /// scanner-registered clone (rejoin/replay case), else instantiate from a
         /// same-named or same-base-named template anywhere in the scene.
         /// </summary>
-        private void MaterializeGuestSpawn(PendingSpawn pending)
+        private bool MaterializeGuestSpawn(PendingSpawn pending)
         {
             var descriptors = pending.Descriptors;
-            if (descriptors == null) return;
+            if (descriptors == null) return true;
 
             // Stealing scanner-registered clones needs a trustworthy "host never named
             // this id" test. That holds on the join replay (the item snapshot arrived
-            // one message earlier) and for our own timed-out offer (those ordinal ids
-            // provably came from our spill); for other live manifests the seen-id set
-            // may be stale, so template instantiation covers them instead.
-            var session = SessionManager.Instance;
-            bool allowSteal = pending.IsReplay
-                || (session != null && pending.HostOwnerId == session.LocalPlayerId);
+            // one message earlier); for live manifests the seen-id set may be stale.
+            bool allowSteal = pending.IsReplay;
 
             float now = Time.unscaledTime;
-            int done = 0;
-            for (int i = 0; i < descriptors.Count; i++)
-            {
-                if (MaterializeSpawnEntry(descriptors[i], pending.HostOwnerId, now, allowSteal)) done++;
-            }
+            bool report = now >= pending.NextMaterializeLogAt;
+            bool logEntryFailure = report;
+            int requested = descriptors.Count;
+            int done = _spawnLifecycle.MaterializePending(descriptors,
+                id => _items.TryGetValue(id, out var item) && item.Body != null,
+                entry =>
+                {
+                    bool created = MaterializeSpawnEntry(entry, pending.HostOwnerId, now, allowSteal, logEntryFailure);
+                    if (!created) logEntryFailure = false;
+                    return created;
+                });
 
-            WinterMPPlugin.Log.LogInfo(
-                $"WorldSync: spawn {pending.ContainerId:X8} #{pending.Epoch} — guest materialized {done}/{descriptors.Count} item(s).");
-            Util.BootTrace.Crumb($"SPAWN-MATERIALIZE guest {pending.ContainerId:X8} #{pending.Epoch} done={done}/{descriptors.Count}");
+            if (done > 0 || descriptors.Count == 0 || report)
+            {
+                WinterMPPlugin.Log.LogInfo(
+                    $"WorldSync: spawn {pending.ContainerId:X8} #{pending.Epoch} — guest materialized {done}/{requested} item(s), {descriptors.Count} awaiting creation.");
+                Util.BootTrace.Crumb($"SPAWN-MATERIALIZE guest {pending.ContainerId:X8} #{pending.Epoch} done={done}/{requested} pending={descriptors.Count}");
+                pending.NextMaterializeLogAt = now + SpawnMaterializeLogSeconds;
+            }
             if (_bridge.SelfTest && done > 0)
                 SessionManager.Instance?.SendChat($"[ws] materialized {done} item(s) (guest)");
+            return descriptors.Count == 0;
         }
 
-        private bool MaterializeSpawnEntry(ItemSpawn.Entry entry, byte ownerId, float now, bool allowSteal)
+        private bool MaterializeSpawnEntry(ItemSpawn.Entry entry, byte ownerId, float now, bool allowSteal, bool logFailures = true)
         {
             bool exists = _items.TryGetValue(entry.NetId, out var existing);
             if (!_spawnLifecycle.ShouldMaterialize(entry.NetId, exists && existing!.Body != null)) return false;
@@ -743,21 +310,24 @@ namespace WinterMP.Core.Sync
 
                 if (allowSteal && TryStealStaleClone(entry, pos, ownerId, now)) return true;
 
-                var template = FindSpawnBodyByName(entry.TemplateName, pos, -1f, untrackedOnly: false);
+                var bagTemplate = FindBagSpillTemplate(entry.TemplateName);
+                var template = bagTemplate ?? FindSpawnBodyByName(entry.TemplateName, pos, -1f, untrackedOnly: false);
                 if (template == null)
                 {
-                    WinterMPPlugin.Log.LogWarning(
-                        $"WorldSync: no template '{entry.TemplateName}' for spawned item {entry.NetId:X8}; skipped.");
-                    Util.BootTrace.Crumb($"SPAWN-NOTEMPLATE '{entry.TemplateName}'");
+                    if (logFailures)
+                    {
+                        WinterMPPlugin.Log.LogWarning(
+                            $"WorldSync: no template '{entry.TemplateName}' for spawned item {entry.NetId:X8}.");
+                        Util.BootTrace.Crumb($"SPAWN-NOTEMPLATE '{entry.TemplateName}'");
+                    }
                     return false;
                 }
 
                 var cloneGo = (GameObject)UnityEngine.Object.Instantiate(
                     template.gameObject, pos, entry.Rotation.ToUnity());
-                // The manifest name, not the template's: the source may be a master
-                // ("shopping bagx") or prefab whose name the game rewrites on spawn —
-                // downstream adopt/steal/scan must see the canonical instance name.
-                cloneGo.name = entry.TemplateName;
+                // Native Init reads this name as its save key before restoring the
+                // display name. An ephemeral key cannot load an unrelated guest item.
+                cloneGo.name = bagTemplate != null ? "wintermp-spawn-" + entry.NetId.ToString("X8") : entry.TemplateName;
                 if (!cloneGo.activeSelf) cloneGo.SetActive(true);
 
                 var body = cloneGo.GetComponent<Rigidbody>();
@@ -772,7 +342,7 @@ namespace WinterMP.Core.Sync
                 // frozen state. Recorded as-is it would become the clone's "original" and
                 // the host's final release packet would leave it kinematic forever. Restore
                 // the template's true original before binding records it.
-                bool originalKinematic = template.isKinematic;
+                bool originalKinematic = bagTemplate == null && template.isKinematic;
                 foreach (var pair in _items)
                 {
                     if (!ReferenceEquals(pair.Value.Body, template)) continue;
@@ -787,8 +357,9 @@ namespace WinterMP.Core.Sync
             }
             catch (Exception e)
             {
-                WinterMPPlugin.Log.LogWarning(
-                    $"WorldSync: materialize '{entry.TemplateName}' ({entry.NetId:X8}) failed: {e.Message}");
+                if (logFailures)
+                    WinterMPPlugin.Log.LogWarning(
+                        $"WorldSync: materialize '{entry.TemplateName}' ({entry.NetId:X8}) failed: {e.Message}");
                 return false;
             }
         }

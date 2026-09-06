@@ -99,14 +99,6 @@ namespace WinterMP.Core.Sync
             return _items.TryAcceptGuestDespawn(message, playerId);
         }
         public void OnRemoteItemSpawn(ItemSpawn message) { EnsureSyncReady(); _items.StartGuestSpawnBind(message); }
-        public bool OnHostGuestSpawnIntent(SpawnIntent intent, byte playerId)
-        {
-            EnsureSyncReady();
-            if (!_items.TryAcceptGuestSpawnIntent(intent, playerId)) return false;
-            _items.OnHostSpawnIntent(intent);
-            return true;
-        }
-
         public void OnRemoteItemTransform(ItemTransform message) { EnsureSyncReady(); _items.OnRemoteItemTransform(message); }
         public bool OnHostGuestItemTransform(ItemTransform message, byte playerId)
         {
@@ -145,9 +137,9 @@ namespace WinterMP.Core.Sync
             _jail.ForgetPlayer(playerId);
             _fsm.ForgetPlayer(playerId);
             _appliances.ForgetPlayer(playerId);
-            _items.ForgetPlayerSpawnSequence(playerId);
             _items.ForgetPackageOpeningPlayer(playerId);
             _items.ForgetPartFittingPlayer(playerId);
+            _items.ForgetBagPlayer(playerId);
             _items.ForgetPlayerItemSequences(playerId);
             PassengerController.Instance?.ForgetPlayer(playerId);
         }
@@ -155,6 +147,7 @@ namespace WinterMP.Core.Sync
         public void OnPlayerDeparted(byte playerId)
         {
             _items.ForgetPartFittingPlayer(playerId);
+            _items.ForgetBagPlayer(playerId);
             _welfare.ForgetDebtPlayer(playerId);
             _gambling.ForgetPlayer(playerId);
             _poker.ForgetPlayer(playerId);
@@ -282,6 +275,9 @@ namespace WinterMP.Core.Sync
         public void OnLottoTicketRequest(LottoTicketRequest message) { EnsureSyncReady(); _lottoTickets?.OnRequest(message); }
         public void OnLottoTicketReceipt(LottoTicketReceipt message) { EnsureSyncReady(); _lottoTickets?.OnReceipt(message); }
         public void OnLottoTicketState(LottoTicketState message) { EnsureSyncReady(); _lottoTickets?.OnState(message); }
+        public void OnBagState(BagState message) { EnsureSyncReady(); _items.OnBagState(message); }
+        public void OnHostBagOpen(BagOpenRequest message, byte actor) { EnsureSyncReady(); _items.OnHostBagOpen(message, actor); }
+        public void OnBagOpenReceipt(BagOpenReceipt message) { EnsureSyncReady(); _items.OnBagOpenReceipt(message); }
         public void OnPackageState(PackageState message) { EnsureSyncReady(); _items.OnPackageState(message); }
         public void OnHostPartFit(PartFitRequest message, byte playerId) { EnsureSyncReady(); _items.OnHostPartFit(message, playerId); }
         public void OnPartFitReceipt(PartFitReceipt message) { EnsureSyncReady(); _items.OnPartFitReceipt(message); }

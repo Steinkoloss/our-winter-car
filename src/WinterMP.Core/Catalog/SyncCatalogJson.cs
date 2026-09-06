@@ -28,6 +28,8 @@ namespace WinterMP.Core.Catalog
                 data.TrophyFactories = ParseTrophyFactories(factories);
             if (root.TryGetValue("partsPackages", out var packages))
                 data.PartsPackages = ParsePartsPackages(packages);
+            if (root.TryGetValue("shoppingBags", out var bags))
+                data.ShoppingBags = ParseShoppingBags(bags);
             if (root.TryGetValue("partIdentity", out var partIdentity))
                 data.PartIdentity = ParsePartIdentity(partIdentity);
             if (root.TryGetValue("replacementParts", out var replacements))
@@ -656,6 +658,7 @@ namespace WinterMP.Core.Catalog
         public LottoTicketsData? LottoTickets;
         public TrophyFactoriesData? TrophyFactories;
         public PartsPackagesData? PartsPackages;
+        public ShoppingBagsData? ShoppingBags;
         public PartIdentityData? PartIdentity;
         public ReplacementPartsData? ReplacementParts;
     }

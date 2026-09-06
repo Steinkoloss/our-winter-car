@@ -26,6 +26,17 @@ namespace WinterMP.Core.Catalog
                     factory.SlotCount = (byte)SlotNumber(slots, "slotCount", 1, PartSlotPolicy.MaxSlots);
                 }
                 factory.Scalars = ReplacementStrings(rule, "scalars", 1, 8);
+                if (rule.TryGetValue("handRotation", out var rotationValue))
+                {
+                    if (rotationValue is not Dictionary<string, object?> rotation) throw new FormatException("Invalid hand rotation binding.");
+                    factory.HandRotation = new PartHandRotationData { Path = RequiredString(rotation, "path"),
+                        Fsm = RequiredString(rotation, "fsm"), Scalar = RequiredString(rotation, "scalar"),
+                        BoltPath = RequiredString(rotation, "boltPath") };
+                    if (!PartAttachmentPolicy.ValidPath(factory.HandRotation.Path) || factory.HandRotation.Path.Length == 0
+                        || !PartAttachmentPolicy.ValidPath(factory.HandRotation.BoltPath) || factory.HandRotation.BoltPath.Length == 0
+                        || Array.IndexOf(factory.Scalars, factory.HandRotation.Scalar) < 0 || factory.SlotCount != 0)
+                        throw new FormatException("Invalid hand rotation paths or scalar.");
+                }
                 factory.InitActions = ReplacementStrings(rule, "initActions", 4, 32, false);
                 factory.StatusActions = ReplacementStrings(rule, "statusActions", 4, 16, false);
                 if (!rule.TryGetValue("references", out var refs) || refs is not List<object?> references
@@ -198,7 +209,7 @@ namespace WinterMP.Core.Catalog
             "removeColliderVariable", "removeTightnessState", "removeTightnessVariable", "removeUnboltedState", "removeBoltedState", "removeMouseOffState", "removeMouseOverState",
             "removeState", "removeEvent", "removeAllowState", "removeRecheckEvent", "removeHandPath", "removeHandFsm", "removeHandIdleState",
             "slotDatabasePath", "slotDatabaseVariable", "slotReferenceVariable", "slotInstallerFsm", "slotInstallerIdleState",
-            "slotInstallerReferenceVariable", "slotInstallerIndexVariable", "slotAllowVariable", "slotStopEvent" };
+            "slotInstallerReferenceVariable", "slotInstallerIndexVariable", "slotAllowVariable", "slotStopEvent", "replicaRepairVariable" };
         public readonly Dictionary<string, string> Bindings = new Dictionary<string, string>();
         public string this[string key] => Bindings[key];
         public readonly List<ReplacementPartFactoryData> Factories = new List<ReplacementPartFactoryData>();
@@ -209,6 +220,7 @@ namespace WinterMP.Core.Catalog
         public string Path = string.Empty, Prefix = string.Empty;
         public string SlotReference = string.Empty;
         public byte SlotCount;
+        public PartHandRotationData? HandRotation;
         public string[] Scalars = new string[0], InitActions = new string[0], StatusActions = new string[0];
         public readonly List<ReplacementPartReference> References = new List<ReplacementPartReference>();
         public ReplacementPartRule Identity = null!;
@@ -216,6 +228,11 @@ namespace WinterMP.Core.Catalog
     internal sealed class ReplacementPartReference
     {
         public string Target = string.Empty, Source = string.Empty;
+    }
+
+    internal sealed class PartHandRotationData
+    {
+        public string Path = string.Empty, Fsm = string.Empty, Scalar = string.Empty, BoltPath = string.Empty;
     }
 
 }

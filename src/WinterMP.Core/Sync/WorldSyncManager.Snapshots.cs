@@ -103,6 +103,7 @@ namespace WinterMP.Core.Sync
                 foreach (var chunk in _items.BuildItemSnapshotChunks())
                     yield return chunk;
                 foreach (var chunk in BuildItemDespawnSnapshots()) yield return chunk;
+                foreach (var bag in _items.BuildBagStates()) yield return bag;
                 foreach (var package in _items.BuildPackageStates()) yield return package;
                 foreach (var replacement in _items.BuildReplacementPartStates()) yield return replacement;
                 foreach (var spawn in _items.BuildSpawnReplayManifests()) yield return spawn;
@@ -141,6 +142,8 @@ namespace WinterMP.Core.Sync
 
             if (_items.Items.TryGetValue(netId, out var item) && item.Body != null && _items.CanSyncItemMotion(item))
             {
+                var bag = _items.BuildBagState(netId);
+                if (bag != null) yield return bag;
                 var package = _items.BuildPackageState(netId);
                 if (package != null) yield return package;
                 yield return new ItemTransform
@@ -209,6 +212,7 @@ namespace WinterMP.Core.Sync
 
             foreach (var chunk in BuildItemDespawnSnapshots()) yield return chunk;
 
+            foreach (var bag in _items.BuildBagStates()) yield return bag;
             foreach (var package in _items.BuildPackageStates()) yield return package;
             foreach (var replacement in _items.BuildReplacementPartStates()) yield return replacement;
 

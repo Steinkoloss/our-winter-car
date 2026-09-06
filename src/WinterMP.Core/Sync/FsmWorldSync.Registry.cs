@@ -70,64 +70,6 @@ namespace WinterMP.Core.Sync
             return true;
         }
 
-        internal bool RegisterSpawnContainer(PlayMakerFSM fsm, string[] syncedStates)
-        {
-            if (!BeginRegistration(fsm)) return false;
-            string path = ScenePath.Of(fsm.transform);
-            uint baseId = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
-
-            // Grocery bags are runtime clones that ALL share the scene path
-            // "shopping bag(itemx)", so they all hash to the same base id. The first bag
-            // would register and every later one would collide and never get its open
-            // hook — which is exactly why opening a fresh bag stopped syncing. Reclaim
-            // entries whose bag was destroyed, and salt past any still-live duplicate so
-            // every concurrent bag gets its own hook. Container ids never need to match
-            // across peers — they only scope the local capture and key manifest dedup.
-            uint id = baseId;
-            bool placed = false;
-            for (uint salt = 0; salt < 64; salt++)
-            {
-                id = baseId + salt;
-                if (_spawnContainers.TryGetValue(id, out var existing))
-                {
-                    if (existing.Fsm == null) { _spawnContainers.Remove(id); placed = true; break; } // dead — reclaim
-                    if (existing.Fsm == fsm) { MarkRegistered(fsm); return false; }       // already ours
-                    continue;                                                                          // live duplicate
-                }
-
-                if (_doors.ContainsKey(id)) continue;
-                placed = true;
-                break;
-            }
-
-            if (!placed)
-            {
-                WinterMPPlugin.Log.LogWarning($"WorldSync: spawn-container id space full for '{path}'.");
-                Util.BootTrace.Crumb($"SPAWN-REG idspace-full '{path}'");
-                MarkRegistered(fsm);
-                return false;
-            }
-
-            // Hook-only: spawn states are never entered remotely (the spill is
-            // replicated by clone capture + manifest, not by firing the FSM), so no
-            // injected MP_* remote-entry transitions are needed here.
-            foreach (string state in syncedStates)
-            {
-                string captured = state;
-                if (!HookState(fsm, state, () => OnSpawnStateEntered(id, captured)))
-                {
-                    WinterMPPlugin.Log.LogWarning($"WorldSync: spawn-container '{path}' could not hook state '{state}'; not syncing.");
-                    return false;
-                }
-            }
-
-            _spawnContainers[id] = new SyncedSpawnContainer { Fsm = fsm, Path = path, SyncedStates = syncedStates };
-            MarkRegistered(fsm);
-            WinterMPPlugin.Log.LogInfo($"WorldSync: spawn-container registered: '{path}'.");
-            Util.BootTrace.Crumb($"SPAWN-REG ok '{path}' states=[{string.Join(",", syncedStates)}]");
-            return true;
-        }
-
         internal bool RegisterPart(PlayMakerFSM fsm, string[] syncedStates)
         {
             if (!BeginRegistration(fsm)) return false;

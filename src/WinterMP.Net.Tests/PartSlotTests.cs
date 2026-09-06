@@ -45,7 +45,7 @@ namespace WinterMP.Net.Tests
         [InlineData(PartFitOperation.Install, 33)]
         [InlineData(PartFitOperation.Remove, 1)]
         [InlineData(PartFitOperation.Remove, 32)]
-        [InlineData((PartFitOperation)2, 0)]
+        [InlineData((PartFitOperation)4, 0)]
         public void InvalidSlotsCannotEnterTheLedgerOrClient(PartFitOperation operation, byte slot)
         {
             var request = new PartFitRequest { PlayerId = 1, Token = 2, Operation = operation, SlotIndex = slot };

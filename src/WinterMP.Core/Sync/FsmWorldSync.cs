@@ -21,9 +21,6 @@ namespace WinterMP.Core.Sync
         private readonly VehicleWorldSync _vehicles;
 
         private readonly Dictionary<uint, SyncedDoor> _doors = new Dictionary<uint, SyncedDoor>();
-        // Deliberately absent from CollectIds/checksum: bags are per-peer runtime
-        // clones with salted ids, so cross-peer id agreement is impossible by design.
-        private readonly Dictionary<uint, SyncedSpawnContainer> _spawnContainers = new Dictionary<uint, SyncedSpawnContainer>();
         private readonly Dictionary<uint, SyncedPart> _parts = new Dictionary<uint, SyncedPart>();
         private readonly Dictionary<uint, SyncedBuy> _buys = new Dictionary<uint, SyncedBuy>();
         private readonly Dictionary<uint, SyncedBolt> _bolts = new Dictionary<uint, SyncedBolt>();
@@ -44,7 +41,6 @@ namespace WinterMP.Core.Sync
 
 
         public int DoorCount => _doors.Count;
-        public int SpawnContainerCount => _spawnContainers.Count;
         public int PartCount => _parts.Count;
         public int BuyCount => _buys.Count;
         public int BoltCount => _bolts.Count;
@@ -56,7 +52,8 @@ namespace WinterMP.Core.Sync
         internal void CollectIds(List<uint> ids)
         {
             foreach (uint id in _doors.Keys) ids.Add(id);
-            foreach (uint id in _parts.Keys) ids.Add(id);
+            foreach (var pair in _parts)
+                if (!pair.Value.Replica || pair.Value.ReplicaState != null) ids.Add(pair.Key);
             foreach (uint id in _buys.Keys) ids.Add(id);
             foreach (uint id in _bolts.Keys) ids.Add(id);
             foreach (uint id in _ignitions.Keys) ids.Add(id);
@@ -98,7 +95,6 @@ namespace WinterMP.Core.Sync
         {
             ClearFsmHooks();
             _doors.Clear();
-            _spawnContainers.Clear();
             _parts.Clear();
             _buys.Clear();
             _bolts.Clear();

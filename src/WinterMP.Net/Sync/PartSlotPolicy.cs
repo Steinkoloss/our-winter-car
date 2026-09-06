@@ -7,7 +7,7 @@ namespace WinterMP.Net.Sync
     {
         public const int MaxSlots = 32;
 
-        public static bool ValidRequest(PartFitOperation operation, byte slot) => (byte)operation <= 1
+        public static bool ValidRequest(PartFitOperation operation, byte slot) => (byte)operation <= 3
             && slot <= MaxSlots && (operation == PartFitOperation.Install || slot == 0);
 
         /// <summary>Native arrays reserve index zero and break distance ties with the later slot.</summary>

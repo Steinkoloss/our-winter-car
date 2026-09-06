@@ -8,7 +8,7 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 | Component | Boot / wiring |
 |-----------|----------------|
 | BepInEx plugin | `src/WinterMP.Core/WinterMPPlugin.cs` — creates persistent `WinterMP` GameObject and subsystems |
-| FastBoot (save gate) | `src/WinterMP.FastBoot/SessionGate.cs` |
+| FastBoot (save-load gate) | `src/WinterMP.FastBoot/SessionGate.cs` |
 | Launcher | `src/WinterMP.Launcher/MainWindow.axaml.cs` (Avalonia) |
 | Headless install (used by installers) | `src/WinterMP.Launcher/Services/CliInstallRunner.cs` (`--install-mod`) |
 | Universal installer (one file, Win+Linux) | `installer/ape/ourwintercar-installer.c` + `tools/build-ape-installer.sh` (APE) |
@@ -22,6 +22,7 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 | Remote player bookkeeping | `Session/RemotePlayer.cs`, `Session/DevLoopbackClient.cs` |
 | Launch modes / CLI | `LaunchOptions.cs`, `Session/SessionLaunchPolicy.cs` |
 | Guest sidecar (pose + needs) | `Session/GuestProfileStore.cs` |
+| Guest save protection / restart-to-host gate | `Session/GuestSaveGuard.cs`, `SessionManager.Launch.cs`, `UI/DebugOverlay.cs`; `WinterMP.Net/GuestSavePolicy.cs`; `WinterMP.Net.Tests/GuestSavePolicyTests.cs`; opt-in native probe `tools/GuestSaveProbe/` |
 | Session admission / channel contract | `WinterMP.Net/SessionMessagePolicy.cs` — enforced in `Session/SessionManager.cs` + `Steam/SteamLobbyManager.cs` |
 | Bandwidth meter (TAB overlay + 10 s log) | `Session/NetTrafficMeter.cs` |
 | Transport quality / ownership-transfer pausing | `Session/ConnectionQuality.cs` |
@@ -54,6 +55,9 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 | Generic FSM teardown / reconnect registration | `Sync/FsmWorldSync.Hooks.cs`, `FsmHook.cs`, `FsmWorldSync.cs` |
 | Native part condition / deferred host reports / resync | `Sync/FsmWorldSync.Local.cs`, `.Remote.cs`, `.Snapshots.cs`, `.Checksum.cs`; `WinterMP.Net/Sync/PartStatePolicy.cs`; `WinterMP.Net.Tests/PartStatePolicyTests.cs` |
 | Host bolt turns / absolute save-array and pose repair / deferred parent totals | `Sync/FsmWorldSync.Bolts.cs`, `.Local.cs`, `.Remote.cs`, `.Snapshots.cs`, `.Checksum.cs`, `Session/SessionManager.Messages.cs`; `WinterMP.Net/Sync/BoltStatePolicy.cs` (including `PartTightnessReceipts`); messages 44/123; `WinterMP.Net.Tests/BoltStatePolicyTests.cs` |
+| Guest replacement bolt controls / tool triggers / fresh attachment seed | `Sync/FsmWorldSync.ReplicaBolts.cs`, `.Bolts.cs`; `ItemWorldSync.PartReplicas.cs`, `.PartAttachments.cs`; catalog `replacementParts.replicaRepairVariable`; `WinterMP.Net/Sync/BoltStatePolicy.cs` (`ReplicaBoltGate`, `PartTightnessReceipts`); `WinterMP.Net.Tests/BoltStatePolicyTests.cs` |
+| Guest alternator hand rotation / host native adjustment / scroll picking | `Sync/ItemWorldSync.PartAdjustment.cs`, `.PartAdjustment.Bindings.cs`, `.PartFitting.cs`; catalog factory `handRotation`; `WinterMP.Net/Sync/PartAdjustmentPolicy.cs`, `PartFitLedger.cs`, operations 2/3 in messages 188–189; `WinterMP.Net.Tests/PartAdjustmentTests.cs`; `tools/GuestSaveProbe/PartAdjustmentChecks.cs` |
+| Saved guest parts / occupied mounts / host part checksum views | `Sync/GuestPartIsolation.cs`, `ItemWorldSync.PartIsolation.cs`, `NativePartIdentity.cs`, `FsmWorldSync.ReplicaParts.cs`, `.Hooks.cs`; `WinterMP.Net/Sync/ReplacementPartReplica.cs` (`Occupies`); `WinterMP.Net.Tests/PartAttachmentTests.cs`; `tools/GuestSaveProbe/PartIsolationChecks.cs` |
 | Items / pickables | `Sync/ItemWorldSync.*` |
 | Native trophy factories / saved award identities | `Sync/ItemWorldSync.Factories.cs`; catalog `trophyFactories`; `WinterMP.Net/Sync/FactoryItemIdentity.cs`; `WinterMP.Net.Tests/FactoryItemTests.cs` |
 | Loose replacement parts / native factory outputs | `Sync/ItemWorldSync.PartFactories.cs`, `.PartReplicas.cs`, `.Parts.cs`; catalog `replacementParts`; `Catalog/SyncCatalogJson.Factories.cs`; `WinterMP.Net/Sync/ReplacementPartReplica.cs`; `ReplacementPartState` (185); `WinterMP.Net.Tests/ReplacementPartTests.cs` |
@@ -154,3 +158,10 @@ Task routing for agents and humans. Architecture lives in `PLAN.md`; wire format
 
 Large types split by concern, e.g. `FsmWorldSync.cs` + `FsmWorldSync.Remote.cs`.
 When a file approaches ~1000 lines, add a new partial — don't grow a monolith.
+
+Shopping bag identity/ownership and opening: `ItemWorldSync.BagBindings.cs` (native
+factory IDs, catalog guards, preserved guest save objects), `.Bags.cs` (host ledger,
+opening lifecycle, publication), `.BagReplicas.cs` (guest visuals and requests),
+`.BagSpill.cs` (exact native output capture and prefab names), `.BagPickup.cs`
+(native hand ownership). Generic spill replay/retry lives in `.Spawn.cs`;
+engine-free bag policies/messages are `BagOpenLedger`, `BagStatePolicy`, `BagMessages`.

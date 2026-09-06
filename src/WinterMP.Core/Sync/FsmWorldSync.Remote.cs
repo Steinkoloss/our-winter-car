@@ -365,6 +365,7 @@ namespace WinterMP.Core.Sync
 
             if (_parts.TryGetValue(netId, out var part) && part.Fsm != null)
             {
+                if (part.Replica) { _bridge.RequestObjectState(netId); return true; }
                 if (IsDerivedPartState(stateName)) return true;
                 if (Array.IndexOf(part.SyncedStates, stateName) < 0)
                 {
@@ -457,6 +458,8 @@ namespace WinterMP.Core.Sync
         internal void ProcessPending()
         {
             var session = SessionManager.Instance;
+            ProcessReplicaBolts();
+            ProcessReplicaPartViews();
 
             if (_pendingBoltStates.Count > 0)
             {

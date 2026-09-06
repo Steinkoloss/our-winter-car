@@ -262,7 +262,7 @@ Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
 | Car assembly (bolts/parts) | Persistent native part IDs; v114 guest bolt intents execute on host and return absolute save-array, pose and parent-tightness results. Bolt-settle wear synced; `VehicleDamage` v91 carries current fitted engine-part wear and concrete failure outcomes, clears repaired parts and gates non-owner random damage. Parked cars use the host. Drivetrain wear + tire pressure/puncture via `VehicleCondition` (v61), gear via `VehicleState` (v63). | 🚧 (missing fitted guest graphs, separate adjustments and two-player/save verification remain open) |
 | Vehicle state (Sorbet, Corris, +) | Engine `owner-only` (driver owns whole vehicle); rpm/fuel/coolant/lights/blinkers + cabin **climate** (frost/fog/defrost/heater) synced. Host relays only streams whose owner/player id matches the authenticated sending peer (also enforced for item/cargo/player/passenger/clothing streams), closing spoofed-owner writes before world state is touched. **v52 also makes passenger seating host-validated:** a guest's next sequence must describe an exact discovered seat within 2 m of its fresh pose; exits require vehicle id 0, the host owns occupancy, and same-seat races resolve by lowest player id. **v95** preserves accepted seats across moving-car keepalives without repeating entry proximity checks; rejected new claims clear occupancy for every peer and join snapshot, while stale requests are ignored. | ✅ |
 | **Fuel / jerrycan / pumps** | Refuel as `anyone-triggers` intent; fuel level already rides in `VehicleState`. v33 additionally syncs tracked jerrycan/container `FuelLevel` + pouring state under transform ownership and applies remote vehicle fuel to the actual tank (not just its gauge). The Peräpörtti fuel-station monitor presets/pump selection are cataloged reliable controls and its cash trigger is a host purchase intent, so payment and wallet changes converge. **v39 closes live nozzle use for parked vehicles:** the guest reports only an actively dispensing local nozzle's target tank level; the host requires fresh player/nozzle/vehicle proximity, a stationary target, monotonic bounded growth, then writes its real tank and reconciles all peers with `VehicleState`. Dynamic hand/pistol references are still never replayed. | 🚧 (M8, v39 needs two-player runtime confirmation) |
-| World items (pickables / cargo / consumables) | Event-synced + ownership streaming when in motion; eat/drink despawn synced. **Runtime-spawned items (grocery-bag contents) via `ItemSpawn`/`SpawnIntent` (ids 52/53, reworked v32)** — the peer whose player opens the bag lets it spill *naturally* and captures the clones (a bag FSM cannot be driven remotely: "Confirm" bounces back to "Wait player" without a live player interaction, and the spiller's bag-consumption despawn destroys replica bags before any manifest could fire them — both observed in-game at v29–v31); the host mints ids (guest spills offered via SpawnIntent's item list) and every **other** peer materializes from the manifest: adopt nearby clone → steal stale clone (replay/own-offer) → instantiate from an exact- or base-name-matched template (store masters `<base>x` ↔ live instances `<base>(itemx)`). Because runtime bag ids/content are deliberately peer-local, the host cannot re-derive an exact inventory; it does require a fresh authenticated next sequence and 1–32 finite, template-backed entries within 12 m of the guest before minting. **Late-join replay (v31)**: host re-sends live-refreshed spill manifests with the join snapshot | 🚧 (v32 rework, needs 2-player check) |
+| World items (pickables / cargo / consumables) | Event-synced motion/cargo/despawn. **Shopping bags v120:** persistent host factory/native IDs, isolated guest bag views, atomic one/all opening requests (190–192), host-only native inventory consumption, direct factory-output capture and chunked ItemSpawn manifests. Replica name lookup uses native prefab display-name actions; missing items retry rather than waiting for another player to spill. Guest offers53 retired. Bag pickup guards/release reconcile hand ownership. Native part products without an adapter are guarded before opening. | 🚧 (implemented; two-player acceptance pending) |
 | Doors / switches / controls | `anyone-triggers` events (incl. lights, wipers, hazards, handbrake) | ✅ |
 | **Home heating & cooking** | Cabin woodstove (`CABIN/Cabin/woodstove/Fireplace`: `SetFire`/`WoodTrigger`/`SausageTrigger`), sauna kiuas (`StoveHeat`/`SaunaStove`), cottage/living-room fireplaces. Host-owned progression (lit, fuel, heat output, sauna temp); feed/light/grill = `anyone-triggers`. Synced at **v28** (`HeatSourceState`/`HeatSourceIntent`: woodstove/sauna/fireplaces; host reads authoritative signals + broadcasts, guests apply locally, light/feed/grill/löyly intents fire real game events on the host). **v49 binds each guest action to an authenticated player id + monotonic sequence and requires that player’s fresh pose within 8 m of the exact source**, so remote peers cannot feed/light/grill/steam a distant home. Joining guests get a forced full re-broadcast with the world snapshot (no 20 s cold wait). See §4.8 | 🚧 (v49, not soak-tested) |
 | **Home appliances** | TV (`TVSwitch`), house/apartment lights and fuse main switches are cataloged `anyone-triggers`; v40 additionally catalogs fridge doors and the home-stereo radio/CD power switch. **v42 makes the home stereo's power, radio channel, volume and bass host-owned scalar state**: guests submit bounded settings only while near the stereo, and the host rebroadcasts/snapshots the applied values. **v51 mirrors the grounded home, yard, and apartment shower tap/valve transitions**, so the shared fixture state agrees before the game’s local hygiene logic runs. **v55 preserves each guest's resulting `PlayerDirtiness` across reconnects when they choose their saved return position**; it does not replay hygiene actions. CD track/disc, appliance consumption, individual fuse insertion, and full hygiene/wash interaction authority remain to do. | 🚧 (M11, v55 partial; needs two-player runtime confirmation) |
@@ -297,6 +297,15 @@ Status: ✅ done · 🚧 partial · ⬜ not started. Target milestone in parens.
 - Launcher backs up the save before every hosted session and keeps N rotations.
 - Guests joining a save they've been in before resume their profile; new
   guests spawn at a defined spawn point with starter state.
+- **Implemented after 0.1.32:** Core installs ES2 persistence guards before game
+  loading and requires all nine bindings before guest admission. Guest launch/join
+  protects saves, temporary files, renames and deletions for the rest of the process,
+  including disconnect, session reset and quit. Host and solo boots retain normal
+  saves; ordinary PlayerPrefs settings and memory serialization remain available.
+  Returning to a personal world or hosting after joining currently requires a game
+  restart. The overlay explains this; the guest-profile sidecar also requires host
+  authority. An isolated Unity/Wine probe passes 21 checks against build 23268598's
+  ES2 library. Full in-world save/quit/permadeath and two-player checks remain pending.
 
 ### 4.7 Stability engineering (explicit, budgeted work — not an afterthought)
 
@@ -422,7 +431,44 @@ standings text. Guests preserve and pause their season/odds FSMs, apply complete
 boards and restore local data on disconnect. Runtime round/teletext/reconnect
 validation, individual-player scoring and Megaveto ticket transactions remain open.
 
-**Guest multi-slot fitting (v118, unreleased):** pistons, main bearings and rockers
+**Guest alternator hand adjustment (shipped in 0.1.33; introduced in protocol 119):** empty-handed
+guests can scroll at either catalogued alternator's pivot after loosening its
+adjusting bolt. New part operations 2/3 share fitting/removal's immutable receipt
+ledger; the host checks the observed revision, settled mount, fresh proximity,
+native bolt/hand readiness and cooldown before executing one native half-degree
+turn within 0–7 degrees. Both saved part and engine mount must receive the result;
+guests receive the existing absolute scalar/pivot update without native HandRotate
+execution. Catalog bindings and native actions are validated; 1,036 protocol/policy
+tests, 18 launcher tests and 46 isolated Unity/Wine checks pass. Real two-player
+scroll/tool/fit/reconnect checks and the remaining engine adjustments are pending.
+
+**Guest part/mount isolation (shipped in 0.1.33; no protocol change):** saved
+originals from the 30 boxed replacement families are retained in an inactive scene
+group before guest FSM/item registration. Their identities are released for host
+copies, including matching native IDs; settled occupied mounts are paused without
+rewriting vanilla references. Fitting previews use accepted host attachment state.
+Passive PartState views preserve host checksum observations without replaying native
+actions or modifying saved originals. Disconnect cleanup destroys owned copies,
+restores original transforms/physics and resumes FSMs without initialization replay.
+Unexpected nested assemblies or unrelated subsystems remain preserved and defer.
+The catalogued leaf structure is verified against all 30 game prefabs; 1,014
+protocol/catalog/policy tests and 28 isolated Unity/Wine checks (7 restoration,
+21 save-library) pass. Full multiplayer placement, native engine
+references and save/LOD/reconnect acceptance remain pending; see BUILDING.md.
+
+**Guest replacement bolt controls (shipped in 0.1.33; no protocol change):**
+owned copies now bind the native spanner/ratchet interface for integer-step bolts.
+Their input-only graphs send existing host intents and apply absolute host replies;
+no guest native bolt delta, BOLTING, alternator or timing branch is enabled. Tool
+triggers require a fitted attachment and a fresh host bolt observation after every
+attachment change. Deferred replacement scalars share bolt receipt ordering to avoid
+rolling back the latest parent total. Static game evidence validates 55 controls
+across 24 replacement families; 1,008 protocol/catalog tests pass and Core/Net builds
+are clean. Native multiplayer acceptance remains pending. Remaining priorities are
+multiplayer mount validation, continuous adjustments/full engine behavior and non-box
+part creation; see the new BUILDING.md checklist.
+
+**Guest multi-slot fitting (v118, shipped in 0.1.32):** pistons, main bearings and rockers
 now use the game's native array-slot installer for guest requests. A click includes
 the observed slot index; retries cannot change it, and host selection of another
 slot rejects the click. Selection preserves native nearest-slot and tie behavior,

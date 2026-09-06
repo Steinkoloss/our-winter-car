@@ -176,6 +176,7 @@ namespace WinterMP.Net.Tests
         [InlineData("duplicate-scalar")]
         [InlineData("missing-reference")]
         [InlineData("duplicate-reference")]
+        [InlineData("missing-tool-mode")]
         public void MalformedCatalogFailsBeforeNativeHooksAreInstalled(string fault)
         {
             var json = JsonNode.Parse(CatalogText())!; var rules = json["replacementParts"]!["factories"]!.AsArray();
@@ -188,6 +189,7 @@ namespace WinterMP.Net.Tests
                 case "duplicate-scalar": rule["scalars"] = new JsonArray("Tightness", "Tightness"); break;
                 case "missing-reference": rule["references"] = new JsonArray(); break;
                 case "duplicate-reference": rule["references"]!.AsArray().Add(rule["references"]![0]!.DeepClone()); break;
+                case "missing-tool-mode": json["replacementParts"]!.AsObject().Remove("replicaRepairVariable"); break;
             }
             Assert.Throws<FormatException>(() => SyncCatalogJson.Parse(json.ToJsonString()));
         }

@@ -58,6 +58,7 @@ namespace WinterMP.Core.Catalog
         internal static LottoTicketsData? LottoTickets { get; private set; }
         internal static TrophyFactoriesData? TrophyFactories { get; private set; }
         internal static PartsPackagesData? PartsPackages { get; private set; }
+        internal static ShoppingBagsData? ShoppingBags { get; private set; }
         internal static PartIdentityData? PartIdentity { get; private set; }
         internal static ReplacementPartsData? ReplacementParts { get; private set; }
 
@@ -67,6 +68,7 @@ namespace WinterMP.Core.Catalog
             _spawnContainers.Clear();
             TrophyFactories = null;
             PartsPackages = null;
+            ShoppingBags = null;
             PartIdentity = null;
             ReplacementParts = null;
             _controls.Clear();
@@ -142,6 +144,7 @@ namespace WinterMP.Core.Catalog
                 LottoTickets = data.LottoTickets;
                 TrophyFactories = data.TrophyFactories;
                 PartsPackages = data.PartsPackages;
+                ShoppingBags = data.ShoppingBags;
                 PartIdentity = data.PartIdentity;
                 ReplacementParts = data.ReplacementParts;
             }

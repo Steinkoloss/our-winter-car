@@ -233,7 +233,7 @@ namespace WinterMP.Core.Sync
             if (_items.ContainsKey(id) || existing != null)
                 throw new InvalidOperationException("Trophy item ID collision: " + nativeId);
             _trackedBodies[body] = true;
-            BindOfferedBodyAsOwner(body, id, Time.unscaledTime);
+            BindFactoryBodyAsOwner(body, id, Time.unscaledTime);
             var item = new FactoryItem { Factory = factory, NativeId = nativeId, Body = body };
             _factoryItems.Add(id, item);
             var message = TrophyManifest(factory, false, session.LocalPlayerId);
@@ -427,6 +427,14 @@ namespace WinterMP.Core.Sync
             _factoryItems.Clear(); _pendingFactoryItems.Clear(); _nativeFactoryOutputs.Clear();
             _localTrophies.Clear(); _trophyFactories.Clear();
             _trophyDiscoveryFailed = false;
+        }
+        private void BindFactoryBodyAsOwner(Rigidbody body, uint netId, float now)
+        {
+            if (_items.ContainsKey(netId)) return;
+            var item = new SyncedItem { Body = body, Path = ScenePath.Of(body.transform), Id = netId,
+                LocallyOwned = true, LastPosition = body.transform.position, LastMovedAt = now };
+            _items[netId] = item;
+            TryRegisterConsumableHooks(item);
         }
     }
 }

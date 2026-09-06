@@ -95,7 +95,6 @@ namespace WinterMP.Core.Sync
         private int _syncErrorCount;
         private float _syncErrorBackoffUntil;
         // TEMP spawn debugging: crumb each grocery-bag-like Use FSM once per name.
-        private readonly HashSet<string> _spawnDiag = new HashSet<string>();
 
         internal bool ApplyingRemote { get; set; }
         internal bool SelfTest => _selfTest;
@@ -108,7 +107,7 @@ namespace WinterMP.Core.Sync
         public static WorldSyncManager? Instance { get; private set; }
 
         public int DoorCount => _syncReady ? _fsm.DoorCount : 0;
-        public int SpawnContainerCount => _syncReady ? _fsm.SpawnContainerCount : 0;
+        public int SpawnContainerCount => _syncReady ? _items.BagCount : 0;
         public int PartCount => _syncReady ? _fsm.PartCount : 0;
         public int BuyCount => _syncReady ? _fsm.BuyCount : 0;
         public int BoltCount => _syncReady ? _fsm.BoltCount : 0;
@@ -149,6 +148,7 @@ namespace WinterMP.Core.Sync
             _bridge.BindItems(_items);
             _bridge.BindWallet(_wallet);
             _fsm = new FsmWorldSync(_bridge, _vehicles);
+            _bridge.BindFsms(_fsm);
             _jail.BindWanted(_wanted);
             _syncReady = true;
         }
@@ -246,6 +246,8 @@ namespace WinterMP.Core.Sync
 
             EnsureSyncReady();
             _wasSessionActive = true;
+
+            _items.ProcessBags(session!);
 
             if (Time.unscaledTime >= _nextScanAt)
             {
@@ -433,7 +435,9 @@ namespace WinterMP.Core.Sync
 
         private void ScanWorld()
         {
-            int newDoors = 0, newParts = 0, newBuys = 0, newBolts = 0, newIgnitions = 0, newControls = 0, newStarters = 0, newSpawnContainers = 0;
+            _items.RefreshBagFactories();
+            _items.PrepareGuestPartIsolation();
+            int newDoors = 0, newParts = 0, newBuys = 0, newBolts = 0, newIgnitions = 0, newControls = 0, newStarters = 0;
 
             try
             {
@@ -442,27 +446,9 @@ namespace WinterMP.Core.Sync
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null || _hookedFsms.ContainsKey(fsm)) continue;
-
-                    // TEMP spawn diagnostic: report each grocery-bag-like Use FSM once
-                    // (match result + active state) — placed before the active check so
-                    // an inactive/disabled bag still shows up with active=false.
-                    try
-                    {
-                        if (fsm.FsmName == "Use")
-                        {
-                            string nm = fsm.gameObject.name;
-                            if (nm.IndexOf("shop", StringComparison.OrdinalIgnoreCase) >= 0 && _spawnDiag.Add(nm))
-                            {
-                                bool act = fsm.gameObject.activeInHierarchy;
-                                bool en = fsm.enabled;
-                                var sc = SyncCatalog.TryMatchSpawnContainer(fsm);
-                                string diag = $"bag '{nm}' active={act} enabled={en} match={(sc != null)}";
-                                WinterMPPlugin.Log.LogInfo("WorldSync: " + diag);
-                                Util.BootTrace.Crumb("SPAWN-DIAG " + diag);
-                            }
-                        }
-                    }
-                    catch { }
+                    if (ItemWorldSync.IsBagUse(fsm)) continue;
+                    var nativePart = NativePartIdentity.FindData(fsm.transform);
+                    if (nativePart != null && _items.IsPendingGuestPartIsolation(nativePart)) continue;
 
                     try
                     {
@@ -473,7 +459,6 @@ namespace WinterMP.Core.Sync
                         {
                             string[]? states = SyncCatalog.TryMatchDoor(fsm);
                             if (states != null && _fsm.RegisterDoor(fsm, states)) newDoors++;
-                            else if ((states = SyncCatalog.TryMatchSpawnContainer(fsm)) != null && _fsm.RegisterSpawnContainer(fsm, states)) newSpawnContainers++;
                             else
                             {
                                 states = SyncCatalog.TryMatchIgnition(fsm);
@@ -539,12 +524,12 @@ namespace WinterMP.Core.Sync
 
                 int newItems = _items.ScanItems();
                 int newNpcs = _npcTraffic.Scan();
-                if (newDoors > 0 || newParts > 0 || newBuys > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newSpawnContainers > 0 || newItems > 0 || newNpcs > 0)
+                if (newDoors > 0 || newParts > 0 || newBuys > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newItems > 0 || newNpcs > 0)
                 {
                     RecomputeIdHash();
                     WinterMPPlugin.Log.LogInfo(
-                        $"WorldSync: +{newDoors} doors, +{newSpawnContainers} spawn-containers, +{newParts} parts, +{newBuys} buys, +{newBolts} bolts, +{newIgnitions} ignitions, +{newControls} controls, +{newStarters} starters, +{newItems} items, +{newNpcs} npcs — " +
-                        $"now {_fsm.DoorCount}/{_fsm.SpawnContainerCount}/{_fsm.PartCount}/{_fsm.BuyCount}/{_fsm.BoltCount}/{_fsm.IgnitionCount}/{_fsm.ControlCount}/{_fsm.StarterCount}/{_items.ItemCount}/{_npcTraffic.NpcCount} (id hash {IdHash:X8}).");
+                        $"WorldSync: +{newDoors} doors, +{newParts} parts, +{newBuys} buys, +{newBolts} bolts, +{newIgnitions} ignitions, +{newControls} controls, +{newStarters} starters, +{newItems} items, +{newNpcs} npcs — " +
+                        $"now {_fsm.DoorCount}/{_items.BagCount}/{_fsm.PartCount}/{_fsm.BuyCount}/{_fsm.BoltCount}/{_fsm.IgnitionCount}/{_fsm.ControlCount}/{_fsm.StarterCount}/{_items.ItemCount}/{_npcTraffic.NpcCount} (id hash {IdHash:X8}).");
                 }
 
                 if (_selfTest && !_readyAnnounced && _fsm.DoorCount > 0)

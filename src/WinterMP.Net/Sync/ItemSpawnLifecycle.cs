@@ -15,6 +15,29 @@ namespace WinterMP.Net.Sync
         public bool ShouldMaterialize(uint id, bool hasLiveBody) => !hasLiveBody && !_retired.Contains(id);
         public void Clear() { _manifests.Clear(); _retired.Clear(); }
 
+        /// <summary>Keep failed creations pending; never retry an existing or retired item.</summary>
+        public int MaterializePending(List<ItemSpawn.Entry> pending, Func<uint, bool> hasLiveBody,
+            Func<ItemSpawn.Entry, bool> tryMaterialize)
+        {
+            int created = 0;
+            for (int i = 0; i < pending.Count;)
+            {
+                var entry = pending[i];
+                if (!ShouldMaterialize(entry.NetId, hasLiveBody(entry.NetId)))
+                {
+                    pending.RemoveAt(i);
+                    continue;
+                }
+                if (tryMaterialize(entry))
+                {
+                    created++;
+                    pending.RemoveAt(i);
+                }
+                else i++;
+            }
+            return created;
+        }
+
         public bool AcceptManifest(ItemSpawn message)
         {
             if (!Valid(message)) return false;

@@ -17,6 +17,7 @@ namespace WinterMP.Core.Session
             Util.BootTrace.Crumb("SessionManager.Initialize: begin");
             Instance = this;
             _launch = launch;
+            GuestSaveGuard.Initialize();
             SessionLaunchPolicy.FastSessionLaunch = launch.FastSessionLaunch;
 
             // Precedence: command line (test tooling) > config > Steam persona/OS user.
@@ -35,6 +36,14 @@ namespace WinterMP.Core.Session
             _pendingMode = launch.Mode;
             _pendingLobbyId = launch.LobbyId;
             _joinBrowseActive = launch.Mode == LaunchMode.JoinBrowse;
+
+            if ((launch.Mode == LaunchMode.Join || launch.Mode == LaunchMode.JoinLocal
+                || launch.Mode == LaunchMode.JoinBrowse) && !PrepareGuestSaveProtection())
+            {
+                _pendingMode = LaunchMode.None;
+                _joinBrowseActive = false;
+                return;
+            }
 
             if (_pendingMode != LaunchMode.None)
                 SetState(SessionState.Idle, PendingLaunchStatus(launch.Mode));
@@ -188,6 +197,8 @@ namespace WinterMP.Core.Session
                 return;
             }
 
+            if (!CheckHostSaveProtection()) return;
+
 #if STEAMWORKS
             try
             {
@@ -277,6 +288,7 @@ namespace WinterMP.Core.Session
                 if (!TryEnsureSteamReady("Waiting for Steam…"))
                     return;
 
+                if (!PrepareGuestSaveProtection()) return;
                 IsHost = false;
                 _steamOpStartedAt = Time.unscaledTime;
                 RefreshPlayerNameFromSteam();
@@ -306,6 +318,8 @@ namespace WinterMP.Core.Session
                 return;
             }
 
+            if (!CheckHostSaveProtection()) return;
+
             try
             {
                 _bypassHostPlayerGate = true;
@@ -331,6 +345,8 @@ namespace WinterMP.Core.Session
                 return;
             }
 
+            if (!PrepareGuestSaveProtection()) return;
+
             try
             {
                 IsHost = false;
@@ -349,6 +365,7 @@ namespace WinterMP.Core.Session
         public void StartDevLoopback()
         {
             if (State != SessionState.Idle) return;
+            if (!CheckHostSaveProtection()) return;
 
             _bypassHostPlayerGate = true;
             ConnectionQuality.Instance.TransportName = "Loopback";
@@ -358,6 +375,21 @@ namespace WinterMP.Core.Session
             AttachTransport(pair.Host);
             _devClient = new DevLoopbackClient(pair.Client, "LoopbackGuest");
             SetState(SessionState.Hosting, "Hosting (loopback dev session)");
+        }
+
+        private bool PrepareGuestSaveProtection()
+        {
+            if (GuestSaveGuard.TryBeginGuest()) return true;
+            SetState(SessionState.Failed, GuestSaveGuard.Unavailable);
+            return false;
+        }
+
+        private bool CheckHostSaveProtection()
+        {
+            if (GuestSaveGuard.CanHost) return true;
+            SetState(SessionState.Idle, GuestSaveGuard.RestartToHost);
+            AddChatLine("* " + GuestSaveGuard.RestartToHost);
+            return false;
         }
     }
 }

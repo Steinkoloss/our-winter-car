@@ -100,7 +100,7 @@ Release zips land in `dist/`:
 
 ### Versioned tester kit
 
-The current test release is 0.1.32, protocol 118, targeting game build 23268598.
+The current test release is 0.1.33, protocol 120, targeting game build 23268598.
 On Linux, build and verify a separate kit without deploying into the game or publishing:
 
 ```bash
@@ -112,9 +112,9 @@ python3 tools/build-test-release.py --appimage \
 The prefix must already contain `drive_c/inno/ISCC.exe` (see the Wine setup below).
 The default run rebuilds the plugins, runs both test suites and the evidence-tool tests,
 then publishes both standalone launchers. `--skip-build --skip-tests` reuses the versioned
-publish folders and requires passing TRX reports from that version’s `build/test-release/v0.1.32/test-results/` folder. It still verifies payload bytes,
+publish folders and requires passing TRX reports from that version’s `build/test-release/v0.1.33/test-results/` folder. It still verifies payload bytes,
 versions, archives and packaged documentation. Only reuse after confirming source/build
-consistency. Output is `dist/test-v0.1.32/`, separate from stable release artifacts.
+consistency. Output is `dist/test-v0.1.33/`, separate from stable release artifacts.
 
 The kit includes source, release notes, a tester checklist, validation results and SHA-256
 checksums. Each payload manifest contains hashes for the mod files; the launcher verifies
@@ -438,7 +438,228 @@ camera/menu closure, cash/debt/envelope convergence and later singleplayer payme
 Static evidence and unit tests cannot verify those running-game transitions.
 
 
-### Guest piston/main-bearing/rocker fitting verification (v118, unreleased)
+### Guest alternator adjustment (shipped in 0.1.33; introduced in protocol 119)
+
+The VIN133 and ALTERNATOR0 replacement families now accept guest hand adjustment.
+With empty hands and the adjusting bolt below tightness 8, aim at the pivot within
+one metre and scroll. Each scroll event requests one native half-degree turn,
+clamped to 0–7 degrees. The original guest HandRotate and pivot collider stay
+disabled; geometric sphere picking reads the owned copy without enabling physics.
+Its adjusting bolt must have a fresh host observation for the current attachment.
+Right-click removal remains available when the picks overlap.
+
+PartFitRequest/Receipt operations 2/3 reuse the immutable per-player ledger and
+carry the observed revision, with slot zero. The host refuses changed/loose parts,
+incorrect mount ownership, distant or stale player poses, a tightened adjusting
+bolt, inactive native input, or a busy 0.1-second native cooldown. It executes the
+validated Clockwise/Counterwise graph and accepts only when the saved scalar,
+engine-mount scalar and pivot angle agree. State 185 publishes the absolute result
+before the receipt. A lost reply cannot rotate again, and an in-flight removal or
+installation prevents a new adjustment. Invalid native bindings disable only that
+part's adjustment. This requires protocol 119 on all peers.
+
+The opt-in probe imports actual HandRotate actions from the installed assets and
+runs them on disposable part/mount/pivot objects. In an isolated copy/profile,
+extract its input using the existing asset tool, then add
+`--wintermp-part-adjustment-probe` alongside `--wintermp-guest-save-probe`:
+
+```bash
+python tools/extract_fsm_assets.py /path/to/My\ Winter\ Car \
+  --asset sharedassets3.assets --match VIN133/Pivot --match ALTERNATOR0/Pivot \
+  --out /path/to/isolated-game/part-adjustment-probe.json
+```
+
+The probe checks both native turn directions, zero/upper clamping, the part and
+mount scalar writes, pivot pose, preserved hierarchy and rejection of changed
+step/target/space/deferred-write bindings. It supplements these multiplayer checks:
+
+1. With different host/guest saves, fit both alternator variants, loosen only the
+   adjusting bolt, and scroll both directions. Both players must see the same angle;
+   the host engine mount's SettingRotation must track its saved part.
+2. Tighten the adjusting bolt fully while a guest request is in flight. An old
+   request must not turn it. Loosen it and verify a fresh scroll works. Other bolts,
+   a held item/tool, another closer pick and a camera inside the sphere must not
+   accidentally select this adjustment.
+3. Race host/guest scrolls and two guests, and delay or duplicate receipts. Each
+   accepted request turns at most once; rejected or stale requests leave host state
+   intact. Refit/remove while a scroll is pending and check the revision gate.
+4. Join late, resync, disconnect/rejoin and reload disposable saves. Angles and
+   pivots must converge; native guest HandRotate and saved originals must stay inert.
+
+These controlled checks do not establish full guest engine simulation or verify
+real mouse-wheel/tool interaction in a two-player session.
+
+Validation on build 23268598: **1,036** protocol/catalog/policy tests, **18** launcher
+tests and **46** isolated Unity/Wine checks pass (18 adjustment, 7 restoration,
+21 save-library). Core, both Net targets and the probe build without warnings.
+`build/part-adjustment-smoke/result.json` records the report and tested assembly,
+catalog and imported-action hashes; the tested assemblies match the current build.
+
+### Guest part/mount isolation (shipped in 0.1.33; no protocol change)
+
+Saved originals from the 30 catalogued boxed replacement families are parked in an
+inactive scene group before guest item/FSM registration. Their stable identities
+can then belong to host-created copies, including when both saves use the same ID.
+Native part and mount graphs retain their original variables/references; owned
+copies receive the host's revisioned attachment/scalars. Pending local originals
+cannot consume host item transforms or bolt/part updates while their factory loads.
+An unsettled mount defers until its Part/Mpoint/Installed values agree with the
+actual fitted hierarchy. Unknown nested assemblies or other registered subsystems
+are preserved and disable only that replacement factory.
+
+Fitting previews accept paused known mounts and consult host attachment occupancy,
+including reports whose copies are still pending. Native authority checks on the
+host are unchanged. Passive PartState views retain scratch Installed/checksum
+observations without executing native guest transitions; owned copies use ordered
+tightness receipts and replacement wear. Missing views request host state and
+retirement clears them. Original mount Part/Installed references stay intact for
+restoration; connecting those references to an operational guest engine is still
+separate work.
+
+On disconnect, owned copies detach and are removed before saved originals return.
+Parent-relative pose, scale, active state, body settings/velocity and FSM enable/
+restart flags are restored. Enabling the object before restoring its paused FSMs
+avoids rerunning native initialization. Repeated restoration is inert. If an
+original parent disappeared, its orphan stays inactive until scene teardown rather
+than reappearing at the scene root. The existing save guard remains armed until
+restart, so this is not a supported return to personal singleplayer in the same run.
+
+Validation: **1,014** protocol/catalog/policy tests pass; Core and Net build cleanly.
+Static build-23268598 evidence verifies all **30** replacement prefabs have exactly
+one Data FSM at their root and no nested part/mount Data. Occupancy tests cover
+pending copies, exact parent/slot identity, relocation, stale replay, removal,
+retirement, conflicting in-flight occupants and reconnect clearing.
+
+The opt-in `tools/GuestSaveProbe` also accepts `--wintermp-part-isolation-probe`
+alongside `--wintermp-guest-save-probe`, in the same isolated copy/profile described
+below. It uses disposable Unity objects with active PlayMaker entry counters to
+check parking, accidental activation, restoration without initialization replay,
+physics/relative pose, repeated restoration/rejoin, and a vanished original mount.
+All **7** restoration checks and **21** save-library checks passed in Unity/Wine
+against build 23268598, with active FSM entry counters and zero failures. The
+local report and tested assembly hashes are in `build/part-isolation-smoke/result.json`;
+the tested Core, Net and probe assemblies match the current build outputs.
+This controlled probe does not replace the following native two-player checks:
+
+1. Use deliberately different guest/host saves: same-ID parts in different places,
+   different replacement IDs occupying the same mount, and extra guest-only boxed
+   parts. Only the host copies should be visible and pickable after the snapshot.
+2. Fit, tighten, remove and refit each fixed-mount and multi-slot family. Pause
+   snapshot delivery between attachment messages: no duplicate occupants, stale
+   bolt input, or unintended farther-slot selection may occur.
+3. Confirm initial host state requests settle, ID/checksum reports converge, and
+   repeated resync does not reintroduce saved objects or alter host wear/tightness.
+4. Disconnect/rejoin repeatedly with both loose and fitted copies. Originals must
+   restore without native Init/Load replay, and must be isolated again on rejoin.
+   Unload a parent/scene while copies are pending and check for orphan resurrection.
+5. Exercise native save/quit/permadeath with disposable saves and verify unchanged
+   guest file bytes. Guest engine-reference reconstruction, continuous adjustments,
+   other part families and complete two-player acceptance remain open.
+
+### Guest save protection (shipped in 0.1.33; no protocol change)
+
+`Session/GuestSaveGuard` installs nine Harmony prefixes against the game's ES2
+library during Core initialization. Guest launch modes arm protection before
+loading; Steam invite and UDP join entry points also require the complete guard.
+ES2 writer saves, file/PlayerPrefs stream storage, file/tag/folder deletion and
+rename/move are suppressed. LowMemory write streams use disposable memory buffers,
+so even existing `<save>tmp` files are preserved. Ordinary native PlayerPrefs
+settings and memory-only serialization remain available. Core sidecar writes require
+host authority. No packet layout, message semantics or protocol version changed.
+
+Protection stays active through connection failure, shutdown, scene teardown and
+quit. A protected process cannot start hosting; restart the game to play or host a
+personal world. The overlay explains this. Occupied guest part mounts still defer;
+this persistence barrier does not reconcile or restore their in-memory state.
+
+Validation on game build **23268598**:
+
+- Core and both Net targets build cleanly; **1,011** protocol/catalog/policy tests pass.
+- **21 native save-library checks pass** under Unity 5/Wine in an isolated game copy
+  and Wine profile: host save/overwrite/read/rename/delete, guest raw/tagged writes,
+  low-memory temp preservation, new-file prevention, all seven native permadeath
+  filenames, rename/move/folder deletion, ES2 PlayerPrefs storage, native settings,
+  memory serialization, shutdown protection and refusal to host afterward.
+- ES2.dll SHA-256: `863733f06a0d988f9e71db3a5d7cf5db5de8108b40f106f5673d303018b02d24`.
+  The checked death actions are `Systems/Death::Activate Dead Body`, states
+  `Delete saves` / `Delete saves 2`. Ordinary save buttons broadcast `SAVEGAME`;
+  the persistence guard leaves that native exit flow running.
+- The reusable opt-in probe is `tools/GuestSaveProbe`. Build its project with
+  `-p:DeployToGame=false`. Copy its DLL and current Core/Net/catalog files **only into
+  an isolated game copy with a separate profile**, then start that copy with
+  `--wintermp-guest-save-probe` and no host/join flags. It writes disposable files
+  and `guest-save-probe/result.txt` beside that copy's executable, then quits.
+  Start with an empty probe-output directory when rerunning. Never ship the probe.
+  This run's report is `build/guest-save-smoke/game/guest-save-probe/result.txt`.
+
+Still required in two real game instances with disposable saves:
+
+1. Join through Steam and local UDP; try a native save point and quit. Compare all
+   guest save-file bytes before/after, while the host saves and reloads the session.
+2. Disconnect, let failure recovery return to Idle, and trigger native save/quit or
+   permadeath. Guest files must remain unchanged and hosting must require restart.
+3. Restart into a personal world; verify native saving and hosting work again.
+4. Repeat with replacement parts fitted/removed and after scene/LOD transitions.
+   Existing occupied-mount deferral remains expected until part isolation is built.
+
+The probe exercises the actual save library and Core guard, not native save-button
+transitions, a complete death sequence, Steam connectivity, or multiplayer gameplay.
+The isolated offline menu emitted native Steam-not-initialized errors; these checks
+do not establish Steam acceptance.
+
+### Guest replacement bolt controls (shipped in 0.1.33; no protocol change)
+
+`FsmWorldSync.ReplicaBolts` binds integer-step bolts on owned replacement copies.
+The existing stable part/child IDs, FsmRawEvent intents and absolute BoltState /
+WorldBoltSnapshot replies are unchanged. No wire layout or authority semantics changed.
+
+Static evidence from build 23268598 validates **55 controls across 24 replacement
+families**: each has the native visual/index/size bindings, a valid integer-array
+slot and a layer-12 SphereCollider trigger. The local spanner/ratchet Raycast Check
+FSM reads `Screw.Boltsize` and sends TIGHTEN / UNTIGHTEN to that collider's Screw FSM.
+The `replacementParts.replicaRepairVariable` binding names global RepairMode.
+Game arrays are initialized by PlayMakerArrayListProxy.Awake, before these bindings.
+
+Owned copies retain only five presentation/input states. Native initialization,
+array increments, parent BOLTING, alternator enable/disable and at-limit timing
+branches cannot execute on the guest. Tools send one existing host intent; only
+host absolute results change the replica's array, tightness and local bolt pose.
+A fitted copy remains kinematic, with physical colliders disabled; only the checked
+bolt triggers become raycastable while repair mode is active. Its loose collider
+settings return after removal. Each changed attachment invalidates bolt readiness,
+drops older parked observations and requests fresh targeted bolt state before picking.
+Replacement scalar receipts share the bolt/part receipt ordering, so deferred
+presentation or duplicate replacement packets cannot roll back a later bolt total.
+
+Verification: 1,008 protocol/catalog tests pass, including native index bounds,
+first-seed/refit gates, unsupported directions, timing limits and deferred parent
+receipts. Core and both Net targets compile cleanly. Static evidence and unit tests
+are not a completed runtime acceptance pass. Run on disposable/backed-up host saves:
+
+1. Fit a newly opened replacement absent from the guest save. On the guest, select
+   the correct spanner size or ratchet and turn each supported bolt in both directions.
+   Compare host/guest array entries, bolt positions, parent total and removal allowance.
+   The host alone performs native mount/engine effects; no duplicate increment occurs.
+2. Join after fitting and tightening. Delay the targeted reply: tool selection must
+   remain unavailable until a fresh absolute state arrives, including tightness zero.
+   Wrong tool size and ordinary hand mode must not operate the controls.
+3. Operate simultaneous host/guest turns, remove/refit the part, and move it to another
+   eligible slot. Earlier parked bolt state must not seed a new attachment. After
+   reconnect or a destroyed/recreated guest copy, the controls must resynchronize.
+4. Test both alternator bolt groups, piston/main-bearing bolts and camshaft/crankshaft
+   bolts. A ninth tightening step must not adjust timing. Alternator child EnableFSM
+   effects must remain host-local. Continuous rocker/mixture/drain/alignment adjustments
+   remain separate adapters; these are not covered by the 0–8 integer bolt model.
+5. Move the car and check nested part copies. Only bolt trigger picks may be enabled
+   while fitted; pickup/cargo, solid collisions and guest save writes remain disabled.
+   Hide/lose the parent, retire a copy, then reconnect: no stale collider, input callback
+   or bolt registry entry may survive. Inspect F7 logs from both peers for rejection
+   or binding failures.
+
+Guest mount isolation, full engine/adjustment behavior, non-box part creation
+and native two-player/save validation remain open.
+
+### Guest piston/main-bearing/rocker fitting verification (v118, shipped in 0.1.32)
 
 Automated: **983 protocol/catalog and 18 launcher tests pass**. Both Net targets
 build cleanly; the launcher retains its existing missing FastBoot Release payload
@@ -665,8 +886,9 @@ Required two-player checks, **not yet run**:
    and after the session; broader original native-part save isolation is unfinished.
 
 This slice adds fitted presentation for missing boxed-content parts on available
-mounts. New copies still do not execute installation, bolt or engine logic; their
-bolt groups and child FSMs remain disabled. v116–v117 add fixed-mount installation
+mounts. New copies do not execute native installation or engine logic. The post-0.1.32
+bolt adapter above enables checked tool triggers and host-result poses; other child
+FSMs remain disabled. v116–v117 add fixed-mount installation
 and removal requests; v118 adds multi-slot installation. Operational mount references,
 non-box parts, occupied-save reconciliation and
 native two-player/save verification remain open.
@@ -1103,3 +1325,68 @@ initialization delay, and ArrayList proxies allocate their live lists in Awake.
 The extractor's `meta.asset` identifies the selected file; its legacy
 `levelSha256` field hashes that selected file, including when it is a prefab asset.
 Static evidence establishes bindings and action arguments, not save-loaded state.
+
+### Shopping bag duplicate-inventory regression (protocol 120, shipped in 0.1.33)
+
+A two-player test of v0.1.32 found both players could hold and open separate copies
+of a purchased bag. The host's contents could remain invisible until the guest
+opened their copy. Source inspection found peer-local bag IDs/inventories, a generic
+scanner racing radius capture, and native prefab names that did not match spilled
+names (`chips` versus `potato chips(itemx)`).
+
+The replacement uses persistent host bag identities, isolated guest bag views,
+acknowledged host-only opening, native factory-output capture, native prefab name
+mapping and retryable materialization. Large inventories are split into 32-entry
+manifests. Pickup guards prevent attaching remotely owned bags and release the
+exact held copy after a winning remote claim/removal. Saved guest bags are restored
+on teardown; their native opening/save actions never operate on the host inventory.
+A slow native spill keeps its capture reservation instead of timing out into a
+second inventory. Failed chunk publication retries the same IDs.
+
+Validation commands (always keep `DeployToGame=false` for development builds):
+
+```sh
+dotnet build src/WinterMP.Net/WinterMP.Net.csproj
+dotnet test src/WinterMP.Net.Tests
+dotnet test src/WinterMP.Launcher.Tests
+dotnet build tools/GuestSaveProbe/GuestSaveProbe.csproj -p:DeployToGame=false
+```
+
+The opt-in native probe flags `--wintermp-bag-probe`,
+`--wintermp-bag-spill-probe` and `--wintermp-bag-pickup-probe` accompany
+`--wintermp-guest-save-probe` in an isolated game/profile copy. They exercise real
+PlayMaker SendEventByName/CreateObject/SetParent/SetJointConnectedBody actions on
+disposable fixtures. They cover both spawn guards, exact repeated-product capture,
+unrelated-output exclusion, early prefab-name resolution, pickup ownership and
+cleanup. These are controlled integration checks, not a complete running shop or
+two-client Steam acceptance test. The existing save/isolation/adjustment flags can
+run alongside them.
+
+Required two-player acceptance:
+
+1. Buy groceries including chips, macaroni boxes and mosquito spray; immediately
+   pick up the bag before the next world scan. Both players must see one shared bag.
+2. Try to pick it up simultaneously. Only the winning player retains it. Repeat
+   with host and guest winning, and drop/reacquire between attempts.
+3. Have the host open first, then repeat with the guest opening first. Every item
+   appears without the other player opening another bag. Repeat one-item removal.
+4. Try to open the same remaining revision simultaneously. Inventory decreases once;
+   duplicate requests/retries must not mint extra contents.
+5. Open a bag containing more than 32 items, two separate nearby bags, and a bag
+   while another purchase finishes. Counts and bag identity must remain exact.
+6. Join late/rejoin after spilling, remove an item during deferred creation, and
+   disconnect while holding a bag. No resurrection, duplicate replicas or stuck hand.
+
+Mixed bags containing native part products without a replica adapter (including
+fanbelts and oil filters) are rejected before inventory mutation. Catalogued Fleetari
+package outputs keep the separate package identity/replica path. Food condition and
+all special product behaviors still require broader acceptance; this change is not
+a claim that every store product is fully synchronized.
+
+On 2026-09-06, protocol/policy tests passed **1,067/1,067** and launcher tests
+passed **18/18**. The isolated native suite passed **66/66** (21 save, 7 part
+isolation, 18 alternator adjustment, 5 bag guards, 9 exact spill, 6 pickup).
+The native report and tested assembly/catalog hashes are retained locally in
+`build/bag-smoke/result.json` and `build/bag-smoke/game/guest-save-probe/result.txt`.
+Core and probe compile against the installed game assemblies with zero warnings
+or errors. The two-player acceptance matrix above remains pending.

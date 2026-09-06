@@ -20,6 +20,36 @@ namespace WinterMP.Net.Sync
             return entry.Value;
         }
         public void Clear() => _values.Clear();
+        public float Latest(uint partId, float fallback) => _values.TryGetValue(partId, out var entry) ? entry.Value : fallback;
+    }
+
+    /// <summary>A replacement needs a fresh absolute bolt observation after each attachment.</summary>
+    public sealed class ReplicaBoltGate
+    {
+        private ulong _afterOrder;
+        public bool Attached { get; private set; }
+        public bool Seeded { get; private set; }
+        public void SetAttachment(bool attached, ulong afterOrder)
+        {
+            Attached = attached; Seeded = false; _afterOrder = afterOrder;
+        }
+        public bool CanReceive(ulong order) => Attached && order > _afterOrder;
+        public void Received(ulong order) { if (CanReceive(order)) Seeded = true; }
+        public bool CanTurn(int tightness, int direction) => Attached && Seeded
+            && tightness >= 0 && tightness <= BoltStatePolicy.MaximumTightness
+            && ((direction == -1 && tightness > 0) || (direction == 1 && tightness < BoltStatePolicy.MaximumTightness));
+
+        public static bool TryIndex(string name, int start, int length, int count, out int index)
+        {
+            index = 0;
+            if (name == null || start < 0 || length <= 0 || length > 9 || start > name.Length - length || count <= 0) return false;
+            for (int i = start; i < start + length; i++)
+            {
+                if (name[i] < '0' || name[i] > '9') return false;
+                index = index * 10 + name[i] - '0';
+            }
+            return index < count;
+        }
     }
 
     public static class BoltStatePolicy

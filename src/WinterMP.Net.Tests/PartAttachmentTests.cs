@@ -20,6 +20,55 @@ namespace WinterMP.Net.Tests
             LocalPosition = new NetVector3(.25f, -.5f, .75f), LocalScale = new NetVector3(1, 2, 3) };
 
         [Fact]
+        public void GuestMountOccupancyUsesAcceptedHostAttachmentsIncludingPendingCopies()
+        {
+            var replica = Replica(); var fitted = State();
+            Assert.False(replica.Occupies(fitted.ParentKind, fitted.ParentId, fitted.ParentPath));
+            Assert.True(replica.Receive(fitted, out _));
+            Assert.True(replica.Occupies(fitted.ParentKind, fitted.ParentId, fitted.ParentPath));
+            Assert.False(replica.Occupies(PartParentKind.NativePart, fitted.ParentId, fitted.ParentPath));
+            Assert.False(replica.Occupies(fitted.ParentKind, fitted.ParentId + 1, fitted.ParentPath));
+            Assert.False(replica.Occupies(fitted.ParentKind, fitted.ParentId, fitted.ParentPath + "/Child"));
+            Assert.False(replica.Occupies(PartParentKind.None, fitted.ParentId, fitted.ParentPath));
+            Assert.False(replica.Occupies(fitted.ParentKind, fitted.ParentId, "../" + fitted.ParentPath));
+        }
+
+        [Fact]
+        public void MovingRemovingAndRetiringHostPartsReleaseOnlyTheirOwnMount()
+        {
+            var life = new ItemSpawnLifecycle(); var replica = Replica(life);
+            var first = State(); var second = State(2); second.ParentPath = "Assemblies/Slot[2]";
+            Assert.True(replica.Receive(first, out uint firstId)); Assert.True(replica.Receive(second, out _));
+            var moved = ReplacementPartReplica.Copy(first); moved.Revision++; moved.ParentPath = "Assemblies/Slot[3]";
+            Assert.True(replica.Receive(moved, out _));
+            Assert.False(replica.Occupies(first.ParentKind, first.ParentId, first.ParentPath));
+            Assert.True(replica.Occupies(moved.ParentKind, moved.ParentId, moved.ParentPath));
+            Assert.False(replica.Receive(first, out _));
+            Assert.False(replica.Occupies(first.ParentKind, first.ParentId, first.ParentPath));
+            life.Retire(firstId);
+            Assert.False(replica.Occupies(moved.ParentKind, moved.ParentId, moved.ParentPath));
+            Assert.True(replica.Occupies(second.ParentKind, second.ParentId, second.ParentPath));
+            var loose = new ReplacementPartState { NativeId = second.NativeId, FactoryId = second.FactoryId,
+                Revision = 2, Scalars = second.Scalars, Rotation = NetQuaternion.Identity };
+            Assert.True(replica.Receive(loose, out _));
+            Assert.False(replica.Occupies(second.ParentKind, second.ParentId, second.ParentPath));
+            replica.Clear();
+            Assert.False(replica.Occupies(second.ParentKind, second.ParentId, second.ParentPath));
+        }
+
+        [Fact]
+        public void ConflictingInFlightOccupantsKeepTheMountBlockedUntilBothLeave()
+        {
+            var life = new ItemSpawnLifecycle(); var replica = Replica(life);
+            var first = State(); var second = State(2);
+            Assert.True(replica.Receive(first, out uint a)); Assert.True(replica.Receive(second, out uint b));
+            life.Retire(a);
+            Assert.True(replica.Occupies(first.ParentKind, first.ParentId, first.ParentPath));
+            life.Retire(b);
+            Assert.False(replica.Occupies(first.ParentKind, first.ParentId, first.ParentPath));
+        }
+
+        [Fact]
         public void AttachmentIsAppendedAfterTheCompleteV114PrefixAndSurvivesWireRoundTrip()
         {
             var state = State(); state.ParentPath = "Assemblies/Kiinnitys ä";

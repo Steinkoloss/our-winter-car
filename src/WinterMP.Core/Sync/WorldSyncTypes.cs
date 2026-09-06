@@ -349,19 +349,6 @@ namespace WinterMP.Core.Sync
         public Rigidbody Body;
     }
 
-    /// <summary>A grocery-bag-style Use FSM whose "Spawn one/all" states instantiate
-    /// product clones. The peer whose player opens the bag captures the spilled
-    /// clones; the host mints net ids and broadcasts an ItemSpawn manifest; other
-    /// peers materialize from it (see ItemWorldSync.Spawn — manifest epochs are
-    /// minted there, one counter for host spills and guest offers alike).
-    /// Deliberately stays out of the world checksum — a bag spilled on only one
-    /// peer must not read as a desync.</summary>
-    internal sealed class SyncedSpawnContainer
-{
-    public PlayMakerFSM Fsm = null!;
-    public string Path = string.Empty;
-    public string[] SyncedStates = null!;
-}
 
     internal sealed class SyncedDoor
 {
@@ -375,6 +362,9 @@ namespace WinterMP.Core.Sync
 
     internal sealed class SyncedPart
 {
+    public bool Replica, ReplicaCopy;
+    public uint ReplicaRootId;
+    public WinterMP.Net.Messages.PartState? ReplicaState;
     public PlayMakerFSM Fsm = null!;
     public string Path = string.Empty;
     public string[] SyncedStates = null!;
@@ -434,6 +424,10 @@ namespace WinterMP.Core.Sync
     public System.Reflection.PropertyInfo ArrayProperty = null!;
     public float PositionDivisor = 1f;
     public bool UpdatesPart, AdjustsTimingAtLimit, Failed;
+    public WinterMP.Net.Sync.ReplicaBoltGate? ReplicaGate;
+    public SphereCollider? ReplicaCollider;
+    public Transform? ReplicaVisual;
+    public float NextReplicaRequestAt;
 }
 
     internal struct PendingBoltState

@@ -58,6 +58,7 @@ namespace WinterMP.Core.Sync
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: item {message.ItemId:X8} despawn (remote).");
             item.DespawnSent = true;
+            if (_bags.ContainsKey(message.ItemId) && item.Body != null) ReleaseHeldBag(item.Body);
 
             _bridge.ApplyingRemote = true;
             try
@@ -88,7 +89,7 @@ namespace WinterMP.Core.Sync
 
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return false;
-            if (!CanGuestRetireReplacement(message.ItemId)) return false;
+            if (_bags.ContainsKey(message.ItemId) || !CanGuestRetireReplacement(message.ItemId)) return false;
             float now = Time.unscaledTime;
             foreach (var player in session.Players)
             {

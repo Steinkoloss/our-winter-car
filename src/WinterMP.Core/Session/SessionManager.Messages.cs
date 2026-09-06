@@ -312,16 +312,6 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteItemSpawn(itemSpawn);
                     break;
 
-                case SpawnIntent spawnIntent when IsHost:
-                    if (!IsPeerPlayer(peer, spawnIntent.PlayerId))
-                    {
-                        WinterMPPlugin.Log.LogWarning(
-                            $"Dropped SpawnIntent claiming player {spawnIntent.PlayerId} from {peer}.");
-                        break;
-                    }
-                    Sync.WorldSyncManager.Instance?.OnHostGuestSpawnIntent(spawnIntent, spawnIntent.PlayerId);
-                    break;
-
                 case ItemTransform itemTransform when IsHost:
                     if (!IsPeerPlayer(peer, itemTransform.OwnerPlayerId))
                     {
@@ -528,6 +518,16 @@ namespace WinterMP.Core.Session
                     break;
                 case LottoTicketReceipt ticketReceipt when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnLottoTicketReceipt(ticketReceipt);
+                    break;
+                case BagState bagState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnBagState(bagState);
+                    break;
+                case BagOpenRequest bagRequest when IsHost:
+                    if (TryGetPlayerId(peer, out byte bagActor) && bagActor == bagRequest.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostBagOpen(bagRequest, bagActor);
+                    break;
+                case BagOpenReceipt bagReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnBagOpenReceipt(bagReceipt);
                     break;
                 case PackageState packageState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnPackageState(packageState);
