@@ -28,3 +28,6 @@ backups/
 # AI agent scratch (review findings/verdicts, etc.) — never commit
 .car-sync-*.json
 .claude/
+
+# Per-run verification evidence
+.artifacts/
