@@ -1,0 +1,31 @@
+name: Deliver a behavior or fix
+description: A bounded task with observable acceptance criteria, not a parallel roadmap.
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and existing task
+      description: Link the queue/roadmap item when one exists. What should work differently?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Reproduction and acceptance
+      description: Current vs expected behavior, a checkable scenario, and an edge case.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: Owning subsystem; what must not be changed in this task.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification and prerequisites
+      description: Automated commands and required runtime, visual, input or multiplayer checks.
+    validations:
+      required: true
