@@ -44,6 +44,11 @@ namespace WinterMP.Core.Sync
             DetachReplacementChildren(itemId);
             _spawnLifecycle.Retire(itemId);
             _pendingItemPoses.Remove(itemId);
+            _pendingAtf.Remove(itemId);
+            _receivedAtf.Remove(itemId);
+            _pendingMotorOil.Remove(itemId);
+            _receivedMotorOil.Remove(itemId);
+            _atfReplicaErrors.Remove(itemId);
             RetireHiddenReplacement(itemId);
         }
 
@@ -58,12 +63,12 @@ namespace WinterMP.Core.Sync
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: item {message.ItemId:X8} despawn (remote).");
             item.DespawnSent = true;
-            if (_bags.ContainsKey(message.ItemId) && item.Body != null) ReleaseHeldBag(item.Body);
+            if ((_bags.ContainsKey(message.ItemId) || _supplies.ContainsKey(message.ItemId) || _bulbs.ContainsKey(message.ItemId) || _adSheets.ContainsKey(message.ItemId) || _motorOil.ContainsKey(message.ItemId) || message.ItemId == _adPileId) && item.Body != null) ReleaseHeldBag(item.Body);
 
             _bridge.ApplyingRemote = true;
             try
             {
-                if (item.Body != null && !TryRetirePackage(item.Body) && !TryRetireReplacement(item.Body))
+                if (item.Body != null && !TryRetirePackage(item.Body) && !TryRetireSausagePackage(item.Body) && !TryRetireCoffeePacket(item.Body) && !TryRetireSupply(item.Body) && !TryRetireReplacement(item.Body))
                     UnityEngine.Object.Destroy(item.Body.gameObject);
             }
             finally
@@ -89,7 +94,7 @@ namespace WinterMP.Core.Sync
 
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return false;
-            if (_bags.ContainsKey(message.ItemId) || !CanGuestRetireReplacement(message.ItemId)) return false;
+            if (item == _taxiReceipt || IsTaxiLuggage(item) || IsHouseholdFuseItem(item) || _bags.ContainsKey(message.ItemId) || _atf.ContainsKey(message.ItemId) || _bulbs.ContainsKey(message.ItemId) || _adSheets.ContainsKey(message.ItemId) || _motorOil.ContainsKey(message.ItemId) || message.ItemId == _adPileId || !CanGuestRetireReplacement(message.ItemId)) return false;
             float now = Time.unscaledTime;
             foreach (var player in session.Players)
             {
@@ -107,6 +112,7 @@ namespace WinterMP.Core.Sync
 
         private void RemoveTrackedItem(uint itemId, Rigidbody? body)
         {
+            ForgetMilk(itemId);
             _items.Remove(itemId);
             if (!object.ReferenceEquals(body, null))
                 _trackedBodies.Remove(body);

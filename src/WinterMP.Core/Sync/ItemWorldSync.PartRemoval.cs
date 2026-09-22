@@ -60,7 +60,7 @@ namespace WinterMP.Core.Sync
                     RequireFit(PackageField<FsmOwnerDefault>(pick, "GameObject")?.OwnerOption == OwnerDefaultOption.UseOwner
                         && PackageField<FsmFloat>(pick, "rayDistance")?.Value == 1
                         && PackageField<FsmFloat>(pick, "rayDistance")?.UseVariable == false
-                        && mask != null && mask.Length == 1 && !mask[0].UseVariable && mask[0].Value == 19
+                        && mask != null && mask.Length == 1 && !mask[0].UseVariable && mask[0].Value == part.Factory.Rule.RemovalLayer
                         && PackageField<FsmBool>(pick, "invertMask")?.Value == false);
                 }
                 RequireFit(Convert.ToInt32(over[2].GetType().GetField("button")!.GetValue(over[2])) == 1
@@ -108,7 +108,7 @@ namespace WinterMP.Core.Sync
             if (!part.RemovalValidated || part.RemovalFailed || part.Replica || part.Factory.Failed
                 || mount == null || !FitFsmReady(mount) || !FitFsmReady(part.Data) || part.Body != null
                 || part.RemovalCollider == null || !part.RemovalCollider.enabled || !part.RemovalCollider.isTrigger
-                || part.Data.gameObject.layer != 19 || part.Data.gameObject.tag != "Untagged"
+                || part.Data.gameObject.layer != part.Factory.Rule.RemovalLayer || part.Data.gameObject.tag != "Untagged"
                 || NativePartIdentity.Phase(part.Data) != NativePartPhase.Fitted
                 || part.Data.FsmVariables.FindFsmGameObject(c["fitOwnerVariable"])?.Value != part.Data.gameObject
                 || mount.FsmVariables.FindFsmGameObject(c["mountPartVariable"])?.Value != part.Data.gameObject
@@ -250,7 +250,9 @@ namespace WinterMP.Core.Sync
             if (camera == null || !PartInteractionHandFree()) return false;
             var ray = camera.ScreenPointToRay(Input.mousePosition);
             float nearest = 1f;
-            if (Physics.Raycast(ray, out var hit, nearest, 1 << 19)) nearest = hit.distance;
+            int layers = 1 << 19;
+            foreach (var factory in SyncCatalog.ReplacementParts!.Factories) layers |= 1 << factory.RemovalLayer;
+            if (Physics.Raycast(ray, out var hit, nearest, layers)) nearest = hit.distance;
             ReplacementBinding? selected = null;
             ReplacementPartState? selectedState = null;
             uint selectedId = 0;

@@ -140,8 +140,7 @@ namespace WinterMP.Core.Sync
 
         private void Scan()
         {
-            if (Time.unscaledTime < _nextScanAt) return;
-            _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
+            if (!ScenePath.TryBeginDiscovery(ref _nextScanAt, ScanIntervalSeconds)) return;
             try
             {
                 var config = SyncCatalog.RallyProgress;
@@ -156,16 +155,18 @@ namespace WinterMP.Core.Sync
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null) continue;
+                    string fsmName = fsm.FsmName;
+                    if (fsmName != config.TimingFsm && fsmName != config.MarkerFsm) continue;
                     string path = ScenePath.Of(fsm.transform);
                     foreach (var stage in _stages.Values)
                     {
-                        if (path == stage.Config.TimingPath && fsm.FsmName == config.TimingFsm)
+                        if (path == stage.Config.TimingPath && fsmName == config.TimingFsm)
                         {
                             stage.Timing = fsm;
                             stage.Started = fsm.FsmVariables.FindFsmBool(config.StartedVariable);
                         }
-                        else if (path == stage.Config.StartPath && fsm.FsmName == config.MarkerFsm) stage.StartLine = fsm.transform;
-                        else if (fsm.FsmName == config.MarkerFsm)
+                        else if (path == stage.Config.StartPath && fsmName == config.MarkerFsm) stage.StartLine = fsm.transform;
+                        else if (fsmName == config.MarkerFsm)
                             for (int i = 0; i < stage.Config.Checkpoints.Length; i++)
                                 if (path == stage.Config.TimingPath + "/" + stage.Config.Checkpoints[i])
                                 {

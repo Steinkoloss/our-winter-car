@@ -77,22 +77,6 @@ namespace WinterMP.Core.Sync
                     item.LastRemoteSequence = 0;
                     item.LastRemoteReleaseAt = -999f;
                 }
-                if (item.LastDamageSequenceOwner == playerId)
-                {
-                    item.LastDamageSequenceOwner = WorldSyncIds.NoOwner;
-                    item.LastDamageSequence = 0;
-                    item.HasDamageSequence = false;
-                }
-                if (item.LastConditionSequenceOwner == playerId)
-                {
-                    item.LastConditionSequenceOwner = WorldSyncIds.NoOwner;
-                    item.LastConditionSequence = 0;
-                }
-                if (item.LastClimateSequenceOwner == playerId)
-                {
-                    item.LastClimateSequenceOwner = WorldSyncIds.NoOwner;
-                    item.LastClimateSequence = 0;
-                }
                 if (item.LastRemoteBrewOwner == playerId)
                 {
                     item.LastRemoteBrewOwner = WorldSyncIds.NoOwner;
@@ -126,11 +110,27 @@ namespace WinterMP.Core.Sync
 
         internal void Clear()
         {
+            ClearMilk();
+            ClearBattery();
+            ClearHeater();
+            ClearEngineBlock();
+            ClearGearbox();
+            ClearWiring();
             ClearReplacementParts();
             ClearPackages();
+            ClearHouseholdFuses();
+            ClearSupplies();
+            ClearBulbs();
+            ClearMotorOil();
+            ClearAdverts();
             ClearBags();
             ClearTrophyFactories();
-            _vehicles?.ClearDamageHooks();
+            ClearMeat();
+            ClearCoffee();
+            ClearSausages();
+            ClearAtf();
+            _vehicles?.ClearDamageState();
+            _vehicles?.ClearVehicleStateStreams();
             _items.Clear();
             _trackedBodies.Clear();
             _ticketItemIds.Clear();
@@ -145,12 +145,20 @@ namespace WinterMP.Core.Sync
 
         internal void ReleaseSession()
         {
-            _vehicles?.ClearDamageHooks();
+            ClearMilk();
+            ClearBattery();
+            ClearHeater();
+            ClearEngineBlock();
+            ClearGearbox();
+            ClearWiring();
+            _vehicles?.ClearDamageState();
+            _vehicles?.ClearVehicleStateStreams();
             float now = Time.unscaledTime;
             foreach (var item in _items.Values)
             {
                 ReleaseRemoteCargo(item, item.Body, now, seedVelocity: false);
-                if (item.Body != null && item.RemoteOwner != WorldSyncIds.NoOwner)
+                if (item.Body != null && item.RemoteOwner != WorldSyncIds.NoOwner
+                    && MoveRemoteBody(item, item.Body.transform.position, item.Body.transform.rotation, resumePhysics: true))
                     item.Body.isKinematic = item.OriginalKinematic;
                 item.RemoteOwner = WorldSyncIds.NoOwner;
                 item.RemoteIsDriver = false;
@@ -178,8 +186,17 @@ namespace WinterMP.Core.Sync
 
             ClearReplacementParts();
             ClearPackages();
+            ClearHouseholdFuses();
+            ClearSupplies();
+            ClearBulbs();
+            ClearMotorOil();
+            ClearAdverts();
             ClearBags();
             ClearTrophyFactories();
+            ClearMeat();
+            ClearCoffee();
+            ClearSausages();
+            ClearAtf();
             _pendingItemPoses.Clear();
             _spawnLifecycle.Clear();
 

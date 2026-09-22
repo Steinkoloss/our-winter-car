@@ -14,11 +14,20 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class ItemWorldSync
     {
+        private sealed class OpeningFactory
+        {
+            public PlayMakerFSM Fsm = null!;
+            public string Prefix = string.Empty;
+            public ReplacementFactory? Replacement;
+            public SupplyFactory? Supply;
+            public BulbFactory? Bulb;
+            public bool Failed => Replacement != null ? Replacement.Failed : Supply != null ? Supply.Failed : Bulb == null || Bulb.Failed;
+        }
         private sealed class PackageOpening
         {
             public uint ItemId;
             public PackageBinding Box = null!;
-            public ReplacementFactory Contents = null!;
+            public OpeningFactory Contents = null!;
             public PackageOpenRequest? Request;
             public string ExpectedNativeId = string.Empty;
             public ushort BeforeQuantity;
@@ -32,26 +41,42 @@ namespace WinterMP.Core.Sync
         private PackageOpenClient? _packageOpenClient;
         private PackageOpening? _packageOpening;
 
-        private static FsmState ValidatePackageOpening(PlayMakerFSM use, PartsPackagesData c)
+        private static FsmState ValidatePackageOpening(PlayMakerFSM use, PartsPackagesData c, PackageFactoryData rule)
         {
-            var state = PackageStateActions(use, c["openState"], "MasterAudioPlaySound", "SetBoolValue", "IntAdd",
-                "SetGameObject", "SetFsmFloat", "SendEventByName");
-            var add = state.Actions[2]; var spawn = state.Actions[3]; var wear = state.Actions[4]; var send = state.Actions[5];
-            var amount = PackageField<FsmInt>(add, "add");
+            bool direct = rule.ContentsSpawnPointVariable != null;
+            bool bulb = rule.BulbContents != null;
+            var state = bulb ? PackageStateActions(use, rule.OpenState, "MasterAudioPlaySound", "SetBoolValue", "SetFsmGameObject", "SendEventByName") : direct ? PackageStateActions(use, rule.OpenState, "MasterAudioPlaySound", "SetBoolValue", "IntAdd", "SetFsmGameObject", "SendEventByName")
+                : PackageStateActions(use, rule.OpenState, "MasterAudioPlaySound", "SetBoolValue", "IntAdd", "SetGameObject", "SetFsmFloat", "SendEventByName");
+            var add = bulb ? null : state.Actions[2]; var spawn = state.Actions[bulb ? 2 : 3]; var send = state.Actions[bulb ? 3 : direct ? 4 : 5];
+            if (direct)
+            {
+                if (!FitTargetVariable(PackageField<FsmOwnerDefault>(spawn, "gameObject"), c["contentsVariable"])
+                    || PackageField<FsmString>(spawn, "fsmName")?.Value != rule.ContentsFsm
+                    || PackageField<FsmString>(spawn, "variableName")?.Value != rule.ContentsSpawnPointVariable
+                    || PackageField<FsmGameObject>(spawn, "setValue")?.Name != c["ownerVariable"]
+                    || PackageField<FsmGameObject>(spawn, "setValue")?.UseVariable != true)
+                    throw new InvalidOperationException("Box direct contents spawn point changed.");
+            }
+            else
+            {
+                var wear = state.Actions[4];
+                if (PackageField<FsmGameObject>(spawn, "variable")?.Name != c["spawnPointVariable"]
+                    || PackageField<FsmGameObject>(spawn, "gameObject")?.Name != c["ownerVariable"]
+                    || PackageField<FsmOwnerDefault>(wear, "gameObject")?.GameObject.Name != c["contentsVariable"]
+                    || PackageField<FsmString>(wear, "fsmName")?.Value != rule.ContentsFsm
+                    || PackageField<FsmString>(wear, "variableName")?.Value != c["minimumWearVariable"])
+                    throw new InvalidOperationException("Box minimum wear or spawn point changed.");
+            }
+            var amount = add == null ? null : PackageField<FsmInt>(add, "add");
             var target = PackageField<FsmEventTarget>(send, "eventTarget");
-            if (PackageField<FsmInt>(add, "intVariable")?.Name != c["quantityVariable"]
-                || amount == null || amount.UseVariable || amount.Value != -1
-                || PackageField<FsmGameObject>(spawn, "variable")?.Name != c["spawnPointVariable"]
-                || PackageField<FsmGameObject>(spawn, "gameObject")?.Name != c["ownerVariable"]
-                || PackageField<FsmOwnerDefault>(wear, "gameObject")?.GameObject.Name != c["contentsVariable"]
-                || PackageField<FsmString>(wear, "fsmName")?.Value != c["contentsFsm"]
-                || PackageField<FsmString>(wear, "variableName")?.Value != c["minimumWearVariable"]
+            if ((!bulb && (add == null || PackageField<FsmInt>(add, "intVariable")?.Name != c["quantityVariable"]
+                || amount == null || amount.UseVariable || amount.Value != -1))
                 || target == null || target.target != FsmEventTarget.EventTarget.GameObjectFSM
-                || target.gameObject.GameObject.Name != c["contentsVariable"] || target.fsmName.Value != c["contentsFsm"]
+                || !FitTargetVariable(target.gameObject, c["contentsVariable"]) || target.fsmName.Value != rule.ContentsFsm
                 || PackageField<FsmString>(send, "sendEvent")?.Value != c["contentsEvent"]
                 || PackageField<FsmFloat>(send, "delay")?.Value != 0
                 || state.Transitions.Length != 1 || state.Transitions[0].EventName != "FINISHED"
-                || state.Transitions[0].ToState != c["checkQuantityState"])
+                || state.Transitions[0].ToState != c[bulb ? "emptyState" : "checkQuantityState"])
                 throw new InvalidOperationException("Box opening quantity/spawn bindings changed.");
             foreach (var action in state.Actions)
             {
@@ -67,8 +92,8 @@ namespace WinterMP.Core.Sync
             try
             {
                 var c = SyncCatalog.PartsPackages!;
-                var state = ValidatePackageOpening(box.Use, c);
-                if (!FsmHook.EnsureRemoteEntry(box.Use, c["openState"])
+                var state = ValidatePackageOpening(box.Use, c, box.Factory.Rule);
+                if (!FsmHook.EnsureRemoteEntry(box.Use, box.Factory.Rule.OpenState)
                     || !FsmHook.EnsureRemoteEntry(box.Use, c["itemIdleState"])
                     || !FsmHook.EnsureRemoteEntry(box.Use, c["emptyState"])) throw new InvalidOperationException("Cannot guard box opening.");
                 box.OpenState = state;
@@ -87,48 +112,78 @@ namespace WinterMP.Core.Sync
             catch (Exception e) { FailPackageOpening(box, e.Message); }
         }
 
-        private bool TryGetOpeningFactory(PackageBinding box, out ReplacementFactory factory)
+        private bool TryGetOpeningFactory(PackageBinding box, out OpeningFactory factory)
         {
             factory = null!;
             var c = SyncCatalog.PartsPackages; var rc = SyncCatalog.ReplacementParts;
-            if (c == null || rc == null || box.OpenFailed || box.Factory.Failed || box.Body == null || box.Use == null
+            if (c == null || box.OpenFailed || box.Factory.Failed || box.Body == null || box.Use == null
                 || !box.Use.Fsm.Started || !box.Use.enabled || !box.Use.gameObject.activeInHierarchy
                 || box.Use.FsmVariables.FindFsmGameObject(c["ownerVariable"])?.Value != box.Body.gameObject
                 || box.Use.FsmVariables.FindFsmGameObject(c["contentsVariable"])?.Value != box.Factory.Contents) return false;
-            uint id = FactoryItemIdentity.FactoryId(box.Factory.Rule.ContentsPath, c["contentsFsm"]);
-            if (!_replacementFactories.TryGetValue(id, out var found) || found.Failed || found.Fsm == null
-                || found.Fsm.gameObject != box.Factory.Contents || !found.Fsm.Fsm.Started
-                || !found.Fsm.enabled || !found.Fsm.gameObject.activeInHierarchy) return false;
-            var counter = found.Fsm.FsmVariables.FindFsmInt(c["contentsCounterVariable"]);
-            var count = found.Fsm.FsmVariables.FindFsmInt(c["contentsCountVariable"]);
+            uint id = FactoryItemIdentity.FactoryId(box.Factory.Rule.ContentsPath, box.Factory.Rule.ContentsFsm);
+            string? spawnPoint;
+            if (box.Factory.Rule.BulbContents != null)
+            {
+                var bulb = _bulbFactory;
+                if (bulb == null || bulb.Rule != box.Factory.Rule || bulb.Failed || bulb.Fsm == null || bulb.Fsm.gameObject != box.Factory.Contents || !bulb.Fsm.enabled
+                    || !bulb.Fsm.Fsm.Started || !bulb.Fsm.gameObject.activeInHierarchy || bulb.Fsm.ActiveStateName != bulb.Rule.BulbContents!["idle"]
+                    || bulb.Fsm.FsmVariables.FindFsmGameObject(box.Factory.Rule.ContentsSpawnPointVariable!) == null) return false;
+                factory = new OpeningFactory { Fsm = bulb.Fsm, Bulb = bulb };
+                return true;
+            }
+            if (box.Factory.Rule.SupplyContents != null)
+            {
+                if (!_supplyFactories.TryGetValue(id, out var supply) || supply.Failed) return false;
+                factory = new OpeningFactory { Fsm = supply.Fsm, Prefix = supply.Rule.SupplyContents!.Prefix, Supply = supply };
+                spawnPoint = supply.Rule.ContentsSpawnPointVariable;
+            }
+            else
+            {
+                if (rc == null || !_replacementFactories.TryGetValue(id, out var part) || part.Failed) return false;
+                factory = new OpeningFactory { Fsm = part.Fsm, Prefix = part.Rule.Prefix, Replacement = part };
+                spawnPoint = part.Rule.SpawnPointVariable;
+            }
+            var fsm = factory.Fsm;
+            if (fsm == null || fsm.gameObject != box.Factory.Contents || !fsm.Fsm.Started
+                || !fsm.enabled || !fsm.gameObject.activeInHierarchy) return false;
+            var counter = fsm.FsmVariables.FindFsmInt(c["contentsCounterVariable"]);
+            var count = fsm.FsmVariables.FindFsmInt(c["contentsCountVariable"]);
             if (counter == null || counter.Value < 0 || counter.Value == int.MaxValue || (count != null && count.Value != 1)) return false;
             if (count == null)
             {
-                var create = FsmHook.FindState(found.Fsm, rc["createState"]);
-                if (create == null || create.Transitions.Length != 1 || create.Transitions[0].ToState != rc["factoryIdleState"]) return false;
+                var create = FsmHook.FindState(fsm, c["createState"]);
+                if (create == null || create.Transitions.Length != 1 || create.Transitions[0].ToState != c["factoryIdleState"]) return false;
             }
-            factory = found; return true;
+            if (box.Factory.Rule.ContentsSpawnPointVariable != null
+                && (spawnPoint != box.Factory.Rule.ContentsSpawnPointVariable
+                    || fsm.FsmVariables.FindFsmGameObject(spawnPoint) == null)) return false;
+            return true;
         }
 
         private bool OpeningFactoriesIdle()
         {
             var c = SyncCatalog.ReplacementParts;
             if (c == null) return false;
+            if (_bulbFactory != null && !_bulbFactory.Failed && _bulbFactory.Fsm.Fsm.Started && _bulbFactory.Fsm.enabled
+                && _bulbFactory.Fsm.ActiveStateName != _bulbFactory.Rule.BulbContents!["idle"]) return false;
             // Known contents factories share PartSpawnPoint; a multi-frame native
             // operation must finish before another box replaces that global.
             foreach (var factory in _replacementFactories.Values)
                 if (factory.Fsm != null && factory.Fsm.Fsm.Started && factory.Fsm.enabled
                     && factory.Fsm.ActiveStateName != c["factoryIdleState"]) return false;
+            foreach (var factory in _supplyFactories.Values)
+                if (factory.Fsm != null && factory.Fsm.Fsm.Started && factory.Fsm.enabled
+                    && factory.Fsm.ActiveStateName != SyncCatalog.PartsPackages!["factoryIdleState"]) return false;
             return true;
         }
 
-        private PackageOpening NewPackageOpening(uint id, PackageBinding box, ReplacementFactory factory,
+        private PackageOpening NewPackageOpening(uint id, PackageBinding box, OpeningFactory factory,
             ushort quantity, PackageOpenRequest? request)
         {
-            int counter = factory.Fsm.FsmVariables.FindFsmInt(SyncCatalog.PartsPackages!["contentsCounterVariable"]).Value;
+            int counter = factory.Bulb != null ? 0 : factory.Fsm.FsmVariables.FindFsmInt(SyncCatalog.PartsPackages!["contentsCounterVariable"]).Value;
             return new PackageOpening { ItemId = id, Box = box, Contents = factory, BeforeQuantity = quantity,
                 Request = request == null ? null : PackageOpenLedger.Copy(request), Deadline = Time.unscaledTime + 10f,
-                ExpectedNativeId = factory.Rule.Prefix + (counter + 1).ToString(CultureInfo.InvariantCulture) };
+                ExpectedNativeId = factory.Bulb != null ? "bulb:" + id.ToString(CultureInfo.InvariantCulture) : factory.Prefix + (counter + 1).ToString(CultureInfo.InvariantCulture) };
         }
 
         private void OnPackageOpeningEntered(uint id, PackageBinding box)
@@ -183,7 +238,7 @@ namespace WinterMP.Core.Sync
                 if (status == PackageOpenStatus.Pending && box != null && state != null && TryGetOpeningFactory(box, out var factory))
                 {
                     _packageOpening = NewPackageOpening(request.ItemId, box, factory, state.Quantity, request);
-                    FsmHook.FireRemoteEntry(box.Use, c!["openState"]);
+                    FsmHook.FireRemoteEntry(box.Use, box.Factory.Rule.OpenState);
                 }
                 SendPackageOpenReceipt(session, receipt);
             }
@@ -208,7 +263,7 @@ namespace WinterMP.Core.Sync
         private void ObservePackageOpeningOutput(ReplacementFactory factory, Rigidbody body, string nativeId)
         {
             var opening = _packageOpening;
-            if (opening == null || opening.Contents != factory || !opening.Entered || opening.Dispatched) return;
+            if (opening == null || opening.Contents.Replacement != factory || !opening.Entered || opening.Dispatched) return;
             opening.OutputCount++;
             if (nativeId != opening.ExpectedNativeId || !PartIdentity.TryItemId(nativeId, out uint id)) opening.InvalidOutput = true;
             else { opening.OutputObject = body.gameObject; opening.OutputId = id; }
@@ -228,11 +283,31 @@ namespace WinterMP.Core.Sync
             {
                 if ((!opening.Dispatched && opening.Box.Use == null) || opening.Contents.Failed || opening.InvalidOutput
                     || opening.OutputCount > 1) throw new InvalidOperationException("Box opening lost its native output.");
+                if (opening.Dispatched && opening.Contents.Bulb != null)
+                {
+                    if (opening.Box.Use == null || opening.Box.Use.ActiveStateName != SyncCatalog.PartsPackages!["emptyState"])
+                        throw new InvalidOperationException("Single-use box did not reach its empty state.");
+                    opening.QuantityAfter = opening.Box.Use.FsmVariables.FindFsmInt(SyncCatalog.PartsPackages["quantityVariable"]).Value;
+                }
                 if (opening.Dispatched && opening.QuantityAfter != opening.BeforeQuantity - 1)
                     throw new InvalidOperationException("Box opening changed quantity unexpectedly.");
                 if (opening.Dispatched && opening.OutputCount == 1 && opening.OutputObject != null)
                 {
-                    var data = NativePartIdentity.FindData(opening.OutputObject.transform);
+                    if (opening.Contents.Bulb != null)
+                    {
+                        var body = opening.OutputObject.GetComponent<Rigidbody>();
+                        if (body != null) TryScanBulb(body);
+                        if (BuildBulbState(opening.OutputId) != null || _spawnLifecycle.IsRetired(opening.OutputId))
+                        { FinishPackageOpening(session, opening, true); return; }
+                    }
+                    if (opening.Contents.Supply != null)
+                    {
+                        var body = opening.OutputObject.GetComponent<Rigidbody>();
+                        if (body != null) TryScanSupply(body);
+                        if (BuildSupplyState(opening.OutputId) != null || _spawnLifecycle.IsRetired(opening.OutputId))
+                        { FinishPackageOpening(session, opening, true); return; }
+                    }
+                    var data = opening.Contents.Supply == null && opening.Contents.Bulb == null ? NativePartIdentity.FindData(opening.OutputObject.transform) : null;
                     if (data != null && _bridge.PartIdentities.TryRootId(data, out uint id))
                     {
                         if (id != opening.OutputId) throw new InvalidOperationException("Box output changed identity.");
@@ -278,7 +353,9 @@ namespace WinterMP.Core.Sync
                 session.SendWorldMessage(new ItemDespawn { ItemId = receipt.ItemId }, Channel.ReliableOrdered);
             if (receipt.Status == PackageOpenStatus.Accepted)
             {
-                var part = BuildReplacementPartState(receipt.ProducedItemId);
+                IMessage? part = BuildReplacementPartState(receipt.ProducedItemId);
+                if (part == null) part = BuildSupplyState(receipt.ProducedItemId);
+                if (part == null) part = BuildBulbState(receipt.ProducedItemId);
                 if (part != null) session.SendWorldMessage(part, Channel.ReliableOrdered);
                 else if (_spawnLifecycle.IsRetired(receipt.ProducedItemId))
                     session.SendWorldMessage(new ItemDespawn { ItemId = receipt.ProducedItemId }, Channel.ReliableOrdered);
@@ -291,8 +368,13 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance; var state = _packageReplica?.Get(id);
             if (session == null || session.IsHost || state == null || state.Quantity == 0) return;
             if (!_packages.TryGetValue(id, out var box) || !box.Replica || box.OpenFailed) return;
-            uint contentsId = FactoryItemIdentity.FactoryId(box.Factory.Rule.ContentsPath, SyncCatalog.PartsPackages!["contentsFsm"]);
-            if (!_replacementFactories.TryGetValue(contentsId, out var contents) || contents.Failed || !contents.Suppressor.Active)
+            uint contentsId = FactoryItemIdentity.FactoryId(box.Factory.Rule.ContentsPath, box.Factory.Rule.ContentsFsm);
+            bool ready = box.Factory.Rule.BulbContents != null
+                ? _bulbFactory != null && !_bulbFactory.Failed && _bulbFactory.Suppressor.Active
+                : box.Factory.Rule.SupplyContents != null
+                ? _supplyFactories.TryGetValue(contentsId, out var supply) && !supply.Failed && supply.Suppressor.Active
+                : _replacementFactories.TryGetValue(contentsId, out var contents) && !contents.Failed && contents.Suppressor.Active;
+            if (!ready)
             {
                 if (Time.unscaledTime >= _nextPackageNotice)
                 {
@@ -309,9 +391,9 @@ namespace WinterMP.Core.Sync
             if (_packageOpenClient.TryBegin(session.LocalPlayerId, id, state.Revision)) ProcessPackageOpening(session);
         }
 
-        private void PrepareGuestPackageOpening(PlayMakerFSM use, uint id, PartsPackagesData c)
+        private void PrepareGuestPackageOpening(PlayMakerFSM use, uint id, PartsPackagesData c, PackageFactoryData rule)
         {
-            var open = ValidatePackageOpening(use, c);
+            var open = ValidatePackageOpening(use, c, rule);
             if (FsmHook.HasState(use, c["openFeedbackState"])) throw new InvalidOperationException("Box feedback state already exists.");
             var feedback = new FsmState(use.Fsm) { Name = c["openFeedbackState"], Actions = new[] { open.Actions[0], open.Actions[1],
                 new FsmHookAction(() => ReturnPackageToIdle(use, c)) } };

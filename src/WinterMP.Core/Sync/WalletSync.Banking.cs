@@ -42,9 +42,8 @@ namespace WinterMP.Core.Sync
             if (_bankFailed) return;
             try
             {
-                if (Time.unscaledTime >= _nextBankProbe)
+                if (ScenePath.TryBeginDiscovery(ref _nextBankProbe, 5f))
                 {
-                    _nextBankProbe = Time.unscaledTime + 5f;
                     LocateBanking();
                 }
                 if (session.IsHost) _bankAccrual.Restore();
@@ -183,10 +182,12 @@ namespace WinterMP.Core.Sync
                 if (fsm == null) continue;
                 try
                 {
+                    string fsmName = fsm.FsmName;
+                    if (fsmName != bindings.BankFsm && fsmName != bindings.AtmFsm && fsmName != bindings.CashFsm) continue;
                     string path = ScenePath.Of(fsm.transform);
-                    if (path == bindings.BankPath && fsm.FsmName == bindings.BankFsm) _bankData = fsm;
-                    else if (path == bindings.AtmPath && fsm.FsmName == bindings.AtmFsm) _atm = fsm;
-                    else if (path == bindings.CashPath && fsm.FsmName == bindings.CashFsm) _cashTrigger = fsm;
+                    if (path == bindings.BankPath && fsmName == bindings.BankFsm) _bankData = fsm;
+                    else if (path == bindings.AtmPath && fsmName == bindings.AtmFsm) _atm = fsm;
+                    else if (path == bindings.CashPath && fsmName == bindings.CashFsm) _cashTrigger = fsm;
                 }
                 catch (MissingReferenceException) { }
             }
@@ -210,7 +211,7 @@ namespace WinterMP.Core.Sync
             string variableName, Action? transfer)
         {
             var state = FsmHook.FindState(fsm, stateName);
-            if (state == null) return;
+            if (state == null || !state.IsInitialized) return;
             foreach (var existing in _bankHooks)
                 if (existing.Fsm == fsm && ReferenceEquals(existing.State, state)) return;
             FsmStateAction[] actions;

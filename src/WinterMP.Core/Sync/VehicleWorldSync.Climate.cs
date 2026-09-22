@@ -10,6 +10,8 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class VehicleWorldSync
     {
+        private readonly VehicleClimateStreamPolicy _vehicleClimateStreams = new VehicleClimateStreamPolicy();
+
         private static void EnsureClimateProbe(SyncedItem item)
         {
             if (item.ClimateReady || item.Body == null) return;
@@ -18,6 +20,15 @@ namespace WinterMP.Core.Sync
 
             foreach (var fsm in item.Body.GetComponentsInChildren<PlayMakerFSM>(true))
             {
+                string fsmName = fsm.FsmName;
+                if (fsmName == "Use")
+                {
+                    string button = fsm.gameObject.name;
+                    if (button != "ButtonHeaterTemp" && button != "ButtonHeaterBlower"
+                        && button != "ButtonHeaterDirection" && button != "ButtonWindowHeater") continue;
+                }
+                else if (fsmName != "GlassFrosting" && fsmName != "Freezing"
+                    && fsmName != "Data" && fsmName != "Function") continue;
                 string path = ScenePath.Of(fsm.transform);
                 if (!SyncCatalog.IsClimateVehicleFsmPath(path)) continue;
 
@@ -27,8 +38,6 @@ namespace WinterMP.Core.Sync
                 {
                     item.GlassFrostingFsm = fsm;
                     item.FrostVar = fsm.FsmVariables.FindFsmFloat("Frost");
-                    item.SweatRateVar = fsm.FsmVariables.FindFsmFloat("SweatRate");
-                    item.GlassTempVar = fsm.FsmVariables.FindFsmFloat("Temp");
                     item.PlayerInVar = fsm.FsmVariables.FindFsmBool("PlayerIn");
                     item.FrostColorVar = fsm.FsmVariables.FindFsmColor("Color");
                     item.FrostGlassMat = fsm.FsmVariables.GetFsmMaterial("FrostGlass");
@@ -101,43 +110,33 @@ namespace WinterMP.Core.Sync
 
         public void UpdateVehicleClimate(SessionManager session)
         {
-            if (session.PlayerCount == 0) return;
-
+            EnsurePassengerHeating();
             float now = Time.unscaledTime;
             foreach (var item in _items.Items.Values)
             {
                 if (!item.IsVehicle || item.Body == null) continue;
                 EnsureClimateProbe(item);
-                if (!ShouldStreamVehicleClimate(item)) continue;
+                EnsurePassengerCondensation(item);
+                if (session.PlayerCount == 0 || !ShouldStreamVehicleClimate(item)) continue;
                 SendVehicleClimate(session, item, now);
             }
         }
 
-        private bool ShouldStreamVehicleClimate(SyncedItem item)
-        {
-            // Whoever is actively operating or occupying the car is its live climate
-            // authority (a guest driving their own car, or the host driving).
-            if (item.LocallyOwned || HasLocalIgnitionActivity(item)) return true;
-
-            var passenger = PassengerController.Instance;
-            if (passenger != null && passenger.IsLocalSeatedInVehicle(item.Id))
-                return true;
-
-            // A remote player owns/drives it — mirror them, never fight their stream.
-            if (item.RemoteOwner != WorldSyncIds.NoOwner) return false;
-
-            // Nobody owns it (parked). Frost/fog is slow world state like weather, and
-            // the game re-simulates it locally on every machine — so if it free-runs
-            // unsynced the two windshields drift apart and one player's car ends up
-            // permanently clear while the other keeps frosting. Make the HOST the
-            // standing climate authority for every unowned car, even parked and far
-            // away; guests just mirror it. (Old behaviour only streamed within 7 m, so
-            // a car parked away from both players desynced — the reported bug.)
-            return _bridge.Session != null && _bridge.Session.IsHost;
-        }
+        private bool ShouldStreamVehicleClimate(SyncedItem item) => _bridge.Session != null
+            && VehicleStateStreamPolicy.CanPublish(_bridge.Session.IsHost, item.LocallyOwned, item.RemoteOwner);
 
         public VehicleClimate? TryBuildVehicleClimate(SyncedItem item)
         {
+            if (_bridge.Session?.IsHost == true && !item.LocallyOwned && item.RemoteOwner != WorldSyncIds.NoOwner)
+            {
+                var accepted = item.AcceptedVehicleClimate;
+                if (accepted == null || accepted.OwnerPlayerId != item.RemoteOwner
+                    || Time.unscaledTime >= item.RemoteClimateUntil) return null;
+                var snapshot = VehicleClimateStreamPolicy.Copy(accepted);
+                snapshot.OwnerPlayerId = 0;
+                snapshot.Sequence = VehicleClimate.SnapshotSequence;
+                return snapshot;
+            }
             EnsureClimateProbe(item);
             if (!item.ClimateReady) return null;
 
@@ -145,13 +144,15 @@ namespace WinterMP.Core.Sync
             if (ReadWindowHeaterOn(item)) flags |= VehicleClimate.FlagWindowHeater;
             if (ReadGlassDefrosting(item)) flags |= VehicleClimate.FlagGlassDefrosting;
             if (ReadPlayerInCar(item)) flags |= VehicleClimate.FlagPlayerIn;
+            if (TryReadNativeCabinTemperature(item, out byte cabinTemp))
+                flags |= VehicleClimate.FlagCabinTemperature;
 
-            return new VehicleClimate
+            var message = new VehicleClimate
             {
                 VehicleId = item.Id,
                 OwnerPlayerId = _bridge.Session?.LocalPlayerId ?? 0,
                 // Default to the snapshot sentinel; the live SendVehicleClimate path
-                // overwrites Sequence with ++OutClimateSequence. Snapshot/resync sends
+                // assigns the next live sequence, skipping the reserved sentinel. Snapshot/resync sends
                 // keep the sentinel so the receiver applies them without dedup.
                 Sequence = VehicleClimate.SnapshotSequence,
                 Frost = QuantizeFrost(ReadFrost(item)),
@@ -159,28 +160,35 @@ namespace WinterMP.Core.Sync
                 HeaterTemp = QuantizeHeater(ReadHeaterTemp(item), HeaterTempMax),
                 HeaterBlower = QuantizeHeater(ReadHeaterBlower(item), HeaterBlowerMax),
                 HeaterDirection = QuantizeHeater(ReadHeaterDirection(item), HeaterDirectionMax),
-                Fog = QuantizeFrost(ReadFog(item)),
-                CabinTemp = QuantizeRange(ReadCabinTemp(item), CabinTempMinC, CabinTempMaxC),
-                Ice = QuantizeFrost(ReadIce(item)),
+                Fog = 0,
+                CabinTemp = cabinTemp,
             };
+            CaptureWindowIce(item, message);
+            CaptureParkingBrake(item, message);
+            return message;
         }
 
-        private void SendVehicleClimate(SessionManager session, SyncedItem item, float now)
+        internal void SendFinalVehicleClimate(SessionManager session, SyncedItem item)
         {
-            if (now < item.NextClimateAt) return;
+            if (item.IsVehicle && item.LocallyOwned) SendVehicleClimate(session, item, Time.unscaledTime, final: true);
+        }
+
+        private void SendVehicleClimate(SessionManager session, SyncedItem item, float now, bool final = false)
+        {
+            if (!final && now < item.NextClimateAt) return;
             item.NextClimateAt = now + 1f / VehicleClimateRateHz;
 
             var message = TryBuildVehicleClimate(item);
             if (message == null) return;
 
-            message.Sequence = ++item.OutClimateSequence;
+            message.Sequence = item.OutClimateSequence = VehicleStateStreamPolicy.NextSequence(item.OutClimateSequence);
             message.OwnerPlayerId = session.LocalPlayerId;
 
             if (!item.LoggedClimateSend)
             {
                 item.LoggedClimateSend = true;
                 WinterMPPlugin.Log.LogInfo(
-                    $"WorldSync: streaming '{item.Path}' climate — frost={message.Frost} fog={message.Fog} " +
+                    $"WorldSync: streaming '{item.Path}' climate — frost={message.Frost} " +
                     $"cabin={message.CabinTemp} heater={message.HeaterTemp}/{message.HeaterBlower}/{message.HeaterDirection} " +
                     $"flags=0x{message.Flags:X2}.");
             }
@@ -193,47 +201,65 @@ namespace WinterMP.Core.Sync
                 bool host = _bridge.Session != null && _bridge.Session.IsHost;
                 WinterMPPlugin.Log.LogInfo(
                     $"ClimateDiag SEND '{item.Path}' host={host} owned={item.LocallyOwned} remoteOwner={item.RemoteOwner} " +
-                    $"sentFrost={message.Frost} sentFog={message.Fog} liveFrostVar={liveFrostVar:F3} liveCutWS={liveCut:F3} flags=0x{message.Flags:X2}");
+                    $"sentFrost={message.Frost} liveFrostVar={liveFrostVar:F3} liveCutWS={liveCut:F3} flags=0x{message.Flags:X2}");
             }
 
-            session.SendWorldMessage(message, Channel.UnreliableSequenced);
+            session.SendWorldMessage(message, final ? Channel.ReliableOrdered : Channel.UnreliableSequenced);
         }
 
-        public void OnRemoteVehicleClimate(VehicleClimate message)
+        public bool OnRemoteVehicleClimate(VehicleClimate message)
         {
-            if (!_items.Items.TryGetValue(message.VehicleId, out var item) || item.Body == null || !item.IsVehicle)
-                return;
-            if (item.LocallyOwned) return;
-
-            // Join/resync snapshots carry SnapshotSequence and bypass the live-stream
-            // dedup so a fresh guest near a parked frosted car receives its state.
-            if (message.Sequence != VehicleClimate.SnapshotSequence)
+            var session = _bridge.Session;
+            if (session == null || (session.IsHost ? session.State != SessionState.Hosting : session.State != SessionState.Connected)
+                || !_items.Items.TryGetValue(message.VehicleId, out var item)
+                || item.Body == null || !item.IsVehicle) return false;
+            bool localDriver = item.LocallyOwned || _items.IsLocalPlayerDriving(item);
+            if (!_vehicleClimateStreams.Receive(message, session.IsHost, localDriver, item.RemoteOwner))
             {
-                // Per-sender dedup: only treat the sequence as stale when it comes from the sender
-                // whose baseline we hold. A different nearby observer resets the baseline rather than
-                // being locked out by the first sender's higher sequence (climate has no single owner).
-                if (message.OwnerPlayerId == item.LastClimateSequenceOwner)
-                {
-                    ushort diff = (ushort)(message.Sequence - item.LastClimateSequence);
-                    if (diff == 0 || diff > short.MaxValue)
-                    {
-                        ConnectionQuality.Instance.NoteUnreliableDropped();
-                        return;
-                    }
-                }
-
-                ConnectionQuality.Instance.NoteUnreliableReceived();
-                item.LastClimateSequence = message.Sequence;
-                item.LastClimateSequenceOwner = message.OwnerPlayerId;
+                if (message.Sequence != VehicleClimate.SnapshotSequence) ConnectionQuality.Instance.NoteUnreliableDropped();
+                return false;
             }
-
+            if (message.Sequence != VehicleClimate.SnapshotSequence) ConnectionQuality.Instance.NoteUnreliableReceived();
+            item.AcceptedVehicleClimate = VehicleClimateStreamPolicy.Copy(message);
             item.RemoteClimateUntil = Time.unscaledTime + ClimateHoldSeconds;
-
+            ApplyRemoteParkingBrake(item, message);
             ApplyRemoteClimate(item, message);
+            return true;
+        }
+
+        private bool CanPresentRemoteClimate(SyncedItem item)
+        {
+            var session = _bridge.Session;
+            return session != null && item.AcceptedVehicleClimate != null
+                && VehicleClimateStreamPolicy.CanPresent(item.AcceptedVehicleClimate.OwnerPlayerId, session.IsHost,
+                    item.LocallyOwned || _items.IsLocalPlayerDriving(item), item.RemoteOwner);
+        }
+
+        private void ForgetClimatePlayer(byte playerId)
+        {
+            _vehicleClimateStreams.ForgetPlayer(playerId);
+            foreach (var item in _items.Items.Values)
+                if (item.AcceptedVehicleClimate?.OwnerPlayerId == playerId)
+                { item.AcceptedVehicleClimate = null; item.RemoteClimateUntil = -999f; }
+        }
+
+        private void ClearClimateStreams()
+        {
+            ClearPassengerHeating();
+            ClearPassengerCondensationBindings();
+            _vehicleClimateStreams.Clear();
+            foreach (var item in _items.Items.Values)
+            {
+                item.AcceptedVehicleClimate = null; item.RemoteClimateUntil = -999f;
+                item.RemoteIceMask = 0; item.OutClimateSequence = 0; item.NextClimateAt = 0;
+                item.RemoteHasCabinTemperature = false;
+                ClearPassengerCondensation(item); item.NextPassengerCondensationProbeAt = 0;
+            }
         }
 
         private static void ApplyRemoteClimate(SyncedItem item, VehicleClimate message)
         {
+            item.RemoteHasCabinTemperature = message.HasCabinTemperature;
             EnsureClimateProbe(item);
             if (!item.ClimateReady) return;
 
@@ -245,7 +271,12 @@ namespace WinterMP.Core.Sync
 
             item.RemoteFrost = message.Frost;
             item.RemoteIce = message.Ice;
-            item.RemoteFog = message.Fog;
+            item.RemoteIceSideLeft = message.IceSideLeft;
+            item.RemoteIceSideRight = message.IceSideRight;
+            item.RemoteIceDoorLeft = message.IceDoorLeft;
+            item.RemoteIceDoorRight = message.IceDoorRight;
+            item.RemoteIceRear = message.IceRear;
+            item.RemoteIceMask = message.IceMask;
             item.RemoteCabinTemp = message.CabinTemp;
             item.RemotePlayerIn = message.PlayerIn;
             item.RemoteHeaterTemp = message.HeaterTemp;
@@ -270,7 +301,7 @@ namespace WinterMP.Core.Sync
             {
                 item.LoggedClimateApply = true;
                 WinterMPPlugin.Log.LogInfo(
-                    $"WorldSync: remote climate on '{item.Path}' — frost={message.Frost} fog={message.Fog} " +
+                    $"WorldSync: remote climate on '{item.Path}' — frost={message.Frost} " +
                     $"windowHeater={windowHeater} defrost={glassDefrosting}.");
             }
         }
@@ -320,13 +351,11 @@ namespace WinterMP.Core.Sync
         private static void ApplyRemoteClimatePresentation(SyncedItem item)
         {
             float frost = DequantizeFrost(item.RemoteFrost);
-            float ice = DequantizeFrost(item.RemoteIce);
-            float fog = DequantizeFrost(item.RemoteFog);
-            float cabinTemp = DequantizeRange(item.RemoteCabinTemp, CabinTempMinC, CabinTempMaxC);
+            float cabinTemp = VehicleClimate.DequantizeCabinTemperature(item.RemoteCabinTemp);
 
             ApplyRemoteFrostLevel(item, frost);
-            ApplyRemoteIceLevel(item, ice);
-            ApplyRemoteFogLevel(item, fog, cabinTemp, item.RemotePlayerIn);
+            ApplyRemoteIceLevel(item);
+            if (item.RemoteHasCabinTemperature && item.InteriorTempVar != null) item.InteriorTempVar.Value = cabinTemp;
         }
 
         // Interior glass frost: the GlassFrosting amount + its material. Deliberately does NOT
@@ -343,71 +372,49 @@ namespace WinterMP.Core.Sync
                 item.FrostColorVar.Value = color;
             }
 
-            ApplyFrostGlassMaterial(item, fog: -1f, frost: frost);
-        }
-
-        // Exterior window ice: the per-window Freezing cutoffs, applied uniformly from the Ice
-        // channel so it stays independent of the interior frost above.
-        private static void ApplyRemoteIceLevel(SyncedItem item, float ice)
-        {
-            WriteCutoff(item.CutoffWindshieldVar, ice);
-            WriteCutoff(item.CutoffSideLeftVar, ice);
-            WriteCutoff(item.CutoffSideRightVar, ice);
-            WriteCutoff(item.CutoffDoorLeftVar, ice);
-            WriteCutoff(item.CutoffDoorRightVar, ice);
-            WriteCutoff(item.CutoffRearVar, ice);
-        }
-
-        private static void ApplyRemoteFogLevel(SyncedItem item, float fog, float cabinTemp, bool playerIn)
-        {
-            if (item.SweatRateVar != null)
-                item.SweatRateVar.Value = fog;
-
-            if (item.GlassTempVar != null)
-                item.GlassTempVar.Value = cabinTemp;
-
-            if (item.InteriorTempVar != null)
-                item.InteriorTempVar.Value = cabinTemp;
-
-            if (item.PlayerInVar != null)
-                item.PlayerInVar.Value = playerIn;
-
-            if (item.FrostColorVar != null)
+            // Native SetColorRGBA/SetMaterialColor use _Color.a for condensation.
+            // RGB is tint; SweatRate and Temp are arithmetic scratch, not opacity/degrees.
+            var mat = item.FrostGlassMat?.Value;
+            if (mat != null && mat.HasProperty("_Color"))
             {
-                var color = item.FrostColorVar.Value;
-                color.r = fog;
-                color.g = fog;
-                color.b = fog;
-                item.FrostColorVar.Value = color;
+                var color = mat.color;
+                color.a = frost;
+                mat.color = color;
             }
-
-            ApplyFrostGlassMaterial(item, fog, frost: -1f);
         }
 
-        private static void ApplyFrostGlassMaterial(SyncedItem item, float fog, float frost)
+        private static void CaptureWindowIce(SyncedItem item, VehicleClimate message)
         {
-            if (item.FrostGlassMat == null || item.FrostGlassMat.Value == null) return;
-
-            var mat = item.FrostGlassMat.Value;
-            if (fog >= 0f)
-            {
-                if (mat.HasProperty("_Color"))
-                {
-                    var c = mat.color;
-                    c.r = fog;
-                    c.g = fog;
-                    c.b = fog;
-                    mat.color = c;
-                }
-            }
-
-            if (frost >= 0f && mat.HasProperty("_Cutoff"))
-                mat.SetFloat("_Cutoff", frost);
+            message.Ice = CaptureWindowCutoff(item.CutoffWindshieldVar, VehicleClimate.Windshield, ref message.IceMask);
+            message.IceSideLeft = CaptureWindowCutoff(item.CutoffSideLeftVar, VehicleClimate.SideLeft, ref message.IceMask);
+            message.IceSideRight = CaptureWindowCutoff(item.CutoffSideRightVar, VehicleClimate.SideRight, ref message.IceMask);
+            message.IceDoorLeft = CaptureWindowCutoff(item.CutoffDoorLeftVar, VehicleClimate.DoorLeft, ref message.IceMask);
+            message.IceDoorRight = CaptureWindowCutoff(item.CutoffDoorRightVar, VehicleClimate.DoorRight, ref message.IceMask);
+            message.IceRear = CaptureWindowCutoff(item.CutoffRearVar, VehicleClimate.Rear, ref message.IceMask);
         }
 
-        private static void WriteCutoff(HutongGames.PlayMaker.FsmFloat? var, float frost)
+        private static byte CaptureWindowCutoff(HutongGames.PlayMaker.FsmFloat? source, byte bit, ref byte mask)
         {
-            if (var != null) var.Value = frost;
+            byte value;
+            if (source == null || !VehicleClimate.TryQuantizeIce(source.Value, out value)) return 0;
+            mask |= bit;
+            return value;
+        }
+
+        private static void ApplyRemoteIceLevel(SyncedItem item)
+        {
+            // Missing source panes cannot borrow the windshield or overwrite a local pane.
+            WriteCutoff(item.CutoffWindshieldVar, item.RemoteIce, item.RemoteIceMask, VehicleClimate.Windshield);
+            WriteCutoff(item.CutoffSideLeftVar, item.RemoteIceSideLeft, item.RemoteIceMask, VehicleClimate.SideLeft);
+            WriteCutoff(item.CutoffSideRightVar, item.RemoteIceSideRight, item.RemoteIceMask, VehicleClimate.SideRight);
+            WriteCutoff(item.CutoffDoorLeftVar, item.RemoteIceDoorLeft, item.RemoteIceMask, VehicleClimate.DoorLeft);
+            WriteCutoff(item.CutoffDoorRightVar, item.RemoteIceDoorRight, item.RemoteIceMask, VehicleClimate.DoorRight);
+            WriteCutoff(item.CutoffRearVar, item.RemoteIceRear, item.RemoteIceMask, VehicleClimate.Rear);
+        }
+
+        private static void WriteCutoff(HutongGames.PlayMaker.FsmFloat? variable, byte cutoff, byte mask, byte bit)
+        {
+            if (variable != null && (mask & bit) != 0) variable.Value = VehicleClimate.DequantizeIce(cutoff);
         }
 
 
@@ -556,41 +563,17 @@ namespace WinterMP.Core.Sync
         private static float ReadFrost(SyncedItem item) =>
             item.FrostVar != null ? item.FrostVar.Value : 0f;
 
-        // Exterior window ice (Freezing.CutoffWindshield), representative of the Cutoff*
-        // windows (the receiver applies them uniformly).
-        private static float ReadIce(SyncedItem item) =>
-            item.CutoffWindshieldVar != null ? item.CutoffWindshieldVar.Value : 0f;
-
-        private static float ReadFog(SyncedItem item)
-        {
-            float fog = 0f;
-            if (item.SweatRateVar != null)
-                fog = Mathf.Max(fog, item.SweatRateVar.Value);
-
-            if (item.FrostColorVar != null)
-            {
-                var color = item.FrostColorVar.Value;
-                fog = Mathf.Max(fog, Mathf.Max(color.r, Mathf.Max(color.g, color.b)));
-            }
-
-            return fog;
-        }
-
-        private static float ReadCabinTemp(SyncedItem item)
-        {
-            if (item.InteriorTempVar != null) return item.InteriorTempVar.Value;
-            if (item.GlassTempVar != null) return item.GlassTempVar.Value;
-            return 0f;
-        }
-
         private static bool ReadPlayerInCar(SyncedItem item)
         {
-            if (item.PlayerInVar != null) return item.PlayerInVar.Value;
-
+            // Native PlayerIn belongs to local entry/reset. Received occupancy is kept
+            // separately: writing it here can turn an observer into a driver after timeout.
+            if (item.PlayerInVar != null && item.PlayerInVar.Value) return true;
+            var session = SessionManager.Instance;
+            if (session == null) return false;
+            if (session.IsHost && session.HasPassengerInVehicle(item.Id)) return true;
             var passenger = PassengerController.Instance;
-            if (passenger != null && passenger.IsLocalSeatedInVehicle(item.Id))
-                return true;
-
+            if (passenger != null && (passenger.IsLocalSeatedInVehicle(item.Id)
+                || passenger.HasRemotePassengerInVehicle(item.Id))) return true;
             var world = WorldSyncManager.Instance;
             return item.Body != null && world != null && world.IsLocalPlayerDriving(item);
         }
@@ -631,32 +614,9 @@ namespace WinterMP.Core.Sync
 
         private static byte ReadCoolantTempByte(SyncedItem item)
         {
-            float temp = ReadCoolantTempC(item);
+            float temp = Mathf.Clamp(ReadCoolantTempC(item), 0f, CoolantTempMaxC);
             return (byte)Mathf.Clamp(Mathf.RoundToInt(temp / CoolantTempMaxC * 255f), 0, 255);
         }
-
-        private static float ReadCoolantTempC(SyncedItem item)
-        {
-            if (item.GaugeCoolantVar != null)
-                return item.GaugeCoolantVar.Value;
-
-            if (item.HeaterUnitFsm != null)
-            {
-                var coolant = item.HeaterUnitFsm.FsmVariables.FindFsmFloat("CoolantTemp");
-                if (coolant != null) return coolant.Value;
-            }
-
-            if (item.GaugeCoolantAngleVar != null)
-                return TempFromCoolantAngle(item.GaugeCoolantAngleVar.Value);
-
-            return 0f;
-        }
-
-        private static float CoolantAngleForTemp(float tempC) =>
-            Mathf.Lerp(0f, -220f, Mathf.Clamp01(tempC / CoolantTempMaxC));
-
-        private static float TempFromCoolantAngle(float angle) =>
-            Mathf.Clamp01(-angle / -220f) * CoolantTempMaxC;
 
         private static byte QuantizeFrost(float frost) =>
             (byte)Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(frost) * 255f), 0, 255);
@@ -670,16 +630,6 @@ namespace WinterMP.Core.Sync
         }
 
         private static float DequantizeHeater(byte wire, float max) => wire / 255f * max;
-
-        private static byte QuantizeRange(float value, float min, float max)
-        {
-            float span = max - min;
-            if (span <= 0f) return 0;
-            return (byte)Mathf.Clamp(Mathf.RoundToInt((Mathf.Clamp(value, min, max) - min) / span * 255f), 0, 255);
-        }
-
-        private static float DequantizeRange(byte wire, float min, float max) =>
-            min + wire / 255f * (max - min);
 
         private static void WriteHeaterValue(
             HutongGames.PlayMaker.FsmFloat? primary,

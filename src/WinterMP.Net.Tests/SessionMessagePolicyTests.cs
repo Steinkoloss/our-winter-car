@@ -6,6 +6,38 @@ namespace WinterMP.Net.Tests
 {
     public class SessionMessagePolicyTests
     {
+        [Theory]
+        [InlineData(false, true, true, true, true)]
+        [InlineData(false, true, true, false, false)]
+        [InlineData(false, true, false, true, false)]
+        [InlineData(true, true, false, true, false)]
+        [InlineData(true, false, false, false, false)]
+        public void SessionSettingsRequireAnAcceptedHost(bool host, bool authenticated, bool selected, bool complete, bool allowed)
+        {
+            Assert.Equal(allowed, SessionMessagePolicy.IsSenderAllowed(MessageId.SessionSettings, host, authenticated, selected, complete));
+            Assert.True(SessionMessagePolicy.IsChannelAllowed(MessageId.SessionSettings, Channel.ReliableOrdered));
+            Assert.False(SessionMessagePolicy.IsChannelAllowed(MessageId.SessionSettings, Channel.UnreliableSequenced));
+            Assert.False(SessionMessagePolicy.IsChannelAllowed(MessageId.SessionSettings, Channel.ReliableBulk));
+        }
+
+        [Theory]
+        [InlineData((byte)0)] [InlineData((byte)1)]
+        public void SessionSettingsAreExactlyOneKnownFlagByte(byte flags)
+        {
+            var packet = PacketCodec.Encode(new SessionSettings { Flags = flags });
+            Assert.Equal(new byte[] { 213, 0, flags }, packet);
+            Assert.Equal(flags, Assert.IsType<SessionSettings>(PacketCodec.Decode(packet)).Flags);
+            Assert.Throws<ProtocolException>(() => PacketCodec.Decode(new byte[] { 213, 0 }));
+        }
+
+        [Theory]
+        [InlineData((byte)2)] [InlineData((byte)3)] [InlineData((byte)255)]
+        public void SessionSettingsRejectUnknownBits(byte flags)
+        {
+            Assert.Throws<ProtocolException>(() => PacketCodec.Encode(new SessionSettings { Flags = flags }));
+            Assert.Throws<ProtocolException>(() => PacketCodec.Decode(new byte[] { 213, 0, flags }));
+        }
+
         [Fact]
         public void Host_OnlyAdmitsHandshakeBeforePeerAuthentication()
         {
@@ -35,6 +67,29 @@ namespace WinterMP.Net.Tests
             Assert.True(SessionMessagePolicy.IsSenderAllowed(
                 MessageId.WorldItemSnapshot, receiverIsHost: false,
                 senderIsAuthenticated: false, senderIsSelectedHost: true, receiverHandshakeComplete: true));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void GuestsCannotReportVehicleDamageEvenAfterAuthentication(bool authenticated)
+        {
+            Assert.False(SessionMessagePolicy.IsSenderAllowed(MessageId.VehicleDamage, receiverIsHost: true,
+                senderIsAuthenticated: authenticated, senderIsSelectedHost: true, receiverHandshakeComplete: true));
+            foreach (var stream in new[] { MessageId.VehicleState, MessageId.VehicleCondition, MessageId.VehicleClimate, MessageId.ItemTransform })
+                Assert.Equal(authenticated, SessionMessagePolicy.IsSenderAllowed(stream, receiverIsHost: true,
+                    senderIsAuthenticated: authenticated, senderIsSelectedHost: false, receiverHandshakeComplete: true));
+        }
+
+        [Fact]
+        public void VehicleDamageRequiresTheSelectedHostAndCompletedGuestHandshake()
+        {
+            Assert.False(SessionMessagePolicy.IsSenderAllowed(MessageId.VehicleDamage, receiverIsHost: false,
+                senderIsAuthenticated: true, senderIsSelectedHost: false, receiverHandshakeComplete: true));
+            Assert.False(SessionMessagePolicy.IsSenderAllowed(MessageId.VehicleDamage, receiverIsHost: false,
+                senderIsAuthenticated: true, senderIsSelectedHost: true, receiverHandshakeComplete: false));
+            Assert.True(SessionMessagePolicy.IsSenderAllowed(MessageId.VehicleDamage, receiverIsHost: false,
+                senderIsAuthenticated: true, senderIsSelectedHost: true, receiverHandshakeComplete: true));
         }
 
         [Fact]

@@ -9,6 +9,22 @@ targets My Winter Car **v.260516-01**, Steam build **23268598** (protocol **120*
 Use the downloads supplied by your test organizer. The GitHub links below lead to
 public releases, which may still list an older version.
 
+**Local development coffee work (unreleased protocol250):** the household coffee
+pot, reusable cup and grounds packets now have a shared adapter. The host owns
+water, grounds, brewing and cup contents; the accepted drinker receives vanilla
+personal effects. Vendor/vending-machine coffee is still outside this coverage.
+Both players need the same build. Physical mouse/hand play and Steam/two-PC tests
+remain needed; this is not a new published tester package.
+
+## Riding as a passenger in development builds
+
+In unreleased protocol 249 builds, the taxi has two seats for friends: front right
+and rear left. Stand beside the matching door, look for **ENTER - Sit down**, then
+press Enter. Press Enter again to get up. The rear-right seat stays reserved for
+paying customers, and player seating is unavailable during the taxi tutorial.
+Sorbet and Corris still have three passenger seats. These additions are not in the
+older public/tester packages described below.
+
 ## Requirements
 
 - **My Winter Car** on Steam
@@ -112,3 +128,23 @@ is paused until you choose **Install / Repair**.
 
 For a bug report, use **Info → Export diagnostics** and send the zip with reproduction
 steps. **Info → Tester guide** opens the testing checklist.
+
+
+### Advert delivery calls (local/unreleased, protocol 256)
+
+Either player can call **08231206** from either home phone or the taxi carphone
+to enrol for advert delivery. Stay on the line until the caller finishes speaking.
+Home phones need their cord connected and the host's phone service paid; charges
+are shared. Hanging up early or disconnecting means you must call again. The
+adverts follow the game's usual initial wait and delivery schedule, so the pile
+will not appear immediately. Both players need the same mod/protocol version.
+This has controlled local test coverage; normal controls and Steam play still
+need tester acceptance.
+
+### R20 battery boxes (local/unreleased, protocol 257)
+
+Either player can buy, unpack and open an R20 box. Each use releases one of its
+four shared batteries. Both players see the remaining count, and loose batteries
+survive the host's save. This has controlled local test coverage; normal controls
+and Steam play still need tester acceptance. Battery fitting and appliance use
+remain separate unfinished work. Both players need the same mod/protocol version.

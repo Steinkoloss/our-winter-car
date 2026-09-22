@@ -76,6 +76,7 @@ namespace WinterMP.Core.Sync
 
             if ((flags & WorldResyncRequest.FlagFsmStates) != 0)
             {
+                var train = _train.Snapshot(); if (train != null) yield return train;
                 var lotto = _lottery.BuildSnapshot();
                 if (lotto != null) yield return lotto;
                 foreach (var chunk in _fsm.BuildDoorSnapshotChunks())
@@ -103,14 +104,35 @@ namespace WinterMP.Core.Sync
                 foreach (var chunk in _items.BuildItemSnapshotChunks())
                     yield return chunk;
                 foreach (var chunk in BuildItemDespawnSnapshots()) yield return chunk;
+                foreach (var meat in _items.BuildMeatStates()) yield return meat;
+                foreach (var coffee in _items.BuildCoffeeStates()) yield return coffee;
+                foreach (var sausage in _items.BuildSausageStates()) yield return sausage;
+                foreach (var milk in _items.BuildMilkStates()) yield return milk;
+                foreach (var atfBottle in _items.BuildAtfStates()) yield return atfBottle;
                 foreach (var bag in _items.BuildBagStates()) yield return bag;
                 foreach (var package in _items.BuildPackageStates()) yield return package;
+            foreach (var supply in _items.BuildSupplyStates()) yield return supply;
+            foreach (var bulb in _items.BuildBulbStates()) yield return bulb;
+            foreach (var motorOil in _items.BuildMotorOilStates()) yield return motorOil;
+            var oilFiller = _items.BuildMotorOilFillerState(); if(oilFiller!=null)yield return oilFiller;
+            var advertJob = _items.BuildAdvertJobState(); if (advertJob != null) yield return advertJob;
+            foreach (var sheet in _items.BuildAdvertSheetStates()) yield return sheet;
                 foreach (var replacement in _items.BuildReplacementPartStates()) yield return replacement;
+                var head = _items.BuildCylinderHeadState(); if (head != null) yield return head;
                 foreach (var spawn in _items.BuildSpawnReplayManifests()) yield return spawn;
             }
 
+            if ((flags & (WorldResyncRequest.FlagVehicles | WorldResyncRequest.FlagFsmStates)) != 0)
+            {
+                var atfFiller = _atf.BuildFillerState(); if (atfFiller != null) yield return atfFiller;
+            }
             if ((flags & WorldResyncRequest.FlagVehicles) != 0)
             {
+                foreach (var wire in _items.BuildWiringStates()) yield return wire;
+                var battery = _items.BuildBatteryState(); if (battery != null) yield return battery;
+                var block = _items.BuildEngineBlockState(); if (block != null) yield return block;
+                var heater = _items.BuildHeaterState(); if (heater != null) yield return heater;
+                var gearbox = _items.BuildGearboxState(); if (gearbox != null) yield return gearbox;
                 foreach (var message in _vehicles.BuildVehicleResyncMessages())
                     yield return message;
             }
@@ -137,6 +159,20 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) yield break;
 
+            if (netId == _train.NetId) { var train = _train.Snapshot(); if (train != null) yield return train; }
+            var meat = _items.BuildMeatState(netId); if (meat != null) yield return meat;
+            var coffee = _items.BuildCoffeeState(netId); if (coffee != null) yield return coffee;
+            var sausage = _items.BuildSausageState(netId); if (sausage != null) yield return sausage;
+            var milk = _items.BuildMilkState(netId); if (milk != null) yield return milk;
+            var atfBottle = _items.BuildAtfState(netId); if (atfBottle != null) yield return atfBottle;
+            var atfFiller = _atf.BuildFillerState(); if (atfFiller != null && atfFiller.VehicleId == netId) yield return atfFiller;
+            var head = _items.BuildCylinderHeadState(); if (head != null && head.NetId == netId) yield return head;
+            var supply = _items.BuildSupplyState(netId); if (supply != null) yield return supply;
+            var bulb = _items.BuildBulbState(netId); if (bulb != null) yield return bulb;
+            var motorOil = _items.BuildMotorOilState(netId); if (motorOil != null) yield return motorOil;
+            var oilFiller = _items.BuildMotorOilFillerState(); if(oilFiller!=null)yield return oilFiller;
+            var advertJob = _items.BuildAdvertJobState(); if (advertJob != null) yield return advertJob;
+            var advertSheet = _items.BuildAdvertSheetState(netId); if (advertSheet != null) yield return advertSheet;
             var replacement = _items.BuildReplacementPartState(netId);
             if (replacement != null) yield return replacement;
 
@@ -146,14 +182,24 @@ namespace WinterMP.Core.Sync
                 if (bag != null) yield return bag;
                 var package = _items.BuildPackageState(netId);
                 if (package != null) yield return package;
-                yield return new ItemTransform
+                if (item.IsVehicle)
                 {
-                    ItemId = netId,
-                    OwnerPlayerId = session.LocalPlayerId,
-                    Flags = ItemTransform.FlagFinal,
-                    Position = item.Body.transform.position.ToNet(),
-                    Rotation = item.Body.transform.rotation.ToNet(),
-                };
+                    // A repair snapshot is not a new ownership claim or a driver's
+                    // final packet. The normal snapshot path preserves live ownership.
+                    var pose = new WorldItemSnapshot();
+                    pose.Entries.Add(new WorldItemSnapshot.Entry { ItemId = netId,
+                        Position = item.Body.transform.position.ToNet(), Rotation = item.Body.transform.rotation.ToNet() });
+                    yield return pose;
+                }
+                else
+                    yield return new ItemTransform
+                    {
+                        ItemId = netId,
+                        OwnerPlayerId = session.LocalPlayerId,
+                        Flags = ItemTransform.FlagFinal,
+                        Position = item.Body.transform.position.ToNet(),
+                        Rotation = item.Body.transform.rotation.ToNet(),
+                    };
 
                 if (item.IsVehicle)
                 {
@@ -187,6 +233,8 @@ namespace WinterMP.Core.Sync
 
             var boltState = _fsm.BuildBoltState(netId);
             if (boltState != null) yield return boltState;
+            var valveState = _fsm.BuildValveState(netId);
+            if (valveState != null) yield return valveState;
         }
 
         public IEnumerable<IMessage> BuildWorldSnapshot()
@@ -206,15 +254,35 @@ namespace WinterMP.Core.Sync
 
             foreach (var chunk in _fsm.BuildBoltSnapshotChunks())
                 yield return chunk;
+            foreach (var valve in _fsm.BuildValveStates()) yield return valve;
 
             foreach (var chunk in _fsm.BuildPartSnapshotChunks())
                 yield return chunk;
 
             foreach (var chunk in BuildItemDespawnSnapshots()) yield return chunk;
 
+            foreach (var meat in _items.BuildMeatStates()) yield return meat;
+            foreach (var coffee in _items.BuildCoffeeStates()) yield return coffee;
+            foreach (var sausage in _items.BuildSausageStates()) yield return sausage;
+            foreach (var milk in _items.BuildMilkStates()) yield return milk;
+            foreach (var atfBottle in _items.BuildAtfStates()) yield return atfBottle;
+            var atfFiller = _atf.BuildFillerState(); if (atfFiller != null) yield return atfFiller;
             foreach (var bag in _items.BuildBagStates()) yield return bag;
             foreach (var package in _items.BuildPackageStates()) yield return package;
+            foreach (var supply in _items.BuildSupplyStates()) yield return supply;
+            foreach (var bulb in _items.BuildBulbStates()) yield return bulb;
+            foreach (var motorOil in _items.BuildMotorOilStates()) yield return motorOil;
+            var oilFiller = _items.BuildMotorOilFillerState(); if(oilFiller!=null)yield return oilFiller;
+            var advertJob = _items.BuildAdvertJobState(); if (advertJob != null) yield return advertJob;
+            foreach (var sheet in _items.BuildAdvertSheetStates()) yield return sheet;
             foreach (var replacement in _items.BuildReplacementPartStates()) yield return replacement;
+                var head = _items.BuildCylinderHeadState(); if (head != null) yield return head;
+
+            foreach (var wire in _items.BuildWiringStates()) yield return wire;
+            var batteryState = _items.BuildBatteryState(); if (batteryState != null) yield return batteryState;
+            var blockState = _items.BuildEngineBlockState(); if (blockState != null) yield return blockState;
+            var heaterState = _items.BuildHeaterState(); if (heaterState != null) yield return heaterState;
+            var gearboxState = _items.BuildGearboxState(); if (gearboxState != null) yield return gearboxState;
 
             foreach (var vehicle in _vehicles.BuildJoinVehicleSnapshots())
                 yield return vehicle;
@@ -239,6 +307,9 @@ namespace WinterMP.Core.Sync
             foreach (var fluid in _fluids.BuildSnapshots(ownerPlayerId))
                 yield return fluid;
 
+            foreach (var buyer in _fsm.BuildFirewoodBuyerSnapshots())
+                yield return buyer;
+
             foreach (var jobSite in _jobSites.BuildSnapshots())
                 yield return jobSite;
 
@@ -249,10 +320,23 @@ namespace WinterMP.Core.Sync
             if (fleetariOrder != null)
                 yield return fleetariOrder;
 
+            var fleaListings = _fleaSale.BuildListingSnapshot();
+            if (fleaListings != null) yield return fleaListings;
             var fleaSale = _fleaSale.BuildSnapshot();
             if (fleaSale != null)
                 yield return fleaSale;
 
+            var trainState = _train.Snapshot(); if (trainState != null) yield return trainState;
+            var trailer = _trailer.Snapshot();
+            if (trailer != null) yield return trailer;
+            var householdFuses = _items.BuildHouseholdFuseSnapshot();
+            if (householdFuses != null) yield return householdFuses;
+            var taxiFare = _taxiJob.BuildFareSnapshot();
+            if (taxiFare != null) yield return taxiFare;
+            var taxiMeter = _taxiJob.BuildMeterSnapshot();
+            if (taxiMeter != null) yield return taxiMeter;
+            var taxiService = _taxiJob.BuildServiceSnapshot();
+            if (taxiService != null) yield return taxiService;
             var taxiJob = _taxiJob.BuildSnapshot();
             if (taxiJob != null)
                 yield return taxiJob;
@@ -276,6 +360,9 @@ namespace WinterMP.Core.Sync
 
             var lotto = _lottery.BuildSnapshot();
             if (lotto != null) yield return lotto;
+
+            var woodLoad = _woodDelivery.BuildSnapshot();
+            if (woodLoad != null) yield return woodLoad;
 
             var hockey = _hockey.BuildSnapshot();
             if (hockey != null)

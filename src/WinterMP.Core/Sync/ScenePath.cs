@@ -15,12 +15,22 @@ namespace WinterMP.Core.Sync
     internal static class ScenePath
     {
         private static ScenePathCache<Transform>? _scanPaths;
+        private static readonly PeriodicDiscoveryBudget DiscoveryBudget = new PeriodicDiscoveryBudget();
+        private static readonly ScenePathLookup<Transform> MountLookup = new ScenePathLookup<Transform>(
+            node => node.name, node => node.childCount, (node, index) => node.GetChild(index));
         private static float _nextSlowScanLogAt;
 
         /// <summary>The index lives only while the caller enumerates this scan. It never
         /// survives to another Update or hides a later reparent/rename from discovery.</summary>
         public static IEnumerable<UnityEngine.Object> ScanFsms() => Scan(typeof(PlayMakerFSM));
         public static IEnumerable<UnityEngine.Object> ScanRigidbodies() => Scan(typeof(Rigidbody));
+
+        public static bool TryBeginDiscovery(ref float nextAt, float interval, bool force = false)
+        {
+            float now = Time.unscaledTime;
+            if (!force && now < nextAt) return false;
+            return DiscoveryBudget.TryBegin(Time.frameCount, now, ref nextAt, interval, force);
+        }
 
         private static IEnumerable<UnityEngine.Object> Scan(System.Type type)
         {
@@ -47,6 +57,11 @@ namespace WinterMP.Core.Sync
                 }
             }
         }
+
+        internal static bool MayMatchLeafName(string path, string name)
+            // An active discovery index owns its path snapshot, including a
+            // name read before a callback changed the live object.
+            => _scanPaths != null || ScenePathLookup.MayMatchLeafName(path, name);
 
         public static string Of(Transform transform)
         {
@@ -76,9 +91,7 @@ namespace WinterMP.Core.Sync
             return null;
         }
 
-        public static Transform? FindRelative(Transform root, string path) =>
-            new ScenePathCache<Transform>(node => node.parent != null ? node.parent : null,
-                node => node.name, node => node.childCount, (node, index) => node.GetChild(index)).FindRelative(root, path);
+        public static Transform? FindRelative(Transform root, string path) => MountLookup.FindRelative(root, path);
 
         private static string SegmentFor(Transform node)
         {
@@ -86,14 +99,16 @@ namespace WinterMP.Core.Sync
             if (parent == null) return node.name; // roots can't be enumerated on Unity 5.0
 
             string name = node.name;
+            int targetIndex = node.GetSiblingIndex();
             int sameNamed = 0;
             int index = -1;
             for (int i = 0; i < parent.childCount; i++)
             {
-                var child = parent.GetChild(i);
-                if (child.name != name) continue;
-                if (child == node) index = sameNamed;
-                sameNamed++;
+                // Unity marshals a fresh string for name. The target's name is
+                // already known; its live native index avoids rereading it or
+                // comparing every sibling's Unity wrapper to the target.
+                if (i == targetIndex) { index = sameNamed; sameNamed++; }
+                else if (parent.GetChild(i).name == name) sameNamed++;
             }
 
             return sameNamed > 1 ? name + "[" + index + "]" : name;

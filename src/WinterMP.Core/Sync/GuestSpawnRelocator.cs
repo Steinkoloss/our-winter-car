@@ -16,6 +16,8 @@ namespace WinterMP.Core.Sync
 
         public bool HasPending => _pending;
 
+        public void Reset() => _pending = false;
+
         public void ApplyImmediate(NetVector3 feet, NetQuaternion rotation)
         {
             _targetFeet = feet;

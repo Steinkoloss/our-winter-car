@@ -13,7 +13,17 @@ namespace WinterMP.Core.Sync
             int initialCount = _items.Count;
             RefreshBagFactories();
             RefreshTrophyFactories();
+            RefreshMeatFactory();
+            RefreshSausages();
+            RefreshCoffee();
+            RefreshAtfPrefab();
+            RefreshMooseChop();
             RefreshPackageFactories();
+            RefreshSupplyFactories();
+            RefreshBulbs();
+            RefreshAdverts();
+            RefreshMotorOil();
+            try { RefreshHouseholdFuses(); } catch (Exception e) { HouseholdFusesFailed(e); }
             RefreshReplacementFactories();
             ScanNativeParts();
             // Collect new candidates first so same-path clones (six sausages at the
@@ -27,8 +37,8 @@ namespace WinterMP.Core.Sync
 
                 try
                 {
-                    if (!body.gameObject.activeInHierarchy) continue;
-                    if (TryScanBag(body) || TryScanTrophy(body) || TryScanPackage(body) || TryScanNativePart(body) || _trackedBodies.ContainsKey(body)) continue;
+                    if (!body.gameObject.activeInHierarchy || TrainSync.Owns(body.transform)) continue;
+                    if (TryScanCoffeePacket(body) || TryScanHouseholdHolder(body) || TryScanBag(body) || TryScanTrophy(body) || TryScanMeat(body) || TryScanSausage(body) || TryScanSausagePackage(body) || TryScanAtf(body) || TryScanPackage(body) || TryScanSupply(body) || TryScanBulb(body) || TryScanAdvert(body) || TryScanMotorOil(body) || TryScanNativePart(body) || _trackedBodies.ContainsKey(body)) continue;
 
                     bool isVehicle = SyncCatalog.IsVehicleRoot(body);
                     bool isItem = !isVehicle && SyncCatalog.IsPickableRigidbody(body);
@@ -115,7 +125,8 @@ namespace WinterMP.Core.Sync
 
         private void TryRegisterConsumableHooks(SyncedItem item)
         {
-            if (item.Body == null || item.IsVehicle) return;
+            TryTrackMilk(item);
+            if (item.Body == null || item.IsVehicle || _sausages.ContainsKey(item.Id)) return;
 
             foreach (var fsm in item.Body.GetComponents<PlayMakerFSM>())
             {

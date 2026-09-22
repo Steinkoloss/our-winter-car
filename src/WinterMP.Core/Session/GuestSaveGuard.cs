@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using HarmonyLib;
+using WinterMP.Core.Catalog;
+using WinterMP.Core.Sync;
 using WinterMP.Net;
 
 namespace WinterMP.Core.Session
@@ -14,6 +16,7 @@ namespace WinterMP.Core.Session
         private static readonly HashSet<string> Reported = new HashSet<string>(StringComparer.Ordinal);
         private static bool _attempted;
         private static bool _ready;
+        private static FieldInfo? _sentEvent, _eventTarget;
 
         internal static bool ProtectWorld { get { return Policy.ProtectWorld; } }
         internal static bool CanHost { get { return Policy.CanHost; } }
@@ -23,11 +26,42 @@ namespace WinterMP.Core.Session
         internal static bool TryBeginGuest()
         {
             Initialize();
+            if (!_ready) return false;
+            try
+            {
+                // Native engine states can enter during scene loading, before the
+                // first world-sync update. Their guard must already know its scope.
+                SyncCatalog.EnsureLoaded();
+                if (SyncCatalog.GuestEngineProtection == null)
+                    throw new InvalidOperationException(SyncCatalog.GuestEngineProtectionError
+                        ?? "Engine protection metadata is unavailable.");
+                if (SyncCatalog.GuestEngineInputs == null)
+                    throw new InvalidOperationException(SyncCatalog.GuestEngineInputsError
+                        ?? "Engine input metadata is unavailable.");
+            }
+            catch (Exception e)
+            {
+                try { WinterMPPlugin.Log.LogError("GuestSaveGuard: joining disabled; engine protection metadata unavailable: " + e.Message); }
+                catch { /* A diagnostic failure must not permit guest admission. */ }
+                return false;
+            }
             bool alreadyProtected = ProtectWorld;
             if (!Policy.TryBeginGuest(_ready)) return false;
             if (!alreadyProtected)
                 WinterMPPlugin.Log.LogInfo("GuestSaveGuard: local world saves protected until game restart.");
-            return true;
+            try
+            {
+                // Joining from an already-running world must retire per-frame
+                // writers before another native update, not just their next entry.
+                return WorldSyncManager.Instance != null
+                    ? WorldSyncManager.Instance.PrepareGuestEngineInputsForAdmission()
+                    : GuestEngineProtection.Prepare(force: true);
+            }
+            catch (Exception e)
+            {
+                GuestEngineProtection.NoteFailure("guest admission", e);
+                return false;
+            }
         }
 
         internal static void Initialize()
@@ -61,6 +95,17 @@ namespace WinterMP.Core.Session
                 Patch(harmony, typeof(ES2File), "Rename", new[] { typeof(ES2Settings), typeof(ES2Settings) }, nameof(BeforeMutation));
                 Patch(harmony, typeof(ES2File), "MoveFile", new[] { typeof(ES2Settings), typeof(ES2Settings) }, nameof(BeforeMutation));
                 Patch(harmony, typeof(ES2), "DeleteDefaultFolder", Type.EmptyTypes, nameof(BeforeMutation));
+                Type? sendEvent = null;
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                    if ((sendEvent = assembly.GetType("HutongGames.PlayMaker.Actions.SendEvent")) != null) break;
+                if (sendEvent == null || (_sentEvent = sendEvent.GetField("sendEvent")) == null
+                    || (_eventTarget = sendEvent.GetField("eventTarget")) == null)
+                    throw new InvalidOperationException("Native save broadcast boundary is unavailable.");
+                Patch(harmony, sendEvent, "OnEnter", Type.EmptyTypes, nameof(BeforeSendEvent));
+                if (!GuestEngineProtection.Initialize())
+                    throw new InvalidOperationException("Native guest engine protection could not start.");
+                if (!PermadeathSettings.Initialize())
+                    throw new InvalidOperationException("Native guest death settings could not start.");
                 _ready = true;
                 WinterMPPlugin.Log.LogInfo("GuestSaveGuard: all 9 ES2 persistence guards installed.");
             }
@@ -88,6 +133,22 @@ namespace WinterMP.Core.Session
                 && __instance.settings.saveLocation == ES2Settings.SaveLocation.Memory)) return true;
             ReportBlocked("writer-save");
             return false;
+        }
+
+        private static void BeforeSendEvent(object __instance)
+        {
+            // Native SAVEGAME can reset the player before MainMenu loads. Freeze
+            // the guest profile before any of those broadcast recipients run.
+            if (!ProtectWorld) return;
+            try
+            {
+                var sent = _sentEvent?.GetValue(__instance) as HutongGames.PlayMaker.FsmEvent;
+                if (sent == null || sent.Name != "SAVEGAME") return;
+                var target = _eventTarget?.GetValue(__instance) as HutongGames.PlayMaker.FsmEventTarget;
+                if (target != null && target.target == HutongGames.PlayMaker.FsmEventTarget.EventTarget.BroadcastAll)
+                    PlayerSyncManager.Instance?.BeforeWorldSave();
+            }
+            catch (Exception e) { WinterMPPlugin.Log.LogWarning("Guest profile save boundary: " + e.Message); }
         }
 
         private static bool BeforeWriteStream(ref Stream __result)

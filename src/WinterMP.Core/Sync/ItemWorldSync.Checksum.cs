@@ -35,6 +35,8 @@ namespace WinterMP.Core.Sync
                 crc = StableHash.Combine(crc, (uint)Quantize(rot.w * 1000f));
             }
 
+            var head = Session.SessionManager.Instance?.IsHost == true ? BuildCylinderHeadState() : (_headView?.Ready == true ? _headReceived : null);
+            if (head != null) crc = Net.Sync.CylinderHeadPolicy.MixChecksum(crc, head);
             return crc;
         }
 

@@ -1,5 +1,19 @@
 namespace WinterMP.Net.Messages
 {
+    /// <summary>Host session settings changed during native load or character creation.</summary>
+    public sealed class SessionSettings : IMessage
+    {
+        public byte Flags;
+        public MessageId Id => MessageId.SessionSettings;
+        public void Write(NetWriter writer) { Validate(); writer.WriteByte(Flags); }
+        public void Read(NetReader reader) { Flags = reader.ReadByte(); Validate(); }
+        private void Validate()
+        {
+            if ((Flags & ~SessionFlags.PermadeathEnabled) != 0)
+                throw new ProtocolException("Unknown session setting flags.");
+        }
+    }
+
     /// <summary>First message a client sends after the transport connects. Host validates and replies.</summary>
     public sealed class HandshakeRequest : IMessage
     {

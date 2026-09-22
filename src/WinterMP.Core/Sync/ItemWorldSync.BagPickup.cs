@@ -147,13 +147,14 @@ namespace WinterMP.Core.Sync
                 && target.GameObject.UseVariable && target.GameObject.Name == name;
         }
 
-        private static Rigidbody? FindPickedBagBody(GameObject? picked)
+        private Rigidbody? FindPickedBagBody(GameObject? picked)
         {
             if (picked == null) return null;
             for (var target = picked.transform; target != null; target = target.parent)
             {
                 var body = target.GetComponent<Rigidbody>();
-                if (body != null && FindBagUse(body) != null) return body;
+                if (body != null && (body == _taxiReceipt?.Body || TaxiLuggageSlot(body) >= 0 || FindBagUse(body) != null
+                    || IsFusePickupBody(body) || IsAdvertBody(body) || IsMotorOilBody(body))) return body;
             }
             return null;
         }
@@ -164,6 +165,19 @@ namespace WinterMP.Core.Sync
             if (session == null || (session.State != SessionState.Hosting && session.State != SessionState.Connected)) return false;
             var body = FindPickedBagBody(_bagPickedObject?.Value);
             if (body == null) return false;
+            int luggage = TaxiLuggageSlot(body);
+            if (luggage >= 0)
+                return (_taxiLuggageMask & (1 << luggage)) == 0 || (_taxiLuggage[luggage]!.RemoteOwner != WorldSyncIds.NoOwner
+                    && _taxiLuggage[luggage]!.RemoteOwner != session.LocalPlayerId);
+            if (_taxiReceipt != null && body == _taxiReceipt.Body)
+                return !_taxiReceiptLoose || (_taxiReceipt.RemoteOwner != WorldSyncIds.NoOwner && _taxiReceipt.RemoteOwner != session.LocalPlayerId);
+            if (IsFusePickupBody(body) || IsAdvertBody(body) || IsMotorOilBody(body))
+            {
+                foreach (var item in _items.Values) if (item.Body == body)
+                    return !CanSyncItemMotion(item) || _spawnLifecycle.IsRetired(item.Id)
+                        || (item.RemoteOwner != WorldSyncIds.NoOwner && item.RemoteOwner != session.LocalPlayerId);
+                return true;
+            }
             foreach (var bag in _bags.Values)
             {
                 if (bag.Body != body) continue;

@@ -220,7 +220,7 @@ namespace WinterMP.Net.Tests
                 HeaterDirection = 128,
                 Fog = 150,
                 CabinTemp = 96,
-                Ice = 233,
+                Ice = 233, IceMask = VehicleClimate.Windshield,
             };
 
             var decoded = Assert.IsType<VehicleClimate>(PacketCodec.Decode(PacketCodec.Encode(original)));
@@ -534,7 +534,7 @@ namespace WinterMP.Net.Tests
                 LastPosition = new NetVector3(10f, 0.1f, -8f),
                 LastRotation = new NetQuaternion(0f, 0.707f, 0f, 0.707f),
                 Flags = GuestSpawn.FlagHasLastPosition | GuestSpawn.FlagHasSavedNeeds
-                    | GuestSpawn.FlagHasSavedDirtiness,
+                    | GuestSpawn.FlagHasSavedDirtiness | GuestSpawn.FlagHasSavedBodyTemp,
                 Hunger = 12.5f,
                 Fatigue = 88f,
                 Thirst = 40f,
@@ -569,6 +569,7 @@ namespace WinterMP.Net.Tests
                 Thirst = 30f,
                 Urine = 40f,
                 BodyTemp = 50f,
+                HasBodyTemp = true,
                 Stress = 60f,
                 Drunk = 4.2f,
                 Sequence = 7,
@@ -608,6 +609,7 @@ namespace WinterMP.Net.Tests
                 Thirst = 3f,
                 Urine = 4f,
                 BodyTemp = 5f,
+                HasBodyTemp = true,
                 Stress = 6f,
                 Drunk = 7f,
                 Sequence = 0xBEEF,
@@ -632,6 +634,7 @@ namespace WinterMP.Net.Tests
             Assert.Equal(1, reader.ReadByte());
             Assert.Equal(original.PlayerAlco, reader.ReadSingle());
             Assert.Equal(1, reader.ReadByte());
+            Assert.Equal(1, reader.ReadByte()); // v189 body warmth availability
             Assert.Equal(0, reader.Remaining);
         }
 

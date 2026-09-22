@@ -21,16 +21,17 @@ namespace WinterMP.Core.Sync
         public bool SuppressLocalDeathReport { get; private set; }
 
         private readonly PlayerDeathHook _deathHook = new PlayerDeathHook();
-        private bool _permadeathApplied;
         private bool _respawnWatchScheduled;
         private float _respawnWatchUntil;
+        private bool _respawnWatchWarned;
         private PlayMakerFSM? _deathFsm;
 
-        internal bool IsLocalDead => _deathHook.LocalDeathActive;
+        internal bool IsLocalDead => SessionManager.Instance?.PermadeathWipeActive == true || _deathHook.LocalDeathActive;
 
         private void Awake()
         {
             Instance = this;
+            PermadeathSettings.Initialize();
         }
 
         private void OnDestroy()
@@ -38,12 +39,25 @@ namespace WinterMP.Core.Sync
             if (Instance == this) Instance = null;
         }
 
+        internal void ResetSession()
+        {
+            _deathHook.Reset(clearHooks: false);
+            _respawnWatchScheduled = false;
+            _respawnWatchUntil = 0;
+            _respawnWatchWarned = false;
+        }
+
         public void OnSceneChanged()
         {
-            _deathHook.Reset();
+            bool awaitingRecovery = _respawnWatchScheduled && _deathHook.LocalDeathActive;
+            _deathHook.Reset(preserveDeath: awaitingRecovery || SessionManager.Instance?.PermadeathWipeActive == true);
             _deathFsm = null;
-            _respawnWatchScheduled = false;
-            _respawnWatchUntil = 0f;
+            if (!awaitingRecovery)
+            {
+                _respawnWatchScheduled = false;
+                _respawnWatchUntil = 0f;
+                _respawnWatchWarned = false;
+            }
             RefreshHostPermadeathFromSave();
             TryApplyGuestPermadeath();
         }
@@ -52,6 +66,7 @@ namespace WinterMP.Core.Sync
         {
             _respawnWatchScheduled = true;
             _respawnWatchUntil = Time.unscaledTime + RespawnWatchSeconds;
+            _respawnWatchWarned = false;
         }
 
         private void Update()
@@ -60,18 +75,13 @@ namespace WinterMP.Core.Sync
             if (session == null) return;
             if (session.State != SessionState.Hosting && session.State != SessionState.Connected)
             {
-                // Between sessions. The next connection may be a different host (or the
-                // same host with permadeath toggled), so the one-shot flag must re-arm —
-                // this component lives on the persistent plugin root and outlives sessions.
-                _permadeathApplied = false;
                 return;
             }
 
             try
             {
                 _deathHook.Probe(session);
-                // Retried here (idempotent) because the loopback dev flow connects with no
-                // scene change afterwards, so OnSceneChanged alone would never apply it.
+                // Loading can replace globals while the session remains connected.
                 TryApplyGuestPermadeath();
                 PollRespawn(session);
             }
@@ -105,18 +115,19 @@ namespace WinterMP.Core.Sync
             ApplyRemoteDeath(evt);
         }
 
-        public void OnRemoteRespawn(PlayerRespawn respawn)
+        public bool OnRemoteRespawn(PlayerRespawn respawn)
         {
             var session = SessionManager.Instance;
-            if (session == null) return;
+            if (session == null || !session.CanAcceptRespawn) return false;
 
-            if (respawn.PlayerId == session.LocalPlayerId) return;
+            if (respawn.PlayerId == session.LocalPlayerId) return false;
 
             session.SetPlayerDead(respawn.PlayerId, dead: false);
             session.ApplyPlayerRespawnPose(respawn.PlayerId, respawn.Position.ToUnity(), respawn.Rotation.ToUnity());
 
             string name = session.ResolvePlayerName(respawn.PlayerId);
             session.AddSystemChat("* " + name + " respawned");
+            return true;
         }
 
         private void HandleDeathReport(byte playerId, byte cause)
@@ -124,10 +135,13 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return;
 
+            if (session.PermadeathWipeActive) return;
             bool wipe = session.PermanentDeathEnabled;
+            if (wipe && !session.TryBeginPermadeathWipe()) return;
             byte flags = wipe ? PlayerDeathEventFlags.PermadeathWipe : (byte)0;
 
             session.SetPlayerDead(playerId, dead: true);
+            if (wipe) session.RetirePassengersForGroupDeath();
             session.BroadcastProfileMessage(new PlayerDeathEvent
             {
                 PlayerId = playerId,
@@ -155,10 +169,9 @@ namespace WinterMP.Core.Sync
             if (session == null) return;
 
             bool wipe = (evt.Flags & PlayerDeathEventFlags.PermadeathWipe) != 0;
-            bool isSelf = evt.PlayerId == session.LocalPlayerId;
-
-            if (!isSelf)
-                session.SetPlayerDead(evt.PlayerId, dead: true);
+            if (wipe && !session.PermadeathWipeActive && !session.TryBeginPermadeathWipe()) return;
+            session.SetPlayerDead(evt.PlayerId, dead: true);
+            if (wipe) session.RetirePassengersForGroupDeath();
 
             if (wipe && !_deathHook.LocalDeathActive)
             {
@@ -177,20 +190,19 @@ namespace WinterMP.Core.Sync
             }
 
             SuppressLocalDeathReport = true;
-            _deathHook.NotifyGroupDeathStarted();
-
             try
             {
-                if (!fsm.gameObject.activeSelf)
-                    fsm.gameObject.SetActive(true);
-                fsm.enabled = true;
-
+                if (!fsm.Fsm.Initialized) fsm.Fsm.Init(fsm);
+                if (fsm.Fsm.StartState != "Permadeath 2" || !FsmHook.HasState(fsm, "Delete saves 2")
+                    || !FsmHook.HasState(fsm, "State 3") || !FsmHook.HasState(fsm, "Delete saves"))
+                    throw new InvalidOperationException("Native permadeath startup graph changed.");
+                // OnEnable starts the graph, including both the first delete stage
+                // and State 3. Set the cause BEFORE activation and never enter it twice.
                 SetCauseBool(fsm, cause);
-                string evt = CauseToEvent(cause);
-                if (FsmHook.EnsureRemoteEntry(fsm, "State 3"))
-                    FsmHook.FireRemoteEntry(fsm, "State 3");
-                fsm.SendEvent(evt);
-                WinterMPPlugin.Log.LogInfo("DeathSync: triggered local group death (" + evt + ").");
+                _deathHook.NotifyGroupDeathStarted();
+                fsm.enabled = true;
+                if (!fsm.gameObject.activeSelf) fsm.gameObject.SetActive(true);
+                WinterMPPlugin.Log.LogInfo("DeathSync: triggered native group death (cause " + cause + ").");
             }
             catch (Exception e)
             {
@@ -204,25 +216,28 @@ namespace WinterMP.Core.Sync
 
         private void PollRespawn(SessionManager session)
         {
-            if (!_respawnWatchScheduled || session.PermanentDeathEnabled) return;
-            if (Time.unscaledTime > _respawnWatchUntil)
+            if (!_respawnWatchScheduled || !session.CanAcceptRespawn) return;
+            if (!_respawnWatchWarned && Time.unscaledTime > _respawnWatchUntil)
             {
-                // Watch expired without the death FSM ever idling (patched FSM or a missed
-                // idle window). Report the respawn anyway: leaving the hook flagged "dead"
-                // would silently drop every FUTURE death report from this player, and the
-                // next real death re-marks us dead if this guess is wrong.
-                _respawnWatchScheduled = false;
-                session.SetPlayerDead(session.LocalPlayerId, dead: false);
-                _deathHook.NotifyRespawned(session);
-                WinterMPPlugin.Log.LogWarning("DeathSync: respawn watch timed out — reported respawn anyway.");
-                return;
+                _respawnWatchWarned = true;
+                WinterMPPlugin.Log.LogWarning("DeathSync: still waiting for native player recovery; keeping the player dead.");
             }
 
+            if (Application.loadedLevelName != "GAME") return;
             var fsm = _deathFsm ?? LocateDeathFsm();
             if (fsm == null) return;
 
-            if (fsm.enabled && !string.IsNullOrEmpty(fsm.ActiveStateName))
+            if (fsm.gameObject.activeInHierarchy && fsm.enabled && !string.IsNullOrEmpty(fsm.ActiveStateName))
                 return;
+
+            var player = GameObject.Find("PLAYER");
+            if (player == null) return;
+            var controller = player.GetComponent<CharacterController>();
+            var motor = player.GetComponent("CharacterMotor") as Behaviour;
+            var input = player.GetComponent("FPSInputController") as Behaviour;
+            if (controller == null || !controller.enabled || motor == null || !motor.enabled
+                || input == null || !input.enabled) return;
+            if (!session.IsHost && (PlayerSyncManager.Instance == null || !PlayerSyncManager.Instance.IsLocalSpawnReady)) return;
 
             _respawnWatchScheduled = false;
             session.SetPlayerDead(session.LocalPlayerId, dead: false);
@@ -241,21 +256,8 @@ namespace WinterMP.Core.Sync
         private void TryApplyGuestPermadeath()
         {
             var session = SessionManager.Instance;
-            if (session == null || session.IsHost || _permadeathApplied) return;
-            if (session.State != SessionState.Connected) return;
-
-            _permadeathApplied = true;
-            bool hostPermadeath = session.PermanentDeathEnabled;
-
-            if (PermadeathSettings.TryRead(out bool local) && local == hostPermadeath)
-                return;
-
-            if (PermadeathSettings.TryWrite(hostPermadeath))
-                PermadeathSettings.SyncAchievementFsm(hostPermadeath);
-
-            session.AddSystemChat(hostPermadeath
-                ? "* Host uses PERMADEATH — your save flag was set to match"
-                : "* Host disabled permadeath — your save flag was set to match");
+            if (session == null || session.IsHost || session.State != SessionState.Connected) return;
+            PermadeathSettings.ApplyGuest(session.PermanentDeathEnabled);
         }
 
         private PlayMakerFSM? LocateDeathFsm()
@@ -280,7 +282,7 @@ namespace WinterMP.Core.Sync
                 try
                 {
                     string path = ScenePath.Of(fsm.transform);
-                    if (path.IndexOf(DeathObjectPath, StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (path == DeathObjectPath)
                     {
                         _deathFsm = fsm;
                         return fsm;
@@ -326,37 +328,6 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        // Events are State 3's transition set (dump-23268598). State 3 has no crash/vehicle
-        // transition (the CORRIS/FITTAN/... events enter elsewhere), so Accident approximates
-        // as RUNOVER — the closest vehicular death screen reachable from here. Burn has a
-        // cause bool but no event of its own → FIRE. Smoking has neither → default.
-        private static string CauseToEvent(byte cause)
-        {
-            switch (cause)
-            {
-                case DeathCause.Hunger: return "HUNGER";
-                case DeathCause.Thirst: return "THIRST";
-                case DeathCause.Urine: return "URINE";
-                case DeathCause.Stress: return "STRESS";
-                case DeathCause.RunOver: return "RUNOVER";
-                case DeathCause.Drown: return "DROWN";
-                case DeathCause.Fire: return "FIRE";
-                case DeathCause.Electrocute: return "ELECTROCUTE";
-                case DeathCause.Hypothermia: return "HYPOTHERMIA";
-                case DeathCause.Murder: return "MURDER";
-                case DeathCause.Train: return "TRAIN";
-                case DeathCause.Accident: return "RUNOVER";
-                case DeathCause.Sewage: return "SEWAGE";
-                case DeathCause.Carbon: return "CARBON";
-                case DeathCause.Pto: return "PTO";
-                case DeathCause.CutterBlade: return "CUTTERBLADE";
-                case DeathCause.InJail: return "INJAIL";
-                case DeathCause.PissTv: return "TV";
-                case DeathCause.Burn: return "FIRE";
-                default: return "FATIGUE";
-            }
-        }
-
         private static string? CauseToBoolName(byte cause)
         {
             switch (cause)
@@ -368,15 +339,14 @@ namespace WinterMP.Core.Sync
                 case DeathCause.Stress: return "Stress";
                 case DeathCause.RunOver: return "RunOver";
                 case DeathCause.Drown: return "Drown";
-                // The death FSM has no "Fire" bool — general fire death is "Gasolinefire"
-                // (dump-23268598); "Burn" is its own cause below. Returning "Fire" set no
-                // bool at all, misrouting the permadeath-wipe death screen for fire deaths.
-                case DeathCause.Fire: return "Gasolinefire";
+                // Native Burn routes to FIRE; Gasolinefire selects the separate explosion screen.
+                case DeathCause.Fire: return "Burn";
                 case DeathCause.Electrocute: return "Electrocute";
                 case DeathCause.Hypothermia: return "Hypothermia";
                 case DeathCause.Murder: return "Murder";
                 case DeathCause.Train: return "Train";
-                case DeathCause.Accident: return "Crash";
+                // Remote vehicle context belongs to the dying player, not this peer.
+                case DeathCause.Accident: return "RunOver";
                 case DeathCause.Sewage: return "Sewage";
                 case DeathCause.Carbon: return "Carbon";
                 case DeathCause.Pto: return "PTO";
@@ -384,7 +354,7 @@ namespace WinterMP.Core.Sync
                 case DeathCause.InJail: return "InJail";
                 case DeathCause.PissTv: return "PissTV";
                 case DeathCause.Burn: return "Burn";
-                case DeathCause.Smoking: return "Smoking";
+                case DeathCause.Smoking: return "Fatigue";
                 default: return "Fatigue";
             }
         }

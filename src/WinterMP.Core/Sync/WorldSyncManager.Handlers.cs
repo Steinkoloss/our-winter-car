@@ -65,6 +65,26 @@ namespace WinterMP.Core.Sync
             return _fsm.TryAcceptGuestPartState(message, playerId);
         }
         public void OnRemoteBoltState(BoltState message) { EnsureSyncReady(); _fsm.OnRemoteBoltState(message); }
+        public void OnFirewoodLoad(FirewoodLoadState message) { _woodDelivery.Apply(message); }
+        public void OnFirewoodUnload(FirewoodUnloadIntent message) { _woodDelivery.Request(message); }
+        public void OnFirewoodBuyer(FirewoodBuyerState message) { EnsureSyncReady(); _fsm.OnFirewoodBuyer(message); }
+        public void OnMooseCorpse(MooseCorpseState message) { EnsureSyncReady(); _items.OnMooseCorpse(message); }
+        public void OnMooseChop(MooseChopIntent message) { EnsureSyncReady(); _items.OnMooseChop(message); }
+        public void OnTrainState(TrainState message) { if (IsGameLevel()) { EnsureSyncReady(); _train.Receive(message); } }
+        public void OnCoffeeState(CoffeeState message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnCoffeeState(message); } }
+        public void OnCoffeeIntent(CoffeeIntent message, byte actor) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnCoffeeIntent(message, actor); } }
+        public void OnCoffeeDrink(CoffeeDrinkResult message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnCoffeeDrink(message); } }
+        public void OnSausageState(SausageState message) { EnsureSyncReady(); _items.OnSausageState(message); }
+        public void OnSausageOpen(SausageOpenIntent message, byte actor) { EnsureSyncReady(); _items.OnSausageOpen(message, actor); }
+        public void OnMeatState(MooseMeatState message) { EnsureSyncReady(); _items.OnMeatState(message); }
+        public void OnAtfBottleState(AtfBottleState message) { EnsureSyncReady(); _items.OnAtfState(message); }
+        public void OnAtfFillerState(AtfFillerState message) { EnsureSyncReady(); _atf.OnFillerState(message); }
+        public void OnMotorOilFillerState(MotorOilFillerState message) { if(!IsGameLevel())return; EnsureSyncReady(); _items.OnMotorOilFillerState(message); }
+        public void OnMotorOilRefillIntent(MotorOilRefillIntent message) { if(!IsGameLevel())return; EnsureSyncReady(); _items.OnMotorOilRefillIntent(message); }
+        public void OnAtfIntent(AtfRefillIntent message) { EnsureSyncReady(); _atf.OnIntent(message); }
+        public void OnMilkCondition(MilkConditionState message) { EnsureSyncReady(); _items.OnMilkCondition(message); }
+        public void OnCylinderHeadState(CylinderHeadState message) { EnsureSyncReady(); _items.OnCylinderHeadState(message); }
+        public void OnRemoteValveState(ValveAdjustmentState message) { EnsureSyncReady(); _fsm.OnRemoteValveState(message); }
         public void OnRemotePartState(PartState message) { EnsureSyncReady(); _fsm.OnRemotePartState(message); }
         public void OnRemoteRadiatorThermostatState(RadiatorThermostatState message)
         {
@@ -100,15 +120,19 @@ namespace WinterMP.Core.Sync
         }
         public void OnRemoteItemSpawn(ItemSpawn message) { EnsureSyncReady(); _items.StartGuestSpawnBind(message); }
         public void OnRemoteItemTransform(ItemTransform message) { EnsureSyncReady(); _items.OnRemoteItemTransform(message); }
-        public bool OnHostGuestItemTransform(ItemTransform message, byte playerId)
+        public bool OnHostGuestItemTransform(ItemTransform message, byte playerId, out VehicleConditionReleaseAck? conditionAck)
         {
+            conditionAck = null;
             EnsureSyncReady();
             if (!_items.TryAcceptGuestItemTransform(message, playerId)) return false;
-            _items.OnRemoteItemTransform(message);
+            if (!_items.Items.TryGetValue(message.ItemId, out var item)) return false;
+            byte previousOwner = item.RemoteOwner;
+            if (!_items.OnRemoteItemTransform(message)) return false;
+            if (message.IsFinal) conditionAck = _vehicles.BuildConditionReleaseAck(item, previousOwner, message);
             return true;
         }
         public void OnRemoteNpcTransform(NpcTransform message) { EnsureSyncReady(); _npcTraffic.OnRemoteNpcTransform(message); }
-        public void OnHostNpcDeathReport(Session.SessionManager session, NpcDeathReport message) { EnsureSyncReady(); _npcTraffic.OnHostDeathReport(session, message); }
+        public void OnHostNpcDeathReport(Session.SessionManager session, NpcDeathReport message) { EnsureSyncReady(); if (!_items.OnMooseDeathReport(session, message)) _npcTraffic.OnHostDeathReport(session, message); }
 
         /// <summary>
         /// A player was (re)admitted into a slot — drop every per-player dedup latch for it.
@@ -118,10 +142,20 @@ namespace WinterMP.Core.Sync
         /// </summary>
         public void OnPlayerAdmitted(byte playerId)
         {
+            _items.ForgetHouseholdFuseIntents(playerId);
+            _items.ForgetCoffeePlayer(playerId);
+            _items.ForgetAdvertPlayer(playerId);
+            _phone.Adverts.Forget(playerId);
+            _items.ForgetSausageIntents(playerId);
+            _taxiJob.ForgetMeterIntents(playerId);
+            _taxiJob.ForgetFareIntents(playerId);
+            _woodDelivery.OnPlayerAdmitted(playerId);
+            _trailer.PlayerAdmitted(playerId);
             _lottoTickets?.ForgetPlayer(playerId);
             EnsureSyncReady();
             _wanted.ForgetPlayer(playerId);
             _welfare.ForgetDebtPlayer(playerId);
+            _utilityBills.ForgetPlayer(playerId);
             _wallet.ForgetBankPlayer(playerId);
             _gambling.ForgetPlayer(playerId);
             _poker.ForgetPlayer(playerId);
@@ -137,24 +171,32 @@ namespace WinterMP.Core.Sync
             _jail.ForgetPlayer(playerId);
             _fsm.ForgetPlayer(playerId);
             _appliances.ForgetPlayer(playerId);
+            _atf.Forget(playerId); _items.ForgetOilRefill(playerId);
             _items.ForgetPackageOpeningPlayer(playerId);
+            _items.ForgetWirePlayer(playerId);
             _items.ForgetPartFittingPlayer(playerId);
             _items.ForgetBagPlayer(playerId);
             _items.ForgetPlayerItemSequences(playerId);
+            _vehicles.ForgetVehicleStatePlayer(playerId);
             PassengerController.Instance?.ForgetPlayer(playerId);
         }
 
         public void OnPlayerDeparted(byte playerId)
         {
+            _phone.Adverts.Forget(playerId);
+            _taxiJob.ForgetCaller(playerId);
+            _atf.Forget(playerId); _items.ForgetOilRefill(playerId);
             _items.ForgetPartFittingPlayer(playerId);
             _items.ForgetBagPlayer(playerId);
             _welfare.ForgetDebtPlayer(playerId);
+            _utilityBills.ForgetPlayer(playerId);
             _gambling.ForgetPlayer(playerId);
             _poker.ForgetPlayer(playerId);
             _ventti.ForgetPlayer(playerId);
         }
 
         public void OnHostApplianceFireReport(ApplianceFireReport message) { EnsureSyncReady(); _appliances.OnHostFireReport(message); }
+        public void OnHostStoveKnob(StoveKnobIntent message) { EnsureSyncReady(); _appliances.OnStoveKnob(message); }
         public void OnRemoteItemSnapshot(WorldItemSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemSnapshot(message); }
         public void OnRemoteItemDespawnSnapshot(WorldItemDespawnSnapshot message) { EnsureSyncReady(); _items.OnRemoteItemDespawnSnapshot(message); }
 
@@ -188,9 +230,34 @@ namespace WinterMP.Core.Sync
             EnsureSyncReady();
             return _repairShop.TryBuildIntent(path, fsm, out intent);
         }
+        public void OnFleaListingState(FleaListingState message) { EnsureSyncReady(); _fleaSale.ApplyListings(message); }
+        public void OnFleaListingResult(FleaListingResult message) { EnsureSyncReady(); _fleaSale.OnListingResult(message); }
+        public bool OnFleaListingIntent(FleaListingIntent message) { EnsureSyncReady(); return _fleaSale.TryAcceptListing(message); }
+        public void OnFleaSaleResult(FleaSaleResult message) { EnsureSyncReady(); _fleaSale.OnResult(message); }
         public void OnRemoteFleaSaleState(FleaSaleState message) { EnsureSyncReady(); _fleaSale.Apply(message); }
         public bool OnHostFleaSaleIntent(FleaSaleIntent message) { EnsureSyncReady(); return _fleaSale.TryAcceptIntent(message); }
-        public void OnRemoteTaxiJobState(TaxiJobState message) { EnsureSyncReady(); _taxiJob.Apply(message); }
+        public void OnTractorTrailerState(TractorTrailerState message) { if (IsGameLevel()) _trailer.Receive(message); }
+        public void OnTractorTrailerIntent(TractorTrailerIntent message, byte actor) { if (IsGameLevel()) _trailer.Request(message, actor); }
+        public void OnTractorTrailerMotion(TractorTrailerMotion message, byte actor) { if (IsGameLevel()) _trailer.ReceiveMotion(message, actor); }
+        public void OnHouseholdFuseState(HouseholdFuseState message) { if (!IsGameLevel()) return; EnsureSyncReady(); _items.ReceiveHouseholdFuses(message); }
+        public void OnHouseholdFuseIntent(HouseholdFuseIntent message, byte actor) { if (!IsGameLevel()) return; EnsureSyncReady(); _items.ReceiveHouseholdFuseIntent(message, actor); }
+        public void OnHouseholdFuseResult(HouseholdFuseResult message) { if (!IsGameLevel()) return; EnsureSyncReady(); _items.ReceiveHouseholdFuseResult(message); }
+
+        private bool PrepareTaxiMessage()
+        {
+            // Session polling can deliver a packet after Unity destroys GAME,
+            // before our next Update clears its cached native taxi bindings.
+            if (!IsGameLevel()) return false;
+            EnsureSyncReady(); return true;
+        }
+        public void OnTaxiFareState(TaxiFareState message) { if (PrepareTaxiMessage()) _taxiJob.ReceiveFare(message); }
+        public void OnTaxiFareIntent(TaxiFareIntent message, byte actor) { if (PrepareTaxiMessage()) _taxiJob.ReceiveFareIntent(message, actor); }
+        public void OnTaxiMeterState(TaxiMeterState message) { if (PrepareTaxiMessage()) _taxiJob.ReceiveMeter(message); }
+        public void OnTaxiMeterIntent(TaxiMeterIntent message, byte actor) { if (PrepareTaxiMessage()) _taxiJob.ReceiveMeterIntent(message, actor); }
+        public void OnTaxiServiceState(TaxiServiceState message) { if (PrepareTaxiMessage()) _taxiJob.ReceiveService(message); }
+        public void OnTaxiPaydayReadIntent(TaxiPaydayReadIntent message, byte actor) { if (PrepareTaxiMessage()) _taxiJob.ReceivePaydayRead(message, actor); }
+        public void OnTaxiCallIntent(TaxiCallIntent message, byte actor) { if (PrepareTaxiMessage()) _taxiJob.ReceiveCall(message, actor); }
+        public void OnRemoteTaxiJobState(TaxiJobState message) { if (PrepareTaxiMessage()) _taxiJob.Apply(message); }
         public void OnRemoteWorldScalarsState(WorldScalarsState message) { EnsureSyncReady(); _worldScalars.Apply(message); }
         public void OnRemoteHockeyBettingState(HockeyBettingState message) { EnsureSyncReady(); _hockey.Apply(message); }
         public void OnRemoteWelfareState(WelfareState message) { EnsureSyncReady(); _welfare.Apply(message); }
@@ -271,6 +338,8 @@ namespace WinterMP.Core.Sync
             _ventti.ForceBroadcast();
         }
         public void OnRemoteUtilityBillState(UtilityBillState message) { EnsureSyncReady(); _utilityBills.Apply(message); }
+        public void OnUtilityPayment(UtilityPaymentIntent message) { EnsureSyncReady(); _utilityBills.OnPayment(message); }
+        public void OnUtilityPaymentResult(UtilityPaymentResult message) { EnsureSyncReady(); _utilityBills.OnPaymentResult(message); }
         public void ForceUtilityBillBroadcast() { EnsureSyncReady(); _utilityBills.ForceBroadcast(); }
         public void OnLottoTicketRequest(LottoTicketRequest message) { EnsureSyncReady(); _lottoTickets?.OnRequest(message); }
         public void OnLottoTicketReceipt(LottoTicketReceipt message) { EnsureSyncReady(); _lottoTickets?.OnReceipt(message); }
@@ -278,14 +347,52 @@ namespace WinterMP.Core.Sync
         public void OnBagState(BagState message) { EnsureSyncReady(); _items.OnBagState(message); }
         public void OnHostBagOpen(BagOpenRequest message, byte actor) { EnsureSyncReady(); _items.OnHostBagOpen(message, actor); }
         public void OnBagOpenReceipt(BagOpenReceipt message) { EnsureSyncReady(); _items.OnBagOpenReceipt(message); }
+        public void OnMotorOilState(MotorOilBottleState message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnMotorOilState(message); } }
+        public void OnAdvertJob(AdvertJobState message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnAdvertJobState(message); } }
+        public void OnAdvertSheet(AdvertSheetState message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnAdvertSheetState(message); } }
+        public void OnAdvertPhoneIntent(AdvertPhoneIntent message, byte actor) { if (IsGameLevel()) { EnsureSyncReady(); _phone.Adverts.Intent(message, actor); } }
+        public void OnAdvertPhoneResult(AdvertPhoneResult message) { if (IsGameLevel()) { EnsureSyncReady(); _phone.Adverts.Result(message); } }
+        public void OnAdvertIntent(AdvertIntent message, byte actor) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnAdvertIntent(message, actor); } }
+        public void OnBulbState(BulbState message) { EnsureSyncReady(); _items.OnBulbState(message); }
+        public void OnSupplyState(SupplyItemState message) { EnsureSyncReady(); _items.OnSupplyState(message); }
         public void OnPackageState(PackageState message) { EnsureSyncReady(); _items.OnPackageState(message); }
         public void OnHostPartFit(PartFitRequest message, byte playerId) { EnsureSyncReady(); _items.OnHostPartFit(message, playerId); }
         public void OnPartFitReceipt(PartFitReceipt message) { EnsureSyncReady(); _items.OnPartFitReceipt(message); }
-        internal void DrawPartFitPrompt() => _items.DrawPartFitPrompt();
+        internal void DrawPartFitPrompt() { if (_syncReady) _items.DrawPartFitPrompt(); }
 
         public void OnHostPackageOpen(PackageOpenRequest message, byte playerId) { EnsureSyncReady(); _items.OnHostPackageOpen(message, playerId); }
         public void OnPackageOpenReceipt(PackageOpenReceipt message) { EnsureSyncReady(); _items.OnPackageOpenReceipt(message); }
         public void OnReplacementPartState(ReplacementPartState message) { EnsureSyncReady(); _items.OnReplacementPartState(message); }
+        public void OnWiringState(WiringState message) { EnsureSyncReady(); _items.OnWiringState(message); }
+        public void OnHostWireInstall(WiringInstallRequest message, byte actor) { EnsureSyncReady(); _items.OnHostWireInstall(message, actor); }
+        public void OnWireInstallReceipt(WiringInstallReceipt message) { EnsureSyncReady(); _items.OnWireInstallReceipt(message); }
+        public void OnVehicleCoolantState(VehicleCoolantState message) { EnsureSyncReady(); _vehicles.OnVehicleCoolantState(message); }
+        internal bool ReadHeaterHoseInstalled(byte index) => _items?.ReadHeaterHoseInstalled(index) ?? false;
+
+        internal WiringState? ReadWiringInputs(uint id) => _items?.ReadWiringInputs(id);
+        internal HeaterState? ReadHeaterInputs() => _items?.ReadHeaterInputs();
+        public void OnHeaterState(HeaterState message) { EnsureSyncReady(); _items.OnHeaterState(message); }
+        public void OnGearboxState(GearboxState message) { EnsureSyncReady(); _items.OnGearboxState(message); }
+        public void OnEngineBlockState(EngineBlockState message) { EnsureSyncReady(); _items.OnEngineBlockState(message); }
+        public void OnBatteryState(BatteryState message) { EnsureSyncReady(); _items.OnBatteryState(message); }
+        internal BatteryState? ReadBatteryInputs() => _items?.ReadBatteryInputs();
+        internal bool CanObserveStarterDraw(PlayMakerFSM fsm) => _vehicles?.CanObserveStarterDraw(fsm) == true;
+        internal bool CanObserveGearboxWear(PlayMakerFSM fsm) => _syncReady && _vehicles.CanObserveGearboxWear(fsm);
+        internal bool ShouldDelegateGearboxWear(PlayMakerFSM fsm) => _syncReady && _vehicles.ShouldDelegateGearboxWear(fsm);
+        internal void RecordGearboxWear(PlayMakerFSM fsm) => _vehicles?.RecordGearboxWear(fsm);
+        public bool OnHostGearboxWear(GearboxWearRequest request, byte playerId)
+        { EnsureSyncReady(); return _vehicles.OnHostGearboxWear(request, playerId); }
+        internal bool CanObserveGearboxOil(PlayMakerFSM fsm) => _syncReady && _vehicles.CanObserveGearboxOil(fsm);
+        internal bool ShouldDelegateGearboxOil(PlayMakerFSM fsm) => _syncReady && _vehicles.ShouldDelegateGearboxOil(fsm);
+        internal void RecordGearboxOilUse(PlayMakerFSM fsm, byte phase) => _vehicles?.RecordGearboxOilUse(fsm, phase);
+        public bool OnHostGearboxOilUse(GearboxOilUseRequest request, byte playerId)
+        { EnsureSyncReady(); return _vehicles.OnHostGearboxOilUse(request, playerId); }
+        internal void RecordStarterWear(PlayMakerFSM fsm, float seconds) => _vehicles?.RecordStarterWear(fsm, seconds);
+        public bool OnHostStarterWear(StarterWearRequest message, byte playerId)
+        { EnsureSyncReady(); return _vehicles.OnHostStarterWear(message, playerId); }
+        internal void RecordStarterDraw(PlayMakerFSM fsm, byte kind) => _vehicles?.RecordStarterDraw(fsm, kind);
+        public bool OnHostStarterDraw(StarterDrawRequest message, byte playerId)
+        { EnsureSyncReady(); return _vehicles.OnHostStarterDraw(message, playerId); }
         public void OnRemoteLottoDrawState(LottoDrawState message) { EnsureSyncReady(); _lottery.Apply(message); }
         public void ForceLotteryBroadcast() { EnsureSyncReady(); _lottery.ForceBroadcast(); }
 
@@ -294,24 +401,22 @@ namespace WinterMP.Core.Sync
         {
             EnsureSyncReady();
             if (!_vehicles.TryAcceptGuestVehicleState(message, playerId)) return false;
-            _vehicles.OnRemoteVehicleState(message);
-            return true;
+            return _vehicles.OnRemoteVehicleState(message);
         }
         public void OnRemoteVehicleDamage(VehicleDamage message) { EnsureSyncReady(); _vehicles.ApplyVehicleDamage(message); }
-        public bool OnHostGuestVehicleDamage(VehicleDamage message, byte playerId)
-        {
-            EnsureSyncReady();
-            if (!_vehicles.TryAcceptGuestVehicleDamage(message, playerId)) return false;
-            _vehicles.ApplyVehicleDamage(message); // host applies if it isn't the owner
-            return true;
-        }
+        public void OnVehicleDrivetrainWearState(VehicleDrivetrainWearState message) { EnsureSyncReady(); _vehicles.OnVehicleDrivetrainWearState(message); }
+        internal void RecordWheelPuncture(PlayMakerFSM fsm, int wheel) => _vehicles?.RecordWheelPuncture(fsm, wheel);
+        internal bool OnHostWheelPuncture(WheelPunctureRequest message, byte player)
+        { EnsureSyncReady(); return _vehicles.OnHostWheelPuncture(message, player); }
+        public void OnVehicleWheelHealthState(VehicleWheelHealthState message) { EnsureSyncReady(); _vehicles.OnVehicleWheelHealthState(message); }
+        public bool TryReadHostWheelHealth(PlayMakerFSM fsm, int wheel, out float health, out bool ready) => _vehicles.TryReadHostWheelHealth(fsm, wheel, out health, out ready);
         public void OnRemoteVehicleCondition(VehicleCondition message) { EnsureSyncReady(); _vehicles.ApplyVehicleCondition(message); }
+        public void OnVehicleConditionReleaseAck(VehicleConditionReleaseAck message) { EnsureSyncReady(); _vehicles.ReceiveConditionReleaseAck(message); }
         public bool OnHostGuestVehicleCondition(VehicleCondition message, byte playerId)
         {
             EnsureSyncReady();
             if (!_vehicles.TryAcceptGuestVehicleCondition(message, playerId)) return false;
-            _vehicles.ApplyVehicleCondition(message); // host applies if it isn't the owner
-            return true;
+            return _vehicles.ApplyVehicleCondition(message);
         }
         public bool OnHostVehicleFuelIntent(VehicleFuelIntent message, out VehicleState state)
         {
@@ -323,8 +428,7 @@ namespace WinterMP.Core.Sync
         {
             EnsureSyncReady();
             if (!_vehicles.TryAcceptGuestVehicleClimate(message, playerId)) return false;
-            _vehicles.OnRemoteVehicleClimate(message);
-            return true;
+            return _vehicles.OnRemoteVehicleClimate(message);
         }
         public void OnRemoteVehicleCargo(VehicleCargo message) { EnsureSyncReady(); _items.OnRemoteVehicleCargo(message); }
         public bool OnHostGuestVehicleCargo(VehicleCargo message, byte playerId)

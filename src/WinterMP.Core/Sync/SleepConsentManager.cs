@@ -86,8 +86,6 @@ namespace WinterMP.Core.Sync
             if (_consentGranted) return;
 
             RollbackToConfirm(fsm);
-            session.AddSystemChat("* Waiting for guest sleep consent before continuing.");
-            WinterMPPlugin.Log.LogInfo("SleepConsent: held host at Get positions — guests pending.");
         }
 
         /// <summary>Push clock sync once the host sleep FSM reaches Calc rates.</summary>
@@ -103,36 +101,74 @@ namespace WinterMP.Core.Sync
 
         private void Update()
         {
-            if (!_waitingForGuests) return;
-
             try
             {
                 var session = SessionManager.Instance;
-                if (session == null || !session.IsHost || session.PlayerCount == 0)
+                if (session == null || session.IsHost || session.State != SessionState.Connected)
+                    UI.SleepConsentPrompt.Instance?.DismissAll();
+                if (session == null || !session.IsHost
+                    || (session.State != SessionState.Hosting && session.State != SessionState.Connected))
                 {
                     CancelWaiting();
                     return;
                 }
+                if (!_waitingForGuests) return;
 
-                if (Time.unscaledTime < _consentDeadlineAt) return;
+                if (!IsPendingAtConfirm())
+                {
+                    FinishRound(session, false, "the host left the bed");
+                    return;
+                }
 
-                session.AddSystemChat("* Sleep cancelled — timed out waiting for guests.");
-                WinterMPPlugin.Log.LogWarning("SleepConsent: timed out waiting for guest responses.");
-                FinishRound(session, accepted: false, timedOut: true);
+                for (int i = _awaitedPlayerIds.Count - 1; i >= 0; i--)
+                {
+                    byte id = _awaitedPlayerIds[i];
+                    if (IsPlayerPresent(session, id)) continue;
+                    _awaitedPlayerIds.RemoveAt(i);
+                    _responses.Remove(id);
+                }
+                if (_awaitedPlayerIds.Count == 0)
+                    FinishRound(session, false, "the waiting guests left");
+                else if (AllGuestsResponded(session))
+                    FinishRound(session, true, null);
+                else if (Time.unscaledTime >= _consentDeadlineAt)
+                    FinishRound(session, false, "timed out waiting for guests");
             }
             catch (System.Exception e)
             {
-                // Crash containment: a fault here must not escape into Unity's loop; drop the round.
                 WinterMPPlugin.Log.LogError("SleepConsent Update failed: " + e);
                 CancelWaiting();
             }
+        }
+
+        internal void OnHostSleepCancelled(PlayMakerFSM fsm)
+        {
+            if (!_waitingForGuests || fsm != _pendingSleepFsm) return;
+            var session = SessionManager.Instance;
+            if (session != null && session.IsHost)
+                FinishRound(session, false, "the host cancelled");
+            else
+                CancelWaiting();
+        }
+
+        private bool IsPendingAtConfirm()
+        {
+            return _pendingSleepFsm != null && _pendingSleepFsm.enabled
+                && _pendingSleepFsm.gameObject.activeInHierarchy
+                && _pendingSleepFsm.ActiveStateName == "Confirm";
         }
 
         public void OnRemoteResponse(SleepConsentResponse response)
         {
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost || !_waitingForGuests) return;
-            if (response.RequestId != _activeRequestId) return;
+            if (response.RequestId != _activeRequestId || !_awaitedPlayerIds.Contains(response.PlayerId)
+                || !IsPlayerPresent(session, response.PlayerId) || _responses.ContainsKey(response.PlayerId)) return;
+            if (!IsPendingAtConfirm())
+            {
+                FinishRound(session, false, "the host left the bed");
+                return;
+            }
 
             _responses[response.PlayerId] = response.Accepted;
 
@@ -141,8 +177,10 @@ namespace WinterMP.Core.Sync
                 ? $"* {name} accepted sleep"
                 : $"* {name} declined sleep");
 
-            if (AllGuestsResponded(session))
-                FinishRound(session, accepted: !AnyDeclined(), timedOut: false);
+            if (!response.Accepted)
+                FinishRound(session, false, "a guest declined");
+            else if (AllGuestsResponded(session))
+                FinishRound(session, true, null);
         }
 
         public void OnGuestRequest(SleepConsentRequest request)
@@ -194,17 +232,7 @@ namespace WinterMP.Core.Sync
             return false;
         }
 
-        private bool AnyDeclined()
-        {
-            foreach (var pair in _responses)
-            {
-                if (!pair.Value) return true;
-            }
-
-            return false;
-        }
-
-        private void FinishRound(SessionManager session, bool accepted, bool timedOut)
+        private void FinishRound(SessionManager session, bool accepted, string? cancellationReason)
         {
             _waitingForGuests = false;
             _responses.Clear();
@@ -232,13 +260,9 @@ namespace WinterMP.Core.Sync
                 _consentGranted = false;
                 _awaitingPostSleepSync = false;
                 TryAbortSleep(sleepFsm);
-                if (timedOut)
-                    WinterMPPlugin.Log.LogWarning("SleepConsent: cancelled due to timeout.");
-                else
-                {
-                    session.AddSystemChat("* Sleep cancelled — a guest declined.");
-                    WinterMPPlugin.Log.LogWarning("SleepConsent: cancelled because a guest declined.");
-                }
+                string reason = cancellationReason ?? "the request ended";
+                session.AddSystemChat("* Sleep cancelled — " + reason + ".");
+                WinterMPPlugin.Log.LogInfo("SleepConsent: cancelled — " + reason + ".");
             }
         }
 
@@ -253,6 +277,7 @@ namespace WinterMP.Core.Sync
 
         private void CancelWaiting()
         {
+            var pending = _waitingForGuests ? _pendingSleepFsm : null;
             _waitingForGuests = false;
             _consentGranted = false;
             _awaitingPostSleepSync = false;
@@ -261,6 +286,7 @@ namespace WinterMP.Core.Sync
             _consentDeadlineAt = 0f;
             _pendingSleepFsm = null;
             _pendingSleepState = null;
+            TryAbortSleep(pending);
         }
 
         private static void RollbackToConfirm(PlayMakerFSM fsm)
@@ -282,20 +308,17 @@ namespace WinterMP.Core.Sync
         {
             if (fsm == null) return;
 
-            foreach (string evt in new[] { "STOP", "ABORT" })
+            // STOP only belongs to Conditions?; ABORT enters Calc rates and applies
+            // sleep needs even when no sleep happened. Use Confirm's release route.
+            if (fsm.ActiveStateName != "Confirm") return;
+            try
             {
-                if (!HasFsmEvent(fsm, evt)) continue;
-
-                try
-                {
-                    fsm.SendEvent(evt);
-                    WinterMPPlugin.Log.LogInfo("SleepConsent: sent " + evt + " to abort sleep.");
-                    return;
-                }
-                catch
-                {
-                    // FSM may be tearing down.
-                }
+                if (FsmHook.EnsureRemoteEntry(fsm, "State 3"))
+                    FsmHook.FireRemoteEntry(fsm, "State 3");
+            }
+            catch (System.Exception e)
+            {
+                WinterMPPlugin.Log.LogWarning("SleepConsent: cancellation failed: " + e.Message);
             }
         }
 

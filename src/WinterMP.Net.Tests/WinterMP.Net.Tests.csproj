@@ -15,10 +15,61 @@
     <ProjectReference Include="..\WinterMP.Net\WinterMP.Net.csproj" />
     <!-- The catalog reader is engine-independent; exercise the actual Core source
          without pulling Unity/PlayMaker into CI. -->
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Firewood.cs" Link="Catalog\SyncCatalogJson.Firewood.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.MotorOil.cs" Link="Catalog\SyncCatalogJson.MotorOil.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Adverts.cs" Link="Catalog\SyncCatalogJson.Adverts.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Train.cs" Link="Catalog\SyncCatalogJson.Train.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Coffee.cs" Link="Catalog\SyncCatalogJson.Coffee.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Passengers.cs" Link="Catalog\SyncCatalogJson.Passengers.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Sausages.cs" Link="Catalog\SyncCatalogJson.Sausages.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.TractorTrailer.cs" Link="Catalog\SyncCatalogJson.TractorTrailer.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.HouseholdFuses.cs" Link="Catalog\SyncCatalogJson.HouseholdFuses.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Taxi.cs" Link="Catalog\SyncCatalogJson.Taxi.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Milk.cs" Link="Catalog\SyncCatalogJson.Milk.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.MooseMeat.cs" Link="Catalog\SyncCatalogJson.MooseMeat.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.FleaSale.cs" Link="Catalog\SyncCatalogJson.FleaSale.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.UtilityPayments.cs" Link="Catalog\SyncCatalogJson.UtilityPayments.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.cs" Link="Catalog\SyncCatalogJson.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Gambling.cs" Link="Catalog\SyncCatalogJson.Gambling.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Factories.cs" Link="Catalog\SyncCatalogJson.Factories.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.ShoppingBags.cs" Link="Catalog\SyncCatalogJson.ShoppingBags.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.GuestEngineProtection.cs" Link="Catalog\SyncCatalogJson.GuestEngineProtection.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.DrivetrainProtection.cs" Link="Catalog\SyncCatalogJson.DrivetrainProtection.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VehicleEngineRpm.cs" Link="Catalog\SyncCatalogJson.VehicleEngineRpm.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.ParkingBrake.cs" Link="Catalog\SyncCatalogJson.ParkingBrake.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.ParkingJoint.cs" Link="Catalog\SyncCatalogJson.ParkingJoint.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Stoves.cs" Link="Catalog\SyncCatalogJson.Stoves.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Atf.cs" Link="Catalog\SyncCatalogJson.Atf.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VehicleEngineHandoff.cs" Link="Catalog\SyncCatalogJson.VehicleEngineHandoff.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VehicleTemperature.cs" Link="Catalog\SyncCatalogJson.VehicleTemperature.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.TirePressure.cs" Link="Catalog\SyncCatalogJson.TirePressure.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.WheelRim.cs" Link="Catalog\SyncCatalogJson.WheelRim.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.WheelHealth.cs" Link="Catalog\SyncCatalogJson.WheelHealth.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.CabinTemperature.cs" Link="Catalog\SyncCatalogJson.CabinTemperature.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.ElectricalTemperature.cs" Link="Catalog\SyncCatalogJson.ElectricalTemperature.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.EngineTemperature.cs" Link="Catalog\SyncCatalogJson.EngineTemperature.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VehicleHeat.cs" Link="Catalog\SyncCatalogJson.VehicleHeat.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VehicleCooling.cs" Link="Catalog\SyncCatalogJson.VehicleCooling.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VehicleElectrical.cs" Link="Catalog\SyncCatalogJson.VehicleElectrical.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VehicleWear.cs" Link="Catalog\SyncCatalogJson.VehicleWear.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.GuestEngineInputs.cs" Link="Catalog\SyncCatalogJson.GuestEngineInputs.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.EngineWires.cs" Link="Catalog\SyncCatalogJson.EngineWires.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.EngineBattery.cs" Link="Catalog\SyncCatalogJson.EngineBattery.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Exhaust.cs" Link="Catalog\SyncCatalogJson.Exhaust.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.ValveInputs.cs" Link="Catalog\SyncCatalogJson.ValveInputs.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.AirCleaner.cs" Link="Catalog\SyncCatalogJson.AirCleaner.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Oilpan.cs" Link="Catalog\SyncCatalogJson.Oilpan.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.RockerCover.cs" Link="Catalog\SyncCatalogJson.RockerCover.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Radiator.cs" Link="Catalog\SyncCatalogJson.Radiator.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.CoolantHoses.cs" Link="Catalog\SyncCatalogJson.CoolantHoses.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.CoolingAirflow.cs" Link="Catalog\SyncCatalogJson.CoolingAirflow.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.CoolingAmbient.cs" Link="Catalog\SyncCatalogJson.CoolingAmbient.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Carburettor.cs" Link="Catalog\SyncCatalogJson.Carburettor.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.CylinderHead.cs" Link="Catalog\SyncCatalogJson.CylinderHead.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.EngineBlock.cs" Link="Catalog\SyncCatalogJson.EngineBlock.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.EngineGearbox.cs" Link="Catalog\SyncCatalogJson.EngineGearbox.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.EngineHeater.cs" Link="Catalog\SyncCatalogJson.EngineHeater.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.ValveAdjustment.cs" Link="Catalog\SyncCatalogJson.ValveAdjustment.cs" />
     <None Include="..\..\catalog\sync-catalog.json" Link="sync-catalog.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

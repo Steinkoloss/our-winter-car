@@ -14,13 +14,12 @@ namespace WinterMP.Core.Sync
         private const string DeathObjectPath = "Systems/Death";
         private const string DeathFsmName = "Activate Dead Body";
 
-        private static readonly string[] DeathStartStates = { "Take photo" };
+        private static readonly string[] DeathStartStates = { "State 3", "Take photo" };
         private static readonly string[] RespawnStates = { "State 2" };
 
         private readonly System.Collections.Generic.HashSet<PlayMakerFSM> _hooked =
             new System.Collections.Generic.HashSet<PlayMakerFSM>();
 
-        private PlayMakerFSM? _deathFsm;
         private float _nextProbeAt;
         private bool _localDeathActive;
         private bool _deathReported;
@@ -28,14 +27,16 @@ namespace WinterMP.Core.Sync
 
         public bool LocalDeathActive => _localDeathActive;
 
-        public void Reset()
+        public void Reset(bool preserveDeath = false, bool clearHooks = true)
         {
-            _hooked.Clear();
-            _deathFsm = null;
+            if (clearHooks) _hooked.Clear();
             _nextProbeAt = 0f;
-            _localDeathActive = false;
-            _deathReported = false;
-            _reportSequence = 0;
+            if (!preserveDeath)
+            {
+                _localDeathActive = false;
+                _deathReported = false;
+                _reportSequence = 0;
+            }
         }
 
         public void Probe(SessionManager session)
@@ -63,38 +64,26 @@ namespace WinterMP.Core.Sync
         {
             _localDeathActive = true;
             _deathReported = true;
+            var session = SessionManager.Instance;
+            session?.RetirePassengerSeat(session.LocalPlayerId);
         }
 
         public void NotifyRespawned(SessionManager session)
         {
             if (!_localDeathActive) return;
 
+            var player = GameObject.Find("PLAYER");
+            if (player == null) return;
+
+            session.RetirePassengerSeat(session.LocalPlayerId);
             _localDeathActive = false;
             _deathReported = false;
 
-            Vector3 feet = Vector3.zero;
-            Quaternion rot = Quaternion.identity;
-            var player = GameObject.Find("PLAYER");
-            if (player != null)
-            {
-                var controller = player.GetComponent<CharacterController>();
-                feet = PlayerPoseReader.ReadFeetPosition(player.transform, controller);
-                rot = PlayerPoseReader.ReadLookRotation(player.transform);
-            }
-            else
-            {
-                // PLAYER momentarily unresolvable — e.g. still inactive in the death->respawn
-                // window, or the 120 s respawn-watch timeout fallback (PollRespawn). Fall back
-                // to PlayerSync's cached tracker, which still reads a pose from a deactivated
-                // object that GameObject.Find would miss.
-                PlayerSyncManager.Instance?.TryReadLocalPose(out feet, out rot);
-            }
-
-            // ALWAYS broadcast the respawn, even with a best-effort pose: a peer clears its
-            // RemotePlayer.IsDead only on a PlayerRespawn (a live player's resumed
-            // PlayerTransform stream never un-ghosts them). Returning early on a null PLAYER
-            // left the respawned player an invisible ghost on every peer until their next
-            // death. Any pose slack is corrected by the next PlayerTransform within a frame.
+            var controller = player.GetComponent<CharacterController>();
+            Vector3 feet = PlayerPoseReader.ReadFeetPosition(player.transform, controller);
+            Quaternion rot = PlayerPoseReader.ReadLookRotation(player.transform);
+            // Peers stay dead until a real player is ready; a timeout or an inactive
+            // cached death-screen pose cannot establish a respawn.
             session.SendPlayerProfileMessage(new PlayerRespawn
             {
                 PlayerId = session.LocalPlayerId,
@@ -121,8 +110,12 @@ namespace WinterMP.Core.Sync
                 return;
             }
 
-            if (path.IndexOf(DeathObjectPath, StringComparison.OrdinalIgnoreCase) < 0)
+            if (!string.Equals(path, DeathObjectPath, StringComparison.Ordinal))
                 return;
+
+            // This graph starts inactive. Deserialize its actions before activation
+            // so State 3 can release the seat before native controller destruction.
+            if (!fsm.Fsm.Initialized) fsm.Fsm.Init(fsm);
 
             bool hookedAny = false;
             for (int s = 0; s < DeathStartStates.Length; s++)
@@ -146,8 +139,10 @@ namespace WinterMP.Core.Sync
             if (!hookedAny) return;
 
             _hooked.Add(fsm);
-            _deathFsm = fsm;
             WinterMPPlugin.Log.LogInfo("DeathSync: hooked Activate Dead Body at " + path + ".");
+            if (fsm.gameObject.activeInHierarchy && fsm.enabled && fsm.Fsm.Started
+                && !string.IsNullOrEmpty(fsm.ActiveStateName))
+                OnDeathStarted(fsm, session);
         }
 
         private void OnDeathStarted(PlayMakerFSM fsm, SessionManager session)
@@ -156,9 +151,11 @@ namespace WinterMP.Core.Sync
                 return;
 
             _localDeathActive = true;
+            session.RetirePassengerSeat(session.LocalPlayerId);
             if (_deathReported) return;
 
             _deathReported = true;
+            if (!session.PermanentDeathEnabled) DeathSyncManager.Instance?.ScheduleRespawnWatch();
             byte cause = ReadCause(fsm);
 
             if (session.IsHost)
@@ -180,10 +177,11 @@ namespace WinterMP.Core.Sync
 
         private void OnRespawnStateEntered(PlayMakerFSM fsm, SessionManager session)
         {
-            if (session.PermanentDeathEnabled) return;
+            if (!session.CanAcceptRespawn) return;
             if (!_localDeathActive) return;
 
-            // State 2 follows Permadeath SAVE — respawn completes once the death FSM idles.
+            // State 2 is the newspaper, followed by save and MainMenu. Keep watching
+            // through scene changes until a live GAME player has movement again.
             DeathSyncManager.Instance?.ScheduleRespawnWatch();
         }
 

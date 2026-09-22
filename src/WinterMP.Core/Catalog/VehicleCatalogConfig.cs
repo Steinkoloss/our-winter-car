@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using HutongGames.PlayMaker;
 using WinterMP.Core.Sync;
 
 namespace WinterMP.Core.Catalog
@@ -13,6 +14,15 @@ namespace WinterMP.Core.Catalog
 
         public bool IsVehicleRoot(Rigidbody body)
         {
+            // Its three connected bodies use one hitch/physics authority. The mass
+            // fallback must not also give the chassis an independent item lease.
+            var trailer = SyncCatalog.TractorTrailer;
+            if (trailer != null && ScenePath.Of(body.transform) == trailer["trailer"]) return false;
+            // The detached native corpse weighs 450 kg. The mass fallback would
+            // otherwise delegate its ragdoll and nearby meat as a pushable vehicle.
+            var moose = SyncCatalog.MooseChop;
+            if (moose != null && body.name == moose["detached"]) return false;
+
             // A body carrying the full vehicle-simulation subtree IS a drivable, even when
             // nested — the taxi (JOBS/TAXIJOB/MACHTWAGEN) is a complete sim car parented at
             // depth. Gate on the structure (Simulation/Engine) rather than a name list so it
@@ -106,9 +116,32 @@ namespace WinterMP.Core.Catalog
 
             foreach (string state in DrinkEmptyStates)
             {
-                if (FsmHook.HasState(fsm, state) && !states.Contains(state))
+                if (RemovesDrinkBody(fsm, state) && !states.Contains(state))
                     states.Add(state);
             }
+        }
+
+        private static bool RemovesDrinkBody(PlayMakerFSM fsm, string name)
+        {
+            // Numbered states are reused by unrelated drinks: milk's State 2 is
+            // its startup delay, not consumption. Require native removal of this body.
+            foreach (var state in fsm.Fsm.States)
+            {
+                if (state.Name != name) continue;
+                foreach (var action in state.Actions)
+                {
+                    if (!action.Enabled) continue;
+                    if (action.GetType().Name == "DestroySelf") return true;
+                    if (action.GetType().Name != "DestroyComponent") continue;
+                    var owner = action.GetType().GetField("gameObject")?.GetValue(action) as FsmOwnerDefault;
+                    var component = action.GetType().GetField("component")?.GetValue(action) as FsmString;
+                    if (owner != null && (owner.OwnerOption == OwnerDefaultOption.UseOwner
+                            || owner.GameObject.Value == fsm.gameObject)
+                        && component != null && !component.UseVariable && component.Value == "Rigidbody") return true;
+                }
+                return false;
+            }
+            return false;
         }
     }
 

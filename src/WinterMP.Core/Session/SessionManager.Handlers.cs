@@ -14,6 +14,12 @@ namespace WinterMP.Core.Session
     {
         private void HandleHandshakeRequest(PeerId peer, HandshakeRequest request)
         {
+            if (!CanJoinRun)
+            {
+                SendTo(peer, new HandshakeResponse { Accepted = false,
+                    Reason = "This permadeath run has ended. The host must start a new session." }, Channel.ReliableOrdered);
+                return;
+            }
             if (_playersByPeer.TryGetValue(peer, out var existing))
             {
                 SendAcceptedHandshake(peer, existing.PlayerId);
@@ -34,6 +40,8 @@ namespace WinterMP.Core.Session
                 refusal = $"Game version mismatch (host {hostGameVersion}, you {request.GameVersion}).";
             else if (SyncCatalog.Loaded && request.CatalogHash != SyncCatalog.Hash)
                 refusal = $"Sync catalog mismatch (host {SyncCatalog.Hash:X8}, you {request.CatalogHash:X8}). Reinstall {MyPluginInfo.PLUGIN_NAME}.";
+            else if (!Sync.PermadeathSettings.Initialize())
+                refusal = "Native death settings are unavailable. See the host log.";
 
             if (refusal != null)
             {
@@ -214,7 +222,7 @@ namespace WinterMP.Core.Session
             }
 
             if (guest.ReturningGuest
-                && GuestProfileStore.TryGetNeeds(guest.SteamId, out GuestProfileStore.NeedsSnapshot needs))
+                && GuestProfileStore.TryGetNeeds(guest.SteamId, out WinterMP.Net.Sync.GuestProfile.NeedsSnapshot needs))
             {
                 offer.Hunger = needs.Hunger;
                 offer.Fatigue = needs.Fatigue;
@@ -230,6 +238,8 @@ namespace WinterMP.Core.Session
                     offer.Flags |= GuestSpawn.FlagHasSavedDirtiness;
                 if (needs.HasAlco)
                     offer.Flags |= GuestSpawn.FlagHasSavedAlco;
+                if (needs.HasBodyTemp)
+                    offer.Flags |= GuestSpawn.FlagHasSavedBodyTemp;
             }
 
             return offer;
@@ -251,13 +261,14 @@ namespace WinterMP.Core.Session
                 player.LastNeedsSequence = report.Sequence;
                 player.HasNeedsReport = true;
 
-                GuestProfileStore.RememberNeeds(player.SteamId, new GuestProfileStore.NeedsSnapshot
+                GuestProfileStore.RememberNeeds(player.SteamId, new WinterMP.Net.Sync.GuestProfile.NeedsSnapshot
                 {
                     Hunger = report.Hunger,
                     Fatigue = report.Fatigue,
                     Thirst = report.Thirst,
                     Urine = report.Urine,
                     BodyTemp = report.BodyTemp,
+                    HasBodyTemp = report.HasBodyTemp,
                     Stress = report.Stress,
                     Drunk = report.Drunk,
                     Dirtiness = report.Dirtiness,
@@ -274,8 +285,9 @@ namespace WinterMP.Core.Session
         private static bool HasFiniteNeeds(PlayerNeedsReport report)
         {
             return IsFinite(report.Hunger) && IsFinite(report.Fatigue) && IsFinite(report.Thirst)
-                && IsFinite(report.Urine) && IsFinite(report.BodyTemp) && IsFinite(report.Stress)
-                && IsFinite(report.Drunk) && IsFinite(report.Dirtiness);
+                && IsFinite(report.Urine) && report.ValidBodyTemp && IsFinite(report.Stress)
+                && IsFinite(report.Drunk) && IsFinite(report.Dirtiness)
+                && (!report.HasAlco || IsFinite(report.PlayerAlco));
         }
 
         private static bool IsFinite(float value)
@@ -381,6 +393,7 @@ namespace WinterMP.Core.Session
                 Name = response.HostPlayerName,
             };
             SetState(SessionState.Connected, $"Connected to {response.HostPlayerName}");
+            Sync.PermadeathSettings.ApplyGuest(PermanentDeathEnabled);
             AddChatLine($"* Connected to {response.HostPlayerName}'s game");
             if (PermanentDeathEnabled)
                 AddChatLine("* Host session: PERMADEATH (one death ends it for everyone)");
@@ -414,16 +427,16 @@ namespace WinterMP.Core.Session
                 player.Position = transform.Position.ToUnity();
                 player.Rotation = transform.Rotation.ToUnity();
                 player.MoveState = transform.MoveState;
+                player.HasSweat = transform.HasSweat;
+                player.Sweat = transform.Sweat;
                 player.LastTransformTime = Time.unscaledTime;
 
                 if (IsHost && player.SteamId != 0)
                     GuestProfileStore.Remember(player.SteamId, transform.Position, transform.Rotation);
-                break;
+                // Only an accepted, known player's pose/sweat may be relayed.
+                if (IsHost) Broadcast(transform, Channel.UnreliableSequenced, except: peer);
+                return;
             }
-
-            // Host relays transforms so all guests see all players.
-            if (IsHost)
-                Broadcast(transform, Channel.UnreliableSequenced, except: peer);
         }
 
         /// <summary>
@@ -444,7 +457,7 @@ namespace WinterMP.Core.Session
                 | Sync.PlayerMoveState.Swimming;
             const float MaxCoordinate = 100000f;
 
-            if (!IsFinite(transform.Position.X) || !IsFinite(transform.Position.Y) || !IsFinite(transform.Position.Z)
+            if (!transform.ValidSweat || !IsFinite(transform.Position.X) || !IsFinite(transform.Position.Y) || !IsFinite(transform.Position.Z)
                 || !IsFinite(transform.Rotation.X) || !IsFinite(transform.Rotation.Y)
                 || !IsFinite(transform.Rotation.Z) || !IsFinite(transform.Rotation.W)
                 || Mathf.Abs(transform.Position.X) > MaxCoordinate || Mathf.Abs(transform.Position.Y) > MaxCoordinate

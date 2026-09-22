@@ -44,7 +44,7 @@ namespace WinterMP.Core.Sync
                 var control = pair.Value;
                 // Scalar controls have a dedicated snapshot. Replaying their last
                 // +/- state would apply a delta to a joining guest's unrelated value.
-                if (control.ScalarFloat != null) continue;
+                if (control.ScalarFloat != null || control.Payment != null || VehicleWorldSync.IsParkingBrakeControl(control.Fsm)) continue;
                 if (control.LastSyncedState == null) continue;
 
                 doors.Entries.Add(new WorldDoorSnapshot.Entry { NetId = pair.Key, StateName = control.LastSyncedState });

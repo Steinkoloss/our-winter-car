@@ -17,7 +17,7 @@ namespace WinterMP.Net.Tests
         private static PackageState State(string fsm = "Pistons", ushort quantity = 4, uint revision = 1)
         {
             var c = Catalog(); var rule = c.Factories.Single(r => r.Fsm == fsm);
-            return new PackageState { FactoryId = FactoryItemIdentity.FactoryId(c["factoryPath"], fsm),
+            return new PackageState { FactoryId = FactoryItemIdentity.FactoryId(rule.Path, fsm),
                 NativeId = rule.Prefix + "1", Quantity = quantity, Revision = revision,
                 Position = new NetVector3(12, 3, -4), Rotation = new NetQuaternion(0, 0, 0, 1) };
         }
@@ -49,10 +49,10 @@ namespace WinterMP.Net.Tests
             var c = Catalog(); var replica = Replica();
             foreach (var rule in c.Factories)
             {
-                ushort capacity = rule.Fsm == "Pistons" ? (ushort)4 : rule.Fsm == "Mainbearing" ? (ushort)5
+                ushort capacity = (rule.Fsm == "Pistons" || rule.Fsm == "Sparkplugs" || rule.Fsm == "R20BatteryBox") ? (ushort)4 : (rule.Fsm == "Mainbearing" || rule.Fsm == "FusePackage") ? (ushort)5
                     : rule.Fsm == "Rockers" ? (ushort)8 : (ushort)1;
                 Assert.Equal(capacity, rule.Capacity);
-                uint expected = FactoryItemIdentity.ItemId(FactoryItemIdentity.FactoryId(c["factoryPath"], rule.Fsm), rule.Prefix + "1");
+                uint expected = FactoryItemIdentity.ItemId(FactoryItemIdentity.FactoryId(rule.Path, rule.Fsm), rule.Prefix + "1");
                 for (int quantity = capacity; quantity >= 0; quantity--)
                 {
                     var state = State(rule.Fsm, (ushort)quantity, (uint)(capacity - quantity));

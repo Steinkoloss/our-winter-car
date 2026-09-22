@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using UnityEngine;
 using WinterMP.Net;
+using WinterMP.Net.Sync;
+using NeedsSnapshot = WinterMP.Net.Sync.GuestProfile.NeedsSnapshot;
 
 namespace WinterMP.Core.Session
 {
@@ -13,32 +14,7 @@ namespace WinterMP.Core.Session
     /// </summary>
     internal static class GuestProfileStore
     {
-        internal struct NeedsSnapshot
-        {
-            public float Hunger;
-            public float Fatigue;
-            public float Thirst;
-            public float Urine;
-            public float BodyTemp;
-            public float Stress;
-            public float Drunk;
-            public float Dirtiness;
-            /// <summary>False for legacy sidecars that predate the v55 dirtiness field.</summary>
-            public bool HasDirtiness;
-            public float PlayerAlco;
-            /// <summary>False for legacy sidecars that predate the v78 PlayerAlco field.</summary>
-            public bool HasAlco;
-            public bool Valid;
-        }
-
-        private sealed class Profile
-        {
-            public NetVector3 Position;
-            public NetQuaternion Rotation = NetQuaternion.Identity;
-            public NeedsSnapshot Needs;
-        }
-
-        private static readonly Dictionary<ulong, Profile> Profiles = new Dictionary<ulong, Profile>();
+        private static readonly Dictionary<ulong, GuestProfile> Profiles = new Dictionary<ulong, GuestProfile>();
         private static bool _loaded;
         private static string SidecarPath => Path.Combine(Application.persistentDataPath, "wintermp-guests.json");
 
@@ -48,7 +24,7 @@ namespace WinterMP.Core.Session
 
             EnsureLoaded();
             if (!Profiles.TryGetValue(steamId, out var profile))
-                profile = new Profile();
+                profile = new GuestProfile();
 
             profile.Position = position;
             profile.Rotation = rotation;
@@ -58,11 +34,11 @@ namespace WinterMP.Core.Session
 
         public static void RememberNeeds(ulong steamId, NeedsSnapshot needs)
         {
-            if (steamId == 0 || !needs.Valid || !HasFiniteNeeds(needs)) return;
+            if (steamId == 0 || !needs.Valid || !needs.HasFiniteValues) return;
 
             EnsureLoaded();
             if (!Profiles.TryGetValue(steamId, out var profile))
-                profile = new Profile();
+                profile = new GuestProfile();
 
             profile.Needs = needs;
             Profiles[steamId] = profile;
@@ -117,49 +93,7 @@ namespace WinterMP.Core.Session
             {
                 foreach (string line in File.ReadAllLines(SidecarPath))
                 {
-                    if (line == null || line.Trim().Length == 0 || line.TrimStart().StartsWith("#"))
-                        continue;
-
-                    string[] parts = line.Split(',');
-                    if (parts.Length < 8) continue;
-
-                    if (!ulong.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong steamId))
-                        continue;
-
-                    var profile = new Profile
-                    {
-                        Position = new NetVector3(ParseFloat(parts[1]), ParseFloat(parts[2]), ParseFloat(parts[3])),
-                        Rotation = new NetQuaternion(
-                            ParseFloat(parts[4]), ParseFloat(parts[5]), ParseFloat(parts[6]), ParseFloat(parts[7])),
-                    };
-
-                    if (parts.Length >= 12)
-                    {
-                        float dirtiness = 0f;
-                        bool hasDirtiness = parts.Length >= 16 && TryParseFiniteFloat(parts[15], out dirtiness);
-                        float playerAlco = 0f;
-                        bool hasAlco = parts.Length >= 17 && TryParseFiniteFloat(parts[16], out playerAlco);
-                        profile.Needs = new NeedsSnapshot
-                        {
-                            Hunger = ParseFloat(parts[8]),
-                            Fatigue = ParseFloat(parts[9]),
-                            Thirst = ParseFloat(parts[10]),
-                            Urine = ParseFloat(parts[11]),
-                            // Trailing columns arrived over time (v28 bodytemp, v30
-                            // stress/drunk, v55 dirtiness). Retain whether dirtiness
-                            // was absent so a legacy profile cannot falsely clean a guest.
-                            BodyTemp = parts.Length >= 13 ? ParseFloat(parts[12]) : 0f,
-                            Stress = parts.Length >= 14 ? ParseFloat(parts[13]) : 0f,
-                            Drunk = parts.Length >= 15 ? ParseFloat(parts[14]) : 0f,
-                            Dirtiness = dirtiness,
-                            HasDirtiness = hasDirtiness,
-                            PlayerAlco = playerAlco,
-                            HasAlco = hasAlco,
-                            Valid = true,
-                        };
-                        if (!HasFiniteNeeds(profile.Needs))
-                            profile.Needs.Valid = false;
-                    }
+                    if (!GuestProfile.TryParse(line, out ulong steamId, out GuestProfile profile)) continue;
 
                     Profiles[steamId] = profile;
                 }
@@ -178,54 +112,12 @@ namespace WinterMP.Core.Session
                 var lines = new List<string>
                 {
                     "# wintermp-guests.json — guest spawn poses + needs (host only; do not edit while hosting)",
-                    "# steamId,x,y,z,qx,qy,qz,qw,hunger,fatigue,thirst,urine,bodytemp,stress,drunk,dirtiness,playeralco",
+                    GuestProfile.Columns,
                 };
 
                 foreach (var pair in Profiles)
                 {
-                    var p = pair.Value;
-                    if (p.Needs.Valid && p.Needs.HasDirtiness && p.Needs.HasAlco)
-                    {
-                        lines.Add(string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0},{1:0.####},{2:0.####},{3:0.####},{4:0.####},{5:0.####},{6:0.####},{7:0.####},{8:0.####},{9:0.####},{10:0.####},{11:0.####},{12:0.####},{13:0.####},{14:0.####},{15:0.####},{16:0.####}",
-                            pair.Key,
-                            p.Position.X, p.Position.Y, p.Position.Z,
-                            p.Rotation.X, p.Rotation.Y, p.Rotation.Z, p.Rotation.W,
-                            p.Needs.Hunger, p.Needs.Fatigue, p.Needs.Thirst, p.Needs.Urine,
-                            p.Needs.BodyTemp, p.Needs.Stress, p.Needs.Drunk, p.Needs.Dirtiness, p.Needs.PlayerAlco));
-                    }
-                    else if (p.Needs.Valid && p.Needs.HasDirtiness)
-                    {
-                        lines.Add(string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0},{1:0.####},{2:0.####},{3:0.####},{4:0.####},{5:0.####},{6:0.####},{7:0.####},{8:0.####},{9:0.####},{10:0.####},{11:0.####},{12:0.####},{13:0.####},{14:0.####},{15:0.####}",
-                            pair.Key,
-                            p.Position.X, p.Position.Y, p.Position.Z,
-                            p.Rotation.X, p.Rotation.Y, p.Rotation.Z, p.Rotation.W,
-                            p.Needs.Hunger, p.Needs.Fatigue, p.Needs.Thirst, p.Needs.Urine,
-                            p.Needs.BodyTemp, p.Needs.Stress, p.Needs.Drunk, p.Needs.Dirtiness));
-                    }
-                    else if (p.Needs.Valid)
-                    {
-                        lines.Add(string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0},{1:0.####},{2:0.####},{3:0.####},{4:0.####},{5:0.####},{6:0.####},{7:0.####},{8:0.####},{9:0.####},{10:0.####},{11:0.####},{12:0.####},{13:0.####},{14:0.####}",
-                            pair.Key,
-                            p.Position.X, p.Position.Y, p.Position.Z,
-                            p.Rotation.X, p.Rotation.Y, p.Rotation.Z, p.Rotation.W,
-                            p.Needs.Hunger, p.Needs.Fatigue, p.Needs.Thirst, p.Needs.Urine,
-                            p.Needs.BodyTemp, p.Needs.Stress, p.Needs.Drunk));
-                    }
-                    else
-                    {
-                        lines.Add(string.Format(
-                            CultureInfo.InvariantCulture,
-                            "{0},{1:0.####},{2:0.####},{3:0.####},{4:0.####},{5:0.####},{6:0.####},{7:0.####}",
-                            pair.Key,
-                            p.Position.X, p.Position.Y, p.Position.Z,
-                            p.Rotation.X, p.Rotation.Y, p.Rotation.Z, p.Rotation.W));
-                    }
+                    lines.Add(pair.Value.Serialize(pair.Key));
                 }
 
                 File.WriteAllLines(SidecarPath, lines.ToArray());
@@ -236,29 +128,5 @@ namespace WinterMP.Core.Session
             }
         }
 
-        private static float ParseFloat(string text)
-        {
-            float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value);
-            return value;
-        }
-
-        private static bool TryParseFiniteFloat(string text, out float value)
-        {
-            return float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
-                && IsFinite(value);
-        }
-
-        private static bool HasFiniteNeeds(NeedsSnapshot needs)
-        {
-            return IsFinite(needs.Hunger) && IsFinite(needs.Fatigue) && IsFinite(needs.Thirst)
-                && IsFinite(needs.Urine) && IsFinite(needs.BodyTemp) && IsFinite(needs.Stress)
-                && IsFinite(needs.Drunk) && (!needs.HasDirtiness || IsFinite(needs.Dirtiness))
-                && (!needs.HasAlco || IsFinite(needs.PlayerAlco));
-        }
-
-        private static bool IsFinite(float value)
-        {
-            return !float.IsNaN(value) && !float.IsInfinity(value);
-        }
     }
 }

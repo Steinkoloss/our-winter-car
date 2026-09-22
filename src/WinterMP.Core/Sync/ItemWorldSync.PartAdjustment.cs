@@ -13,6 +13,8 @@ namespace WinterMP.Core.Sync
     {
         private void OnHostPartAdjustment(PartFitRequest request, byte actor, SessionManager session)
         {
+            if (_replacementParts.TryGetValue(request.ItemId, out var target) && target.Factory.Rule.DistributorTiming != null)
+            { OnHostPartDistributorTiming(request, actor, session); return; }
             ReplacementBinding? part = null;
             bool applying = _bridge.ApplyingRemote;
             try
@@ -87,6 +89,7 @@ namespace WinterMP.Core.Sync
             var ray = camera.ScreenPointToRay(Input.mousePosition);
             float nearest = 1f;
             if (Physics.Raycast(ray, out var hit, nearest, 1 << 19)) nearest = hit.distance;
+            float pickRange = nearest;
             ReplacementBinding? selected = null;
             ReplacementPartState? selectedState = null;
             uint selectedId = 0;
@@ -96,36 +99,81 @@ namespace WinterMP.Core.Sync
                 if (!part.Replica || !part.FittedPresentation || part.Data == null || !part.Data.gameObject.activeInHierarchy
                     || part.Factory.Failed) continue;
                 var state = _replacementReplica?.Get(pair.Key);
-                if (state == null || !PartAttachmentPolicy.HasAttachment(state)) continue;
+                if (state == null || !PartAdjustmentViewReady(part, state) || _pendingReplacements.Contains(pair.Key)) continue;
+                var rotation = part.HandRotation;
+                var screw = part.HandScrew;
+                var timing = part.DistributorTiming;
                 var box = part.RemovalCollider;
-                if (state.RemovalAllowed && box != null)
+                if (!part.DistributorTimingFailed && timing != null)
+                {
+                    if (TryDistributorAdjustmentPick(timing, state.RemovalAllowed ? box : null, ray, pickRange,
+                        out float surface, out bool timingHit) && surface <= nearest)
+                    {
+                        nearest = surface; selected = timingHit ? part : null; selectedState = timingHit ? state : null;
+                        if (timingHit) selectedId = pair.Key;
+                    }
+                    continue;
+                }
+                // The filter shares one box for removal and hand turns. Recasting
+                // its rounded hit distance can reject its own pick.
+                bool sharedHandPick = !part.HandScrewFailed && screw != null && screw.Pick == box;
+                if (state.RemovalAllowed && box != null && !sharedHandPick)
                 {
                     var origin = box.transform.InverseTransformPoint(ray.origin);
                     var direction = box.transform.InverseTransformPoint(ray.origin + ray.direction) - origin;
                     if (PartRemovalPolicy.RayBox(origin.ToNet(), direction.ToNet(), box.center.ToNet(), box.size.ToNet(), nearest, out float obstruction))
                     { nearest = obstruction; selected = null; selectedState = null; }
                 }
-                var rotation = part.HandRotation;
-                if (part.HandRotationFailed || rotation == null || rotation.Pick == null
-                    || !rotation.Pick.gameObject.activeInHierarchy) continue;
-                var sphere = rotation.Pick; var scale = sphere.transform.lossyScale;
-                float radius = sphere.radius * Mathf.Max(Mathf.Abs(scale.x), Mathf.Max(Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
-                if (!PartAdjustmentPolicy.RaySphere(ray.origin.ToNet(), ray.direction.ToNet(), sphere.transform.TransformPoint(sphere.center).ToNet(),
-                    radius, nearest, out float distance)) continue;
+                float distance;
+                if (!part.HandScrewFailed && screw != null && screw.Pick != null && screw.Pick.gameObject.activeInHierarchy)
+                {
+                    var origin = screw.Pick.transform.InverseTransformPoint(ray.origin);
+                    var direction = screw.Pick.transform.InverseTransformPoint(ray.origin + ray.direction) - origin;
+                    if (!PartRemovalPolicy.RayBox(origin.ToNet(), direction.ToNet(), screw.Pick.center.ToNet(),
+                        screw.Pick.size.ToNet(), nearest, out distance)) continue;
+                }
+                else if (!part.HandRotationFailed && rotation != null)
+                {
+                    var sphere = rotation.Pick;
+                    if (sphere == null || !sphere.gameObject.activeInHierarchy) continue;
+                    var scale = sphere.transform.lossyScale;
+                    float radius = sphere.radius * Mathf.Max(Mathf.Abs(scale.x), Mathf.Max(Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
+                    if (!PartAdjustmentPolicy.RaySphere(ray.origin.ToNet(), ray.direction.ToNet(), sphere.transform.TransformPoint(sphere.center).ToNet(),
+                        radius, nearest, out distance)) continue;
+                }
+                else continue;
                 nearest = distance; selected = part; selectedState = state; selectedId = pair.Key;
             }
-            if (selected == null || selectedState == null || !_bridge.ReplacementBoltLoose(selected.HandRotation!.Bolt)) return false;
-            GUI.Box(new Rect(Screen.width / 2f - 150f, Screen.height / 2f + 55f, 300f, 28f), "Scroll to adjust the alternator");
+            if (selected == null || selectedState == null) return false;
+            bool handScrew = selected.HandScrew != null;
+            bool distributor = selected.DistributorTiming != null;
+            if (handScrew ? !PartHandScrewPolicy.ValidTightness(selectedState.Scalars[selected.HandScrew!.ScalarIndex])
+                : distributor ? !PartAdjustmentPolicy.IsDistributorLoose(selected.DistributorTiming!.Tightness.Value)
+                : !_bridge.ReplacementBoltLoose(selected.HandRotation!.Bolt)) return false;
+            GUI.Box(new Rect(Screen.width / 2f - 165f, Screen.height / 2f + 55f, 330f, 28f),
+                handScrew ? "Scroll to tighten or loosen the oil filter"
+                    : distributor ? "Scroll to adjust distributor timing" : "Scroll to adjust the alternator");
             var input = Event.current;
             if (input.type == EventType.ScrollWheel && input.delta.y != 0 && _partFitInputFrame != Time.frameCount)
             {
                 _partFitInputFrame = Time.frameCount;
-                var rotation = selected.HandRotation!;
-                var operation = input.delta.y < 0 ? PartFitOperation.RotateIncrease : PartFitOperation.RotateDecrease;
-                if (Time.unscaledTime >= rotation.NextRequestAt
-                    && PartAdjustmentPolicy.TryRotation(selectedState.Scalars[rotation.ScalarIndex], operation, out _))
+                var operation = handScrew
+                    ? (input.delta.y < 0 ? PartFitOperation.HandTighten : PartFitOperation.HandLoosen)
+                    : distributor ? (input.delta.y > 0 ? PartFitOperation.RotateIncrease : PartFitOperation.RotateDecrease)
+                    : (input.delta.y < 0 ? PartFitOperation.RotateIncrease : PartFitOperation.RotateDecrease);
+                bool allowed = handScrew
+                    ? Time.unscaledTime >= selected.HandScrew!.NextRequestAt
+                        && PartHandScrewPolicy.TryTurn(selectedState.Scalars[selected.HandScrew.ScalarIndex], operation, out _)
+                    : distributor ? Time.unscaledTime >= selected.DistributorTiming!.NextRequestAt
+                        && PartAdjustmentPolicy.TryRotation(PartAdjustmentProfile.Distributor,
+                            selectedState.Scalars[selected.DistributorTiming.ScalarIndex], operation, out _)
+                    : Time.unscaledTime >= selected.HandRotation!.NextRequestAt
+                        && PartAdjustmentPolicy.TryRotation(selectedState.Scalars[selected.HandRotation.ScalarIndex], operation, out _);
+                if (allowed)
                 {
-                    rotation.NextRequestAt = Time.unscaledTime + .1f;
+                    if (handScrew) selected.HandScrew!.NextRequestAt = Time.unscaledTime + selected.Factory.Rule.HandScrew!.Cooldown;
+                    else if (distributor) selected.DistributorTiming!.NextRequestAt = Time.unscaledTime + selected.Factory.Rule.DistributorTiming!.Cooldown;
+                    else selected.HandRotation!.NextRequestAt = Time.unscaledTime + .1f;
                     EnsurePartFitClient();
                     if (_partFitClient!.TryBegin(session.LocalPlayerId, selectedId, selectedState.Revision, operation)) ProcessPartFitting(session);
                 }
@@ -134,5 +182,10 @@ namespace WinterMP.Core.Sync
             // Keep the existing right-click removal interaction when both picks overlap.
             return input.type != EventType.MouseDown || input.button != 1;
         }
+
+        private static bool PartAdjustmentViewReady(ReplacementBinding part, ReplacementPartState state) =>
+            part.Replica && part.FittedPresentation && part.Data != null && part.Data.gameObject.activeInHierarchy
+            && !part.Factory.Failed && part.HasAppliedState && part.AppliedRevision == state.Revision
+            && PartAttachmentPolicy.HasAttachment(state);
     }
 }

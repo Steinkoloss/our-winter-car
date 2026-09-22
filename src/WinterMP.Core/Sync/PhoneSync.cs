@@ -16,6 +16,8 @@ namespace WinterMP.Core.Sync
     /// </summary>
     internal sealed class PhoneSync
     {
+        internal readonly AdvertPhoneSync Adverts = new AdvertPhoneSync();
+
         // The home phone (HOMENEW) and the yard living-room phone.
         private static readonly string[] RingingPaths =
         {
@@ -39,6 +41,7 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
+            Adverts.Clear();
             _ringing = null;
             _topic = null;
             _lastTopic = string.Empty;
@@ -51,6 +54,7 @@ namespace WinterMP.Core.Sync
         public void Update(SessionManager session)
         {
             if (session.PlayerCount == 0) return;
+            Adverts.Update(session);
             if (Time.unscaledTime >= _nextProbeAt) { _nextProbeAt = Time.unscaledTime + ProbeIntervalSeconds; Locate(); }
             if (!session.IsHost || !Ready) return;
             if (Time.unscaledTime < _nextPollAt) return;

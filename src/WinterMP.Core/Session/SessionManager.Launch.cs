@@ -246,7 +246,6 @@ namespace WinterMP.Core.Session
                 {
                     _pendingMode = LaunchMode.Join;
                     _pendingLobbyId = lobbyId;
-                    _joinBrowseActive = false;
                     return;
                 }
 
@@ -279,8 +278,6 @@ namespace WinterMP.Core.Session
                 WinterMPPlugin.Log.LogWarning($"StartJoin ignored: session state is {State}.");
                 return;
             }
-
-            _joinBrowseActive = false;
 
 #if STEAMWORKS
             try

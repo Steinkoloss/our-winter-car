@@ -11,6 +11,7 @@ namespace WinterMP.Core.Sync
     {
         private const float ConditionProbeIntervalSeconds = 5f;
         private const float ConditionKeepAliveSeconds = 20f;
+        private readonly VehicleConditionStreamPolicy _vehicleConditionStreams = new VehicleConditionStreamPolicy();
 
         // Wheel index order used on the wire (FL, FR, RL, RR).
         private static readonly string[] WheelSuffixes = { "FL", "FR", "RL", "RR" };
@@ -26,9 +27,8 @@ namespace WinterMP.Core.Sync
         };
 
         /// <summary>
-        /// Drivetrain wear + per-wheel tire condition, owner-authoritative
-        /// (COVERAGE-ROADMAP 2.2). The owner streams the condition; non-owners apply it
-        /// (health/pressure written, PUNCTURE/RIM/FIXED fired) so a flat tire and wear agree.
+        /// Streams delegated vehicle condition. Native driver inputs and physical
+        /// flat/rim reconciliation remain partial (COVERAGE-ROADMAP 2.2).
         /// </summary>
         public void UpdateVehicleCondition(SessionManager session)
         {
@@ -37,222 +37,222 @@ namespace WinterMP.Core.Sync
 
             foreach (var item in _items.Items.Values)
             {
-                if (!item.IsVehicle || item.Body == null || !item.LocallyOwned) continue;
-                EnsureConditionProbe(item);
-                if (item.TirePressureVar == null && item.WheelConditionFsms == null) continue;
-                OwnerBroadcastCondition(session, item, now);
-            }
-        }
-
-        private static void EnsureConditionProbe(SyncedItem item)
-        {
-            if (item.Body == null || item.ConditionProbed) return;
-            if (Time.unscaledTime < item.NextConditionProbeAt) return;
-            item.NextConditionProbeAt = Time.unscaledTime + ConditionProbeIntervalSeconds;
-
-            var wheels = new PlayMakerFSM?[4];
-            var health = new FsmFloat?[4];
-
-            foreach (var fsm in item.Body.GetComponentsInChildren<PlayMakerFSM>(true))
-            {
-                if (fsm == null) continue;
-                string goName = fsm.gameObject.name;
-
-                if (item.TirePressureVar == null && fsm.FsmName == "Data" && goName == "TirePressure")
-                    item.TirePressureVar = fsm.FsmVariables.FindFsmFloat("Pressure");
-
-                if (item.DrivetrainDamageVar == null && fsm.FsmName == "Damage" && goName == "GearboxDamage")
-                    item.DrivetrainDamageVar = fsm.FsmVariables.FindFsmInt("DamageType");
-
-                if (fsm.FsmName == "Condition" && goName.StartsWith("WHEELc_", System.StringComparison.Ordinal))
+                if (!item.IsVehicle || item.Body == null) continue;
+                try
                 {
-                    for (int i = 0; i < WheelSuffixes.Length; i++)
-                    {
-                        if (goName.EndsWith(WheelSuffixes[i], System.StringComparison.Ordinal) && wheels[i] == null)
-                        {
-                            wheels[i] = fsm;
-                            health[i] = fsm.FsmVariables.FindFsmFloat("Health");
-                        }
-                    }
+                    ApplyApprovedConditionRelease(item);
+                    UpdateConditionBindings(item);
+                    if (item.LocallyOwned) OwnerBroadcastCondition(session, item, now);
+                    else ApplyNativeTirePressure(item);
                 }
-            }
-
-            bool anyWheel = wheels[0] != null || wheels[1] != null || wheels[2] != null || wheels[3] != null;
-            if (anyWheel) { item.WheelConditionFsms = wheels; item.WheelHealthVars = health; }
-
-            // Probed "enough" once we found the pressure var or at least one wheel.
-            if (item.TirePressureVar != null || anyWheel)
-            {
-                item.ConditionProbed = true;
-                WinterMPPlugin.Log.LogInfo($"VehicleWorldSync: condition probe ready for '{item.Path}'.");
-            }
-        }
-
-        /// <summary>Read the live condition values off the vehicle's FSMs (no baseline side effects).</summary>
-        private static bool TryReadCondition(SyncedItem item, out byte pressure, out byte drivetrain,
-            out byte flags, out byte hfl, out byte hfr, out byte hrl, out byte hrr)
-        {
-            pressure = 0; drivetrain = 0; flags = 0;
-            hfl = 0; hfr = 0; hrl = 0; hrr = 0;
-            try
-            {
-                pressure = VehicleConditionPolicy.EncodeTirePressure(item.TirePressureVar != null ? item.TirePressureVar.Value : 0f);
-                drivetrain = (byte)Mathf.Clamp(item.DrivetrainDamageVar != null ? item.DrivetrainDamageVar.Value : 0, 0, 255);
-                if (item.WheelConditionFsms != null && item.WheelHealthVars != null)
+                catch (System.Exception error)
                 {
-                    for (int i = 0; i < 4; i++)
-                    {
-                        var fsm = item.WheelConditionFsms[i];
-                        byte health = ClampByte(item.WheelHealthVars[i] != null ? item.WheelHealthVars[i]!.Value : 0f);
-                        switch (i)
-                        {
-                            case 0: hfl = health; break;
-                            case 1: hfr = health; break;
-                            case 2: hrl = health; break;
-                            case 3: hrr = health; break;
-                        }
-                        string state = ReadWheelState(fsm);
-                        if (state == "Flat friction") flags |= WheelPunctureFlags[i];
-                        else if (state == "Rim friction") flags |= WheelRimFlags[i];
-                    }
+                    WinterMPPlugin.Log.LogDebug("VehicleWorldSync: condition update unavailable for " + item.Path + ": " + error.Message);
                 }
-                return true;
-            }
-            catch (System.Exception e)
-            {
-                WinterMPPlugin.Log.LogDebug("VehicleWorldSync: condition read failed for " + item.Path + ": " + e.Message);
-                return false;
             }
         }
 
         /// <summary>
-        /// Host, join snapshot: the vehicle's current condition regardless of ownership —
-        /// a parked car has no broadcaster, so this one-shot is a late joiner's only source.
+        /// Host repairs use the accepted current owner's report while delegated.
+        /// A snapshot never borrows a driver's live sequence or samples competing local state.
         /// </summary>
         internal VehicleCondition? TryBuildConditionSnapshot(SyncedItem item, byte ownerPlayerId)
         {
-            var state = TryReadConditionState(item);
+            if (!item.IsVehicle || item.Body == null) return null;
+            if (_bridge.Session?.IsHost == true && !item.LocallyOwned && item.RemoteOwner != WorldSyncIds.NoOwner)
+            {
+                var accepted = item.AcceptedVehicleCondition;
+                if (accepted == null || accepted.OwnerPlayerId != item.RemoteOwner) return null;
+                var copy = VehicleConditionStreamPolicy.Copy(accepted);
+                copy.OwnerPlayerId = ownerPlayerId; copy.Sequence = VehicleCondition.SnapshotSequence;
+                return copy;
+            }
+            var state = ReadHostParkedCondition(item) ?? TryReadConditionState(item);
             if (state != null)
             {
                 state.OwnerPlayerId = ownerPlayerId;
-                state.Sequence = ++item.OutConditionSequence;
+                state.Sequence = VehicleCondition.SnapshotSequence;
             }
             return state;
         }
 
-        private static VehicleCondition? TryReadConditionState(SyncedItem item)
+        internal void SendFinalVehicleCondition(SessionManager session, SyncedItem item)
         {
-            if (!item.IsVehicle || item.Body == null) return null;
-            try { EnsureConditionProbe(item); }
-            catch (System.Exception e)
-            {
-                // An inactive/missing wheel must not break the world's checksum or
-                // snapshot callback. The probe's timer bounds subsequent bind retries.
-                WinterMPPlugin.Log.LogDebug("VehicleWorldSync: condition probe failed for " + item.Path + ": " + e.Message);
-                return null;
-            }
-            if (item.TirePressureVar == null && item.WheelConditionFsms == null) return null;
-            if (!TryReadCondition(item, out byte pressure, out byte drivetrain, out byte flags,
-                    out byte hfl, out byte hfr, out byte hrl, out byte hrr)) return null;
-
-            return new VehicleCondition
-            {
-                VehicleId = item.Id,
-                TirePressure = pressure,
-                DrivetrainDamage = drivetrain,
-                HealthFL = hfl, HealthFR = hfr, HealthRL = hrl, HealthRR = hrr,
-                Flags = flags,
-            };
+            item.SentFinalCondition = null;
+            if (!item.IsVehicle || item.Body == null || !item.LocallyOwned) return;
+            OwnerBroadcastCondition(session, item, Time.unscaledTime, true);
         }
 
-        private void OwnerBroadcastCondition(SessionManager session, SyncedItem item, float now)
+        private void OwnerBroadcastCondition(SessionManager session, SyncedItem item, float now, bool final = false)
         {
-            if (!TryReadCondition(item, out byte pressure, out byte drivetrain, out byte flags,
-                    out byte hfl, out byte hfr, out byte hrl, out byte hrr)) return;
+            var message = TryReadConditionState(item);
+            if (message == null) return;
 
             bool keepAlive = now >= item.NextConditionKeepAliveAt;
             bool changed = !item.HasSentCondition
-                || item.LastCondPressure != pressure || item.LastCondDrivetrain != drivetrain
-                || item.LastCondFlags != flags
-                || item.LastCondHFL != hfl || item.LastCondHFR != hfr
-                || item.LastCondHRL != hrl || item.LastCondHRR != hrr;
-            if (!changed && !keepAlive) return;
-            if (now < item.NextConditionTickAt && !changed) return;
+                || item.LastCondPressure != message.TirePressure || item.LastCondDrivetrain != message.DrivetrainDamage
+                || item.LastCondFlags != message.Flags || item.LastCondAvailability != message.Availability
+                || item.LastCondHFL != message.HealthFL || item.LastCondHFR != message.HealthFR
+                || item.LastCondHRL != message.HealthRL || item.LastCondHRR != message.HealthRR;
+            if (!final && !changed && !keepAlive) return;
+            if (!final && now < item.NextConditionTickAt && !changed) return;
 
             item.NextConditionTickAt = now + 1f;
             if (keepAlive) item.NextConditionKeepAliveAt = now + ConditionKeepAliveSeconds;
             item.HasSentCondition = true;
-            item.LastCondPressure = pressure; item.LastCondDrivetrain = drivetrain; item.LastCondFlags = flags;
-            item.LastCondHFL = hfl; item.LastCondHFR = hfr; item.LastCondHRL = hrl; item.LastCondHRR = hrr;
+            item.LastCondAvailability = message.Availability;
+            item.LastCondPressure = message.TirePressure; item.LastCondDrivetrain = message.DrivetrainDamage; item.LastCondFlags = message.Flags;
+            item.LastCondHFL = message.HealthFL; item.LastCondHFR = message.HealthFR; item.LastCondHRL = message.HealthRL; item.LastCondHRR = message.HealthRR;
 
-            session.SendWorldMessage(new VehicleCondition
-            {
-                VehicleId = item.Id,
-                OwnerPlayerId = session.LocalPlayerId,
-                Sequence = ++item.OutConditionSequence,
-                TirePressure = pressure,
-                DrivetrainDamage = drivetrain,
-                HealthFL = hfl, HealthFR = hfr, HealthRL = hrl, HealthRR = hrr,
-                Flags = flags,
-            }, Channel.ReliableOrdered);
+            message.OwnerPlayerId = session.LocalPlayerId;
+            message.Sequence = item.OutConditionSequence = VehicleStateStreamPolicy.NextSequence(item.OutConditionSequence);
+            if (final && !session.IsHost) item.SentFinalCondition = VehicleConditionStreamPolicy.Copy(message);
+            session.SendWorldMessage(message, Channel.ReliableOrdered);
         }
 
         /// <summary>Host gate: only the authenticated current owner may drive a vehicle's condition.</summary>
         public bool TryAcceptGuestVehicleCondition(VehicleCondition message, byte playerId)
         {
-            if (message.OwnerPlayerId != playerId
+            if (!VehicleConditionStreamPolicy.IsValid(message) || message.OwnerPlayerId != playerId
+                || playerId == 0 || message.Sequence == VehicleCondition.SnapshotSequence
                 || !_items.Items.TryGetValue(message.VehicleId, out var item)
-                || !item.IsVehicle)
+                || !item.IsVehicle || item.Body == null || item.LocallyOwned || _items.IsLocalPlayerDriving(item))
                 return false;
-            if (item.RemoteOwner != playerId && item.RemoteOwner != WorldSyncIds.NoOwner) return false;
-            return true;
+            return item.RemoteOwner == playerId;
         }
 
         /// <summary>Apply an owner's condition onto a locally non-owned vehicle.</summary>
-        public void ApplyVehicleCondition(VehicleCondition message)
+        public bool ApplyVehicleCondition(VehicleCondition message)
         {
-            if (!_items.Items.TryGetValue(message.VehicleId, out var item) || !item.IsVehicle || item.Body == null)
-                return;
-            if (item.LocallyOwned) return;
-            EnsureConditionProbe(item);
+            var session = _bridge.Session;
+            if (session == null || (session.IsHost ? session.State != SessionState.Hosting : session.State != SessionState.Connected)
+                || !_items.Items.TryGetValue(message.VehicleId, out var item) || !item.IsVehicle || item.Body == null) return false;
+            if (!_vehicleConditionStreams.Receive(message, session.IsHost,
+                    item.LocallyOwned || _items.IsLocalPlayerDriving(item), item.RemoteOwner)) return false;
 
-            // Sequence dedup is per-sender; a different sender (handoff, host snapshot) rebases.
-            if (message.OwnerPlayerId == item.LastConditionSequenceOwner)
-            {
-                ushort diff = (ushort)(message.Sequence - item.LastConditionSequence);
-                if (item.LastConditionSequence != 0 && (diff == 0 || diff > short.MaxValue)) return;
-            }
-            item.LastConditionSequenceOwner = message.OwnerPlayerId;
-            item.LastConditionSequence = message.Sequence;
-
+            var previousApply = item.ApplyingVehicleCondition;
             try
             {
-                if (item.TirePressureVar != null) item.TirePressureVar.Value = VehicleConditionPolicy.DecodeTirePressure(message.TirePressure);
-                if (item.DrivetrainDamageVar != null) item.DrivetrainDamageVar.Value = message.DrivetrainDamage;
-
-                if (item.WheelConditionFsms != null && item.WheelHealthVars != null)
-                {
-                    byte[] healths = { message.HealthFL, message.HealthFR, message.HealthRL, message.HealthRR };
-                    for (int i = 0; i < 4; i++)
-                    {
-                        if (item.WheelHealthVars[i] != null) item.WheelHealthVars[i]!.Value = healths[i];
-                        ApplyWheelDiscrete(item, i, message.Flags);
-                    }
-                }
+                EnsureConditionProbe(item);
+                // PUNCTURE may synchronously enter a native health reader before
+                // the successful application is committed to accepted state.
+                item.ApplyingVehicleCondition = VehicleConditionStreamPolicy.Copy(message);
+                ApplyConditionValues(item, message);
+                item.AcceptedVehicleCondition = VehicleConditionStreamPolicy.Copy(message);
+                ClearConditionRelease(item);
+                ClearParkedCondition(item);
+                ApplyNativeTirePressure(item, received: true);
+                return true;
             }
             catch (System.Exception e)
             {
                 WinterMPPlugin.Log.LogDebug("VehicleWorldSync: condition apply failed for " + item.Path + ": " + e.Message);
+                return false;
+            }
+            finally { item.ApplyingVehicleCondition = previousApply; }
+        }
+
+        internal bool TryReadWheelHealthInput(PlayMakerFSM fsm, int wheel, out byte health)
+        {
+            health = 0;
+            var session = _bridge.Session;
+            if (!GuestSaveGuard.ProtectWorld || session == null || session.IsHost || session.State != SessionState.Connected) return false;
+            foreach (var item in _items.Items.Values)
+            {
+                if (!item.IsVehicle || item.Body == null || wheel < 0 || wheel > 3 || item.WheelConditionFsms == null
+                    || !ReferenceEquals(item.WheelConditionFsms[wheel], fsm) || !fsm.transform.IsChildOf(item.Body.transform)) continue;
+                bool localDriver = item.LocallyOwned || _items.IsLocalPlayerDriving(item);
+                if (VehicleConditionClaimPolicy.TryGetHealth(ReadClaimedCondition(item), wheel, out health)) return true;
+                if (VehicleConditionStreamPolicy.TryGetObserverHealth(item.ApplyingVehicleCondition ?? item.AcceptedVehicleCondition,
+                    item.Id, localDriver, item.RemoteOwner, wheel, out health)) return true;
+                return item.ApplyingVehicleCondition == null && ReferenceEquals(item.ParkedConditionBody, item.Body)
+                    && VehicleConditionStreamPolicy.TryGetParkedObserverHealth(item.ParkedVehicleCondition,
+                        item.Id, localDriver, item.RemoteOwner, wheel, out health);
+            }
+            return false;
+        }
+
+        internal bool TryReadGearboxConditionInput(PlayMakerFSM fsm, out byte damage)
+        {
+            damage = 0;
+            var session = _bridge.Session;
+            if (!GuestSaveGuard.ProtectWorld || session == null || session.IsHost || session.State != SessionState.Connected) return false;
+            foreach (var item in _items.Items.Values)
+            {
+                if (!item.IsVehicle || !ReferenceEquals(item.DrivetrainDamageFsm, fsm) || !ConditionFsmLive(item, fsm)) continue;
+                bool local = item.LocallyOwned || _items.IsLocalPlayerDriving(item);
+                if (VehicleConditionClaimPolicy.TryGetDrivetrain(ReadClaimedCondition(item), out damage)) return true;
+                if (VehicleConditionStreamPolicy.TryGetObserverDrivetrainDamage(item.ApplyingVehicleCondition ?? item.AcceptedVehicleCondition,
+                    item.Id, local, item.RemoteOwner, out damage)) return true;
+                return item.ApplyingVehicleCondition == null && ReferenceEquals(item.ParkedConditionBody, item.Body)
+                    && VehicleConditionStreamPolicy.TryGetParkedObserverDrivetrainDamage(item.ParkedVehicleCondition,
+                        item.Id, local, item.RemoteOwner, out damage);
+            }
+            return false;
+        }
+
+        private void ForgetConditionPlayer(byte playerId)
+        {
+            _vehicleConditionStreams.ForgetPlayer(playerId);
+            _wheelPuncturePolicy.ForgetPlayer(playerId);
+            foreach (var item in _items.Items.Values)
+                if (item.AcceptedVehicleCondition?.OwnerPlayerId == playerId) item.AcceptedVehicleCondition = null;
+        }
+
+        internal void ClearConditionStreams()
+        {
+            _vehicleConditionStreams.Clear();
+            foreach (var item in _items.Items.Values)
+            {
+                item.AcceptedVehicleCondition = null; item.OutConditionSequence = 0; item.HasSentCondition = false;
+                item.NextConditionTickAt = 0; item.NextConditionKeepAliveAt = 0;
+                ClearParkedCondition(item);
+                ClearClaimedCondition(item);
+                ClearConditionRelease(item);
+                item.NativeTirePressure = null; item.NextTirePressureProbeAt = 0;
+                item.ConditionProbeBody = null; item.NextConditionProbeAt = 0;
+                item.ConditionReadyMask = 0; item.ConditionNeedsApply = false;
+                System.Array.Clear(item.NextWheelRimRetryAt, 0, item.NextWheelRimRetryAt.Length);
             }
         }
 
-        private void ApplyWheelDiscrete(SyncedItem item, int wheel, byte desiredFlags)
+        internal static void ClearParkedCondition(SyncedItem item)
+        {
+            item.ParkedVehicleCondition = null;
+            item.ParkedConditionBody = null;
+        }
+
+        internal void OnConditionMotionAccepted(SyncedItem item, byte previousOwner, ItemTransform motion)
+        {
+            if (!item.IsVehicle) return;
+            ClearClaimedCondition(item);
+            ClearConditionRelease(item);
+            if (!motion.IsFinal)
+            {
+                ClearParkedCondition(item);
+                if (previousOwner != motion.OwnerPlayerId) item.AcceptedVehicleCondition = null;
+                return;
+            }
+            // An unowned final (including resync poses) cannot approve an older
+            // driver's report. Only the established owner's accepted release can.
+            if (previousOwner != motion.OwnerPlayerId) return;
+            ClearParkedCondition(item);
+            if (item.Body == null || item.LocallyOwned || _items.IsLocalPlayerDriving(item)) return;
+            var parked = VehicleConditionStreamPolicy.CaptureReleasedCondition(item.AcceptedVehicleCondition, previousOwner, motion);
+            if (parked == null) return;
+            item.ParkedVehicleCondition = parked;
+            item.ParkedConditionBody = item.Body;
+            SyncEventLog.Record("vehicle-condition-parked", item.Id.ToString("X8") + " owner " + motion.OwnerPlayerId);
+        }
+
+        private bool ApplyWheelDiscrete(SyncedItem item, int wheel, byte desiredFlags)
         {
             var fsm = item.WheelConditionFsms![wheel];
-            if (fsm == null) return;
+            if (fsm == null) return false;
 
             bool wantPuncture = (desiredFlags & WheelPunctureFlags[wheel]) != 0;
             bool wantRim = (desiredFlags & WheelRimFlags[wheel]) != 0;
+            if (wantRim) return ApplyNativeWheelRim(item, wheel, fsm);
             // Diff against the wheel FSM's ACTUAL state, not our apply bookkeeping: a local
             // FSM that drifted (or a joiner whose own save already has a flat) would satisfy
             // stale bookkeeping and every keepalive would be a no-op — the drift never heals.
@@ -262,13 +262,14 @@ namespace WinterMP.Core.Sync
 
             try
             {
-                if (wantRim && !hadRim) fsm.SendEvent("RIM");
-                else if (wantPuncture && !hadPuncture) fsm.SendEvent("PUNCTURE");
-                else if (!wantPuncture && !wantRim && (hadPuncture || hadRim)) fsm.SendEvent("FIXED");
+                if (wantPuncture && !hadPuncture) fsm.SendEvent("PUNCTURE");
+                else if (!wantPuncture && (hadPuncture || hadRim)) fsm.SendEvent("FIXED");
+                return true;
             }
             catch (System.Exception e)
             {
                 WinterMPPlugin.Log.LogDebug($"VehicleWorldSync: wheel {WheelSuffixes[wheel]} event failed on {item.Path}: {e.Message}");
+                return false;
             }
         }
 

@@ -50,7 +50,7 @@ namespace WinterMP.Core.Catalog
             "confirmState", "oneState", "allState", "garbageState", "garbageEvent", "saveState", "saveEvent", "deleteState", "consumedEvent",
             "conditionVariable", "consumedVariable", "ownerVariable", "contentsVariable", "contentsFsm",
             "currentBagVariable", "keysReference", "valuesReference", "oneEvent", "allEvent",
-            "contentsIdleState", "contentsStartState", "spillCreateState", "spillIdleState", "spillPrefabVariable",
+            "contentsIdleState", "contentsStartState", "contentsConsumedState", "spillCreateState", "spillIdleState", "spillPrefabVariable",
             "spillOutputVariable", "spillProductVariable", "spillSpawnPointVariable", "spillEvent", "pickupPath", "pickupFsm", "pickupEntryState",
             "pickupIdleState", "pickupHeldState", "pickupDropState", "pickupDropEvent", "pickupObjectVariable",
             "pickupJointVariable", "pickupPivotVariable", "pickupEmptyVariable" };

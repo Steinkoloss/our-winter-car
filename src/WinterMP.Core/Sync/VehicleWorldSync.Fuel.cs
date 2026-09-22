@@ -158,6 +158,11 @@ namespace WinterMP.Core.Sync
                 Sequence = VehicleState.SnapshotSequence,
                 FuelLevel = NormalizeFuelLevel(accepted, capacity),
             };
+            // A remotely owned snapshot may come from its last accepted stream;
+            // this receipt must include the fuel the host has just validated.
+            state.FuelLevel = NormalizeFuelLevel(accepted, capacity);
+            if (item.AcceptedVehicleState != null)
+                item.AcceptedVehicleState.FuelLevel = state.FuelLevel;
             WinterMPPlugin.Log.LogDebug(
                 $"FuelSync: accepted player {message.PlayerId} -> '{item.Path}' {current:0.00}L to {accepted:0.00}L.");
             return true;

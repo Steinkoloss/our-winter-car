@@ -40,14 +40,22 @@ namespace WinterMP.Core.Sync
             if (session == null || !session.IsHost) return;
             var replay = _partFitLedger.Inspect(request, actor, out bool begin);
             if (!begin) { if (replay != null) SendPartFitReceipt(session, replay); return; }
-            if (_partFitting != null)
+            if (_partFitting != null || _headFitting != null)
             {
                 var busy = _partFitLedger.Begin(request, actor, PartFitStatus.Busy);
                 if (busy != null) SendPartFitReceipt(session, busy);
                 return;
             }
+            if (HeadIds(out uint head, out _) && request.ItemId == head)
+            {
+                if (PartToolScrewPolicy.IsTurn(request.Operation)) OnHostHeadFastener(session, request, actor);
+                else OnHostHeadFit(session, request, actor);
+                return;
+            }
             if (request.Operation == PartFitOperation.Remove) { OnHostPartRemoval(request, actor, session); return; }
             if (PartAdjustmentPolicy.IsRotation(request.Operation)) { OnHostPartAdjustment(request, actor, session); return; }
+            if (PartToolScrewPolicy.IsTurn(request.Operation)) { OnHostPartToolScrew(request, actor, session); return; }
+            if (PartHandScrewPolicy.IsTurn(request.Operation)) { OnHostPartHandScrew(request, actor, session); return; }
             try
             {
                 _replacementParts.TryGetValue(request.ItemId, out var part);
@@ -180,6 +188,7 @@ namespace WinterMP.Core.Sync
                 if (retry != null) session.SendWorldMessage(retry, Channel.ReliableOrdered);
                 return;
             }
+            ProcessHeadFitting(session);
             var fitting = _partFitting;
             if (fitting == null) return;
             if (fitting.Request.Operation == PartFitOperation.Remove) { ProcessPartRemoval(session, fitting); return; }
@@ -249,6 +258,8 @@ namespace WinterMP.Core.Sync
 
         private void SendPartFitReceipt(SessionManager session, PartFitReceipt receipt)
         {
+            if (HeadIds(out uint head, out _) && receipt.ItemId == head)
+            { var attachment = BuildCylinderHeadState(); if (attachment != null) session.SendWorldMessage(attachment, Channel.ReliableOrdered); }
             var state = BuildReplacementPartState(receipt.ItemId);
             if (state != null) session.SendWorldMessage(state, Channel.ReliableOrdered);
             else if (_spawnLifecycle.IsRetired(receipt.ItemId))
@@ -275,10 +286,12 @@ namespace WinterMP.Core.Sync
                 || DeathSyncManager.Instance?.IsLocalDead == true || Time.timeScale == 0) return;
             if (_partFitClient?.Pending == true)
             { GUI.Box(new Rect(Screen.width / 2f - 140f, Screen.height / 2f + 55f, 280f, 28f),
-                PartAdjustmentPolicy.IsRotation(_partFitClient.Operation) ? "Waiting for the host to adjust the part…"
+                PartAdjustmentPolicy.IsRotation(_partFitClient.Operation) || PartHandScrewPolicy.IsTurn(_partFitClient.Operation) || PartToolScrewPolicy.IsTurn(_partFitClient.Operation)
+                ? "Waiting for the host to adjust the part…"
                 : _partFitClient.Operation == PartFitOperation.Remove ? "Waiting for the host to remove the part…" : "Waiting for the host to fit the part…"); return; }
             if (!TryGetLocalPlayerPosition(out var player)) return;
             if (DrawPartAdjustmentPrompt(session)) return;
+            if (DrawHeadFitPrompt(session)) return;
             if (DrawPartRemovalPrompt(session)) return;
             foreach (var pair in _replacementParts)
             {
@@ -321,13 +334,32 @@ namespace WinterMP.Core.Sync
             if (session == null || session.IsHost || receipt.PlayerId != session.LocalPlayerId
                 || _partFitClient?.Receive(receipt) != true) return;
             if (receipt.Status == PartFitStatus.Accepted) return;
+            if (PartToolScrewPolicy.IsTurn(receipt.Operation))
+            {
+                session.AddSystemChat(receipt.Status == PartFitStatus.Stale ? "The spark plug changed. Try turning it again."
+                    : receipt.Status == PartFitStatus.TooFar ? "Move closer to the spark plug."
+                    : receipt.Status == PartFitStatus.Busy ? "Wait a moment before turning the spark plug again."
+                    : "The spark plug cannot turn right now. Check its mounting and tightness.");
+                return;
+            }
+            if (PartHandScrewPolicy.IsTurn(receipt.Operation))
+            {
+                session.AddSystemChat(receipt.Status == PartFitStatus.Stale ? "The oil filter changed. Try turning it again."
+                    : receipt.Status == PartFitStatus.TooFar ? "Move closer to the oil filter."
+                    : receipt.Status == PartFitStatus.Busy ? "Wait a moment before turning the oil filter again."
+                    : receipt.Status == PartFitStatus.Blocked ? "The oil filter cannot turn any further right now."
+                    : "The oil filter's hand control is unavailable right now.");
+                return;
+            }
             if (PartAdjustmentPolicy.IsRotation(receipt.Operation))
             {
-                session.AddSystemChat(receipt.Status == PartFitStatus.Bolted ? "Loosen the alternator's adjusting bolt first."
+                string name = _replacementParts.TryGetValue(receipt.ItemId, out var adjusted)
+                    ? (adjusted.Factory.Rule.DistributorTiming != null ? "distributor" : "alternator") : "part";
+                session.AddSystemChat(receipt.Status == PartFitStatus.Bolted ? "Loosen the " + name + "'s adjusting bolt first."
                     : receipt.Status == PartFitStatus.Stale ? "The part changed. Try adjusting it again."
-                    : receipt.Status == PartFitStatus.TooFar ? "Move closer to the alternator."
-                    : receipt.Status == PartFitStatus.Busy ? "The alternator is in use. Try again."
-                    : "The host could not adjust the alternator. Check its mounting and rotation limit.");
+                    : receipt.Status == PartFitStatus.TooFar ? "Move closer to the " + name + "."
+                    : receipt.Status == PartFitStatus.Busy ? "The " + name + " is in use. Try again."
+                    : "The host could not adjust the " + name + ". Check its mounting and rotation limit.");
                 return;
             }
             if (receipt.Operation == PartFitOperation.Remove)
@@ -349,6 +381,8 @@ namespace WinterMP.Core.Sync
 
         internal void ForgetPartFittingPlayer(byte player)
         {
+            if (_headFitting?.Request.PlayerId == player && !_headFitting.Committed && SessionManager.Instance != null)
+                FinishHeadFit(SessionManager.Instance, false, "Guest left or reconnected.");
             if (_partFitting?.Request.PlayerId == player && !_partFitting.Committed && SessionManager.Instance != null)
                 FailPartFitting(SessionManager.Instance, "Guest left or reconnected.");
             _partFitLedger.ForgetPlayer(player);
@@ -356,6 +390,7 @@ namespace WinterMP.Core.Sync
 
         private void ClearPartFitting()
         {
+            ClearHeadFitting();
             if (_partFitting != null)
             {
                 try { CancelPartFitPreview(_partFitting); }

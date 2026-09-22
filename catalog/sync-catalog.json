@@ -1,4 +1,35 @@
 {
+  "fleaSale": {
+    "listingName": "potato chips(itemx)",
+    "listingIdPrefix": "chips",
+    "listingIds": "ItemIDs",
+    "listingPrices": "Items",
+    "pricingPath": "Sheets/KirpputoriSticker/Price",
+    "pricingFsm": "Logic",
+    "inventoryPath": "FleaMarketProducts",
+    "bought": "Bought",
+    "tablePath": "FleaMarket/SaleTable",
+    "logic": "Logic",
+    "sell": "Sell",
+    "day": "DayChanger",
+    "cashPath": "FleaMarket/LOD/FleaCashRegister/CashRegisterLogic",
+    "cashFsm": "Data",
+    "rentPath": "FleaMarket/LOD/OpenHours/BuyTableRent",
+    "rentFsm": "Buy",
+    "envelopePath": "FleaMarket/LOD/OpenHours/MoneyFlea",
+    "envelopeFsm": "Use",
+    "money": "MoneyTotal",
+    "days": "RentDays",
+    "weekPrice": "Price",
+    "cashGlobal": "PlayerMoney",
+    "request": "Check money",
+    "collect": "State 1",
+    "rentEvent": "RENT",
+    "rentCommit": "State 3",
+    "idle": "Wait player",
+    "resetCart": "State 4",
+    "funds": "State 3"
+  },
   "hockeyBetting": {
     "bettingPath": "Systems/HockeyGames/Betting",
     "bettingFsm": "Logic",
@@ -143,17 +174,34 @@
       {
         "timingPath": "RACES/RALLY/SS1/TimingSS1",
         "startPath": "RACES/RALLY/SS1/TimingSS1/JumpStartLineSS1",
-        "checkpoints": ["Checkpoint01", "Checkpoint02", "Checkpoint03", "Checkpoint04"]
+        "checkpoints": [
+          "Checkpoint01",
+          "Checkpoint02",
+          "Checkpoint03",
+          "Checkpoint04"
+        ]
       },
       {
         "timingPath": "RACES/RALLY/SS2/TimingSS2",
         "startPath": "RACES/RALLY/SS2/TimingSS2/JumpStartLineSS2",
-        "checkpoints": ["Checkpoint01", "Checkpoint02", "Checkpoint03", "Checkpoint04", "Checkpoint05", "Checkpoint06"]
+        "checkpoints": [
+          "Checkpoint01",
+          "Checkpoint02",
+          "Checkpoint03",
+          "Checkpoint04",
+          "Checkpoint05",
+          "Checkpoint06"
+        ]
       },
       {
         "timingPath": "RACES/RALLY/SS3/TimingSS3",
         "startPath": "RACES/RALLY/SS3/TimingSS3/JumpStartLineSS3",
-        "checkpoints": ["Checkpoint01", "Checkpoint02", "Checkpoint03", "Checkpoint04"]
+        "checkpoints": [
+          "Checkpoint01",
+          "Checkpoint02",
+          "Checkpoint03",
+          "Checkpoint04"
+        ]
       }
     ]
   },
@@ -862,6 +910,4819 @@
       }
     ]
   },
+  "guestEngineInputs": {
+    "heater": {
+      "path": "CORRIS/Assemblies/VINP_Heaterbox",
+      "fsm": "Data",
+      "idleState": "Idle",
+      "readyState": "Update 2",
+      "readVariables": [
+        "Installed",
+        "Wear"
+      ],
+      "rearWindow": {
+        "path": "CORRIS/BODY",
+        "fsm": "Save",
+        "variable": "HeatingSprites",
+        "readyStates": [
+          "State 1",
+          "State 4",
+          "Save"
+        ]
+      }
+    },
+    "entries": [
+      {
+        "familyPrefix": "VIN131",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Distributor",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Distributor",
+        "readers": [
+          {
+            "state": "Ignition",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed2",
+            "everyFrame": false
+          },
+          {
+            "state": "Spark angle?",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "SparkAngle",
+            "output": "Angle",
+            "everyFrame": false
+          },
+          {
+            "state": "Distributor tight?",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          },
+          {
+            "state": "Damage?",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN130",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Starter",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "inputFsm": "Data",
+        "targetVariable": "db_Starter",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed5",
+            "everyFrame": false
+          },
+          {
+            "state": "Starter damage",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Starter damage",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "StarterDurability",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN126",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Waterpump",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Waterpump",
+        "readers": [
+          {
+            "state": "Water Pump",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Water Pump",
+            "actionIndex": 3,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Starting engine",
+            "actionIndex": 4,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "DurabilityWaterPump",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN126",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Waterpump",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Waterpump",
+        "readers": [
+          {
+            "state": "Water Pump 2",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Water Pump 2",
+            "actionIndex": 6,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Pump tightness",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness1",
+            "everyFrame": false
+          },
+          {
+            "state": "Water Pump 2",
+            "actionIndex": 5,
+            "actionType": "GetFsmFloat",
+            "variable": "Efficiency",
+            "output": "WaterPumpEfficiency",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN125",
+        "alternateFamilies": [
+          "FUELPUMP0"
+        ],
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Fuelpump",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "FuelLine",
+        "inputFsm": "Data",
+        "targetVariable": "db_Fuelpump",
+        "readers": [
+          {
+            "state": "Fuel Pump",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Fuel Usage",
+            "actionIndex": 8,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "FuelpumpWear",
+            "everyFrame": false
+          },
+          {
+            "state": "State 2",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "OutputRate",
+            "output": "PumpRate",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN125",
+        "alternateFamilies": [
+          "FUELPUMP0"
+        ],
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Fuelpump",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_Fuelpump",
+        "readers": [
+          {
+            "state": "State 4",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "DurabilityFuelpump",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN132",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Oilpump",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Oilpump",
+        "readers": [
+          {
+            "state": "Oil pump?",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Oil pump?",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN132",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Oilpump",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_Oilpump",
+        "readers": [
+          {
+            "state": "State 4",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "DurabilityOilpump",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN115",
+        "alternateFamilies": [
+          "CAMTUNEa0",
+          "CAMTUNEb0",
+          "CAMTUNEc0",
+          "CAMTUNEd0"
+        ],
+        "mountPath": "CARPARTS/StartParts/VIN1110/CamParent/VINP_CamshaftSprocket/VINP_CamShaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Camshaft",
+        "readers": [
+          {
+            "state": "Powertrain",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed4",
+            "everyFrame": false
+          },
+          {
+            "state": "Break 2",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "ValveTolerance",
+            "output": "ValveTolerance",
+            "everyFrame": false
+          },
+          {
+            "state": "Cam wear",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN115",
+        "alternateFamilies": [
+          "CAMTUNEa0",
+          "CAMTUNEb0",
+          "CAMTUNEc0",
+          "CAMTUNEd0"
+        ],
+        "mountPath": "CARPARTS/StartParts/VIN1110/CamParent/VINP_CamshaftSprocket/VINP_CamShaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_Camshaft",
+        "readers": [
+          {
+            "state": "State 4",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "DurabilityCamshaft",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN115",
+        "alternateFamilies": [
+          "CAMTUNEa0",
+          "CAMTUNEb0",
+          "CAMTUNEc0",
+          "CAMTUNEd0"
+        ],
+        "mountPath": "CARPARTS/StartParts/VIN1110/CamParent/VINP_CamshaftSprocket/VINP_CamShaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_Camshaft",
+        "readers": [
+          {
+            "state": "Get cam profile",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "ValveTolerance",
+            "output": "ValveTolerance",
+            "everyFrame": false
+          },
+          {
+            "state": "Get cam profile",
+            "actionIndex": 1,
+            "actionType": "GetFsmString",
+            "variable": "CamProfile",
+            "output": "CamProfile",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 1,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesExhaust/Cyl1Exh/VINP_Rocker1Exh",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker1",
+        "readers": [
+          {
+            "state": "Cylinder1",
+            "actionIndex": 4,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 2,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesIntake/Cyl1In/VINP_Rocker2In",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker2",
+        "readers": [
+          {
+            "state": "Cylinder1",
+            "actionIndex": 5,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed4",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 3,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesExhaust/Cyl2Exh/VINP_Rocker3Exh",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker3",
+        "readers": [
+          {
+            "state": "Cylinder2",
+            "actionIndex": 4,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 4,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesIntake/Cyl2In/VINP_Rocker4In",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker4",
+        "readers": [
+          {
+            "state": "Cylinder2",
+            "actionIndex": 5,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed4",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 5,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesExhaust/Cyl3Exh/VINP_Rocker5Exh",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker5",
+        "readers": [
+          {
+            "state": "Cylinder3",
+            "actionIndex": 4,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 6,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesIntake/Cyl3In/VINP_Rocker6In",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker6",
+        "readers": [
+          {
+            "state": "Cylinder3",
+            "actionIndex": 5,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed4",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 7,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesExhaust/Cyl4Exh/VINP_Rocker7Exh",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker7",
+        "readers": [
+          {
+            "state": "Cylinder4",
+            "actionIndex": 4,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN117",
+        "slotIndex": 8,
+        "mountPath": "CARPARTS/StartParts/VIN1110/ValvesIntake/Cyl4In/VINP_Rocker8In",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "Rocker8",
+        "readers": [
+          {
+            "state": "Cylinder4",
+            "actionIndex": 5,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed4",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN133",
+        "alternateFamilies": [
+          "ALTERNATOR0"
+        ],
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Alternator",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Alternator",
+        "readers": [
+          {
+            "state": "Starting engine",
+            "actionIndex": 3,
+            "actionType": "GetFsmFloat",
+            "variable": "Friction",
+            "output": "AlternatorFrictionRate",
+            "everyFrame": false
+          },
+          {
+            "state": "Alternator",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Alternator",
+            "actionIndex": 3,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN133",
+        "alternateFamilies": [
+          "ALTERNATOR0"
+        ],
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Alternator",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_Alternator",
+        "readers": [
+          {
+            "state": "Check alternator",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Efficiency",
+            "output": "Efficiency",
+            "everyFrame": false
+          },
+          {
+            "state": "Check alternator",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed2",
+            "everyFrame": false
+          },
+          {
+            "state": "Alternator damage",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Damaged",
+            "output": "Damaged",
+            "everyFrame": false
+          },
+          {
+            "state": "State 1",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "DurabilityAlternator",
+            "everyFrame": false
+          },
+          {
+            "state": "Alternator eff",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "AlternatorCondition",
+            "everyFrame": false
+          },
+          {
+            "state": "Run on alternator",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Damaged",
+            "output": "Damaged",
+            "everyFrame": false
+          },
+          {
+            "state": "State 2",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "FANBELT0",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_FanBelt",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_AlternatorBelt",
+        "readers": [
+          {
+            "state": "Fan belt",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "FANBELT0",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_FanBelt",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_Fanbelt",
+        "readers": [
+          {
+            "state": "Fan belt",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "FANBELT0",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_FanBelt",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_FanBelt",
+        "readers": [
+          {
+            "state": "Water Pump 2",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Fan",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "FANBELT0",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_FanBelt",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_Fanbelt",
+        "readers": [
+          {
+            "state": "Check alternator",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "State 2",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed2",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN107",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_TimingBelt",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_TimingBelt",
+        "readers": [
+          {
+            "state": "Powertrain",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed2",
+            "everyFrame": false
+          },
+          {
+            "state": "Timing belt",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN102",
+        "mountPath": "CARPARTS/StartParts/VIN1010/CrankshaftParent/VINP_CrankPulley/VINP_Crankshaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Crankshaft",
+        "readers": [
+          {
+            "state": "Powertrain",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed3",
+            "everyFrame": false
+          },
+          {
+            "state": "Crank",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN102",
+        "mountPath": "CARPARTS/StartParts/VIN1010/CrankshaftParent/VINP_CrankPulley/VINP_Crankshaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Crankshaft",
+        "readers": [
+          {
+            "state": "Crank wear",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN102",
+        "mountPath": "CARPARTS/StartParts/VIN1010/CrankshaftParent/VINP_CrankPulley/VINP_Crankshaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_Crankshaft",
+        "readers": [
+          {
+            "state": "Pressure leak",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Condition",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN105",
+        "mountPath": "CARPARTS/StartParts/VIN1010/CrankshaftParent/VINP_CrankPulley",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_CrankPulley",
+        "readers": [
+          {
+            "state": "Powertrain",
+            "actionIndex": 6,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed7",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN109",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_AuxShaftSprocket",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_AuxshaftSprocket",
+        "readers": [
+          {
+            "state": "Powertrain",
+            "actionIndex": 5,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed6",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN110",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_AuxShaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Auxshaft",
+        "readers": [
+          {
+            "state": "Powertrain",
+            "actionIndex": 4,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed5",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN110",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_AuxShaft",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "FuelLine",
+        "inputFsm": "Data",
+        "targetVariable": "db_AuxShaft",
+        "readers": [
+          {
+            "state": "Fuel Usage",
+            "actionIndex": 9,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "AuxShaftWear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN134",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Headgasket",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Headgasket",
+        "readers": [
+          {
+            "state": "Head gasket",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Gasket damage",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN134",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Headgasket",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Headgasket",
+        "readers": [
+          {
+            "state": "Headgasket",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN129",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Thermostat",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Thermostat",
+        "readers": [
+          {
+            "state": "Thermostat",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Thermostat",
+            "actionIndex": 5,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN128",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_ThermostatHousing",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_ThermostatHousing",
+        "readers": [
+          {
+            "state": "Housing tightness",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "OILFILTR0",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Oilfilter",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Oilfilter",
+        "readers": [
+          {
+            "state": "Oilfilter leak",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          },
+          {
+            "state": "Oil filter",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Dirt",
+            "output": "Dirt",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN104",
+        "slotIndex": 1,
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Mainbearing1",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_MainBearing1",
+        "readers": [
+          {
+            "state": "Pressure leak",
+            "actionIndex": 3,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Condition",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN104",
+        "slotIndex": 2,
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Mainbearing2",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_MainBearing2",
+        "readers": [
+          {
+            "state": "Pressure leak",
+            "actionIndex": 5,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Condition",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN104",
+        "slotIndex": 3,
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Mainbearing3",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_MainBearing3",
+        "readers": [
+          {
+            "state": "Pressure leak",
+            "actionIndex": 7,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Condition",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN104",
+        "slotIndex": 4,
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Mainbearing4",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_MainBearing4",
+        "readers": [
+          {
+            "state": "Pressure leak",
+            "actionIndex": 9,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Condition",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN104",
+        "slotIndex": 5,
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Mainbearing5",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_MainBearing5",
+        "readers": [
+          {
+            "state": "Pressure leak",
+            "actionIndex": 11,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Condition",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 1,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/1-4/VINP_Piston1",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston1",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 5,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Piston1Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder1",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 1,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/1-4/VINP_Piston1",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "Mixture",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston1",
+        "readers": [
+          {
+            "state": "Pistons",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Math1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 2,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/2-3/VINP_Piston2",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston2",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 6,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Piston2Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder2",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 2,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/2-3/VINP_Piston2",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "Mixture",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston2",
+        "readers": [
+          {
+            "state": "Pistons",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Math1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 3,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/2-3/VINP_Piston3",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston3",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 7,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Piston3Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder3",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 3,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/2-3/VINP_Piston3",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "Mixture",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston3",
+        "readers": [
+          {
+            "state": "Pistons",
+            "actionIndex": 4,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Math1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 4,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/1-4/VINP_Piston4",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston4",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 8,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Piston4Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder4",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN103",
+        "slotIndex": 4,
+        "mountPath": "CARPARTS/StartParts/VIN1010/PistonPivots/1-4/VINP_Piston4",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "Mixture",
+        "inputFsm": "Data",
+        "targetVariable": "db_Piston4",
+        "readers": [
+          {
+            "state": "Pistons",
+            "actionIndex": 6,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Math1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN137",
+        "mountPath": "CARPARTS/StartParts/VIN1010/WaterpumpParent/VINP_RadiatorFan",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_RadiatorFan",
+        "readers": [
+          {
+            "state": "Radiator fan",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN137",
+        "mountPath": "CARPARTS/StartParts/VIN1010/WaterpumpParent/VINP_RadiatorFan",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_RadiatorFan",
+        "readers": [
+          {
+            "state": "Fan",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "SPRKPLUG0",
+        "slotIndex": 1,
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Sparkplug4",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_SparkPlug4",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 12,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Sparkplug4Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder4",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Sparkplug4",
+            "everyFrame": false
+          },
+          {
+            "state": "Add to power 4",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          },
+          {
+            "state": "Plug data",
+            "actionIndex": 10,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "Sparkplug4Durability",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "SPRKPLUG0",
+        "slotIndex": 2,
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Sparkplug3",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_SparkPlug3",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 11,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Sparkplug3Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder3",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Sparkplug3",
+            "everyFrame": false
+          },
+          {
+            "state": "Add to power 3",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          },
+          {
+            "state": "Plug data",
+            "actionIndex": 9,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "Sparkplug3Durability",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "SPRKPLUG0",
+        "slotIndex": 3,
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Sparkplug2",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_SparkPlug2",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 10,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Sparkplug2Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder2",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Sparkplug2",
+            "everyFrame": false
+          },
+          {
+            "state": "Add to power 2",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          },
+          {
+            "state": "Plug data",
+            "actionIndex": 8,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "Sparkplug2Durability",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "SPRKPLUG0",
+        "slotIndex": 4,
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Sparkplug1",
+        "mountVariable": "AssemblyDatabase",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_SparkPlug1",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 9,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Sparkplug1Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Cylinder1",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Sparkplug1",
+            "everyFrame": false
+          },
+          {
+            "state": "Add to power 1",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          },
+          {
+            "state": "Plug data",
+            "actionIndex": 7,
+            "actionType": "GetFsmFloat",
+            "variable": "Durability",
+            "output": "Sparkplug1Durability",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN120",
+        "alternateFamilies": [
+          "FLYWHEELa0",
+          "FLYWHEELb0",
+          "VIN138"
+        ],
+        "mountVariable": "VINP",
+        "mountPath": "CARPARTS/StartParts/VIN1010/CrankshaftParent/VINP_CrankPulley/VINP_FlywheelFlexplate",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Flywheel",
+        "readers": [
+          {
+            "state": "Flywheel",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Flywheel",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "InertiaFactor",
+            "output": "EngineInertia",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "REVLIMITER0",
+        "mountPath": "CORRIS/AssembliesTuning/VINP_Revlimiter",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Revlimiter",
+        "readers": [
+          {
+            "state": "Limiter",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Revlimiter",
+            "everyFrame": false
+          },
+          {
+            "state": "Limiter",
+            "actionIndex": 3,
+            "actionType": "GetFsmFloat",
+            "variable": "SettingRPM",
+            "output": "RevlimitRPM",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN212",
+        "mountPath": "CORRIS/Assemblies/VINP_IgnitionCoil",
+        "mountVariable": "VINP",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_IgnitionCoil",
+        "readers": [
+          {
+            "state": "Ignition",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringCoilHarness",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringCoilHarness",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "w_IgnitionCoil",
+        "readers": [
+          {
+            "state": "Ignition",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringBatteryStarter",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringBatteryStarter",
+        "readerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "inputFsm": "Data",
+        "targetVariable": "db_WiringStarter",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringBatteryHarness",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringBatteryHarness",
+        "readerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "inputFsm": "Data",
+        "targetVariable": "db_WiringBatteryHarness",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringBatteryGround",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringBatteryGround",
+        "readerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "inputFsm": "Data",
+        "targetVariable": "db_WiringGround",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed4",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringBatteryHarness",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringBatteryHarness",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_wBatteryPos",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringBatteryGround",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringBatteryGround",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_wBatteryNeg",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Bolted",
+            "output": "Installed2",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringIgnitionFusebox",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringIgnitionFusebox",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_wIgnition",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringAlternatorRegulator",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringAlternatorRegulator",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_wAlternator",
+        "readers": [
+          {
+            "state": "Check alternator",
+            "actionIndex": 4,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed3",
+            "everyFrame": false
+          },
+          {
+            "state": "State 2",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringRegulatorHarness",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringRegulatorHarness",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_wRegulator",
+        "readers": [
+          {
+            "state": "Check alternator",
+            "actionIndex": 5,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed4",
+            "everyFrame": false
+          },
+          {
+            "state": "State 2",
+            "actionIndex": 4,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed5",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringCoilHarness",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringCoilHarness",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_wCoil",
+        "readers": [
+          {
+            "state": "State 2",
+            "actionIndex": 3,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed4",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "wire": "WiringFueltank",
+        "mountPath": "CORRIS/Wiring/DatabaseWiring/WiringFueltank",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_wFueltank",
+        "readers": [
+          {
+            "state": "Fuel gauge",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "familyPrefix": "VIN120",
+        "alternateFamilies": [
+          "FLYWHEELa0",
+          "FLYWHEELb0",
+          "VIN138"
+        ],
+        "mountVariable": "VINP",
+        "mountPath": "CARPARTS/StartParts/VIN1010/CrankshaftParent/VINP_CrankPulley/VINP_FlywheelFlexplate",
+        "readerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "inputFsm": "Data",
+        "targetVariable": "db_Flywheel",
+        "readers": [
+          {
+            "state": "Check Flywheel",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed2",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "battery": "Battery",
+        "mountPath": "CORRIS/Assemblies/VINP_Battery",
+        "readerPath": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "inputFsm": "Data",
+        "targetVariable": "db_Battery",
+        "readers": [
+          {
+            "state": "Wiring",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Battery",
+            "everyFrame": false
+          },
+          {
+            "state": "Battery",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Charge",
+            "output": "Charge",
+            "everyFrame": false
+          },
+          {
+            "state": "Engine running?",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Charge",
+            "output": "Volts",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "block": "EngineBlock",
+        "mountPath": "CORRIS/MotorPivot/MassCenter/Block/VINP_Block",
+        "readerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "inputFsm": "Data",
+        "directTarget": true,
+        "readers": [
+          {
+            "state": "Motor installed",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "MotorInstalled",
+            "everyFrame": false
+          },
+          {
+            "state": "Running",
+            "actionIndex": 8,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "MotorInstalled",
+            "everyFrame": true
+          }
+        ]
+      },
+      {
+        "block": "EngineBlock",
+        "mountPath": "CORRIS/MotorPivot/MassCenter/Block/VINP_Block",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Block",
+        "readers": [
+          {
+            "state": "Major damage?",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "block": "EngineBlock",
+        "mountPath": "CORRIS/MotorPivot/MassCenter/Block/VINP_Block",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Block",
+        "readers": [
+          {
+            "state": "Block damage",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Damaged",
+            "output": "Damaged",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "gearbox": "Gearbox",
+        "mountPath": "CORRIS/MotorPivot/MassCenter/Block/VINP_Gearbox",
+        "readerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "inputFsm": "Data",
+        "targetVariable": "db_Gearbox",
+        "readers": [
+          {
+            "state": "Check automatic",
+            "actionIndex": 0,
+            "actionType": "GetFsmInt",
+            "variable": "Type",
+            "output": "Automatic",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "head": "CylinderHead",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Cylinderhead",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Cylinderhead",
+        "readers": [
+          {
+            "state": "Powertrain",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "carburettor": "Carburettor",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Carburettor",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "FuelLine",
+        "inputFsm": "Data",
+        "targetVariable": "db_Carb1",
+        "readers": [
+          {
+            "state": "Carburator",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Carburator",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "FuelChamber",
+            "output": "FuelChamber",
+            "everyFrame": false
+          },
+          {
+            "state": "Carburator",
+            "actionIndex": 4,
+            "actionType": "GetFsmFloat",
+            "variable": "CarbReserve",
+            "output": "CarbReserve",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "carburettor": "Carburettor",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Carburettor",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "Mixture",
+        "inputFsm": "Data",
+        "targetVariable": "db_Carburettor",
+        "readers": [
+          {
+            "state": "Calculate density",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "SettingMixture",
+            "output": "CarbSetting",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "carburettor": "Carburettor",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Carburettor",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_Carburettor",
+        "readers": [
+          {
+            "state": "Carburettor",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPower",
+            "output": "PartPower",
+            "everyFrame": false
+          },
+          {
+            "state": "Carburettor",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "DataTorque",
+            "output": "PartTorque",
+            "everyFrame": false
+          },
+          {
+            "state": "Carburettor",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPowerAdd",
+            "output": "PartPowerAdd",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "airCleaner": "AirCleaner",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_AirCleaner",
+        "readerPath": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "FuelLine",
+        "inputFsm": "Data",
+        "targetVariable": "db_Airfilter",
+        "readers": [
+          {
+            "state": "Airfilter",
+            "actionIndex": 1,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "airCleaner": "AirCleaner",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_AirCleaner",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_AirCleaner",
+        "readers": [
+          {
+            "state": "AirFilter",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPower",
+            "output": "PartPower",
+            "everyFrame": false
+          },
+          {
+            "state": "AirFilter",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "DataTorque",
+            "output": "PartTorque",
+            "everyFrame": false
+          },
+          {
+            "state": "AirFilter",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPowerAdd",
+            "output": "PartPowerAdd",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "exhaust": "ExhaustHeaders",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_ExhaustManifold",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_ExhaustManifold",
+        "readers": [
+          {
+            "state": "Headers",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPower",
+            "output": "PartPower",
+            "everyFrame": false
+          },
+          {
+            "state": "Headers",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "DataTorque",
+            "output": "PartTorque",
+            "everyFrame": false
+          },
+          {
+            "state": "Headers",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPowerAdd",
+            "output": "PartPowerAdd",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "exhaust": "ExhaustFront",
+        "mountPath": "CORRIS/MotorPivot/MassCenter/VINP_ExhaustFront",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_ExhaustPipeFront",
+        "readers": [
+          {
+            "state": "Exhaust front",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPower",
+            "output": "PartPower",
+            "everyFrame": false
+          },
+          {
+            "state": "Exhaust front",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "DataTorque",
+            "output": "PartTorque",
+            "everyFrame": false
+          },
+          {
+            "state": "Exhaust front",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPowerAdd",
+            "output": "PartPowerAdd",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "exhaust": "ExhaustRear",
+        "mountPath": "CORRIS/MotorPivot/MassCenter/Exhaust2MotorPivot/VINP_ExhaustRear",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_ExhaustPipeRear",
+        "readers": [
+          {
+            "state": "Exhaust rear",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPower",
+            "output": "PartPower",
+            "everyFrame": false
+          },
+          {
+            "state": "Exhaust rear",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "DataTorque",
+            "output": "PartTorque",
+            "everyFrame": false
+          },
+          {
+            "state": "Exhaust rear",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPowerAdd",
+            "output": "PartPowerAdd",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "exhaust": "ExhaustMuffler",
+        "mountPath": "CORRIS/MotorPivot/MassCenter/Exhaust2MotorPivot/VINP_ExhaustMuffler",
+        "readerPath": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "inputFsm": "Data",
+        "targetVariable": "db_ExhaustMuffler",
+        "readers": [
+          {
+            "state": "Muffler",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPower",
+            "output": "PartPower",
+            "everyFrame": false
+          },
+          {
+            "state": "Muffler",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "DataTorque",
+            "output": "PartTorque",
+            "everyFrame": false
+          },
+          {
+            "state": "Muffler",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "DataPowerAdd",
+            "output": "PartPowerAdd",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "oilpan": "Oilpan",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Oilpan",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Oilpan",
+        "readers": [
+          {
+            "state": "Major damage?",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Friction",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "OilViscosity",
+            "output": "OilViscosity",
+            "everyFrame": false
+          },
+          {
+            "state": "Oilpan leak",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          },
+          {
+            "state": "Get oil",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Oil",
+            "output": "Oil",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "oilpan": "Oilpan",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Oilpan",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "inputFsm": "Data",
+        "targetVariable": "db_Oilpan",
+        "readers": [
+          {
+            "state": "Oil level",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Oil",
+            "output": "Oil",
+            "everyFrame": false
+          },
+          {
+            "state": "Oil contamination",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "OilContamination",
+            "output": "Math1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "oilpan": "Oilpan",
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Oilpan",
+        "readerPath": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "inputFsm": "Data",
+        "targetVariable": "db_Oilpan",
+        "readers": [
+          {
+            "state": "Plug data",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "OilContamination",
+            "output": "SparkPlugOilCont",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "rockerCover": "RockerCover",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_RockerCover",
+        "readerPath": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "inputFsm": "Data",
+        "targetVariable": "db_Rockercover1",
+        "readers": [
+          {
+            "state": "Valve Cover",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "radiator": "Radiator",
+        "mountPath": "CORRIS/Assemblies/VINP_Radiator",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Radiator",
+        "readers": [
+          {
+            "state": "Radiator installed?",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Radiator Data",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Coolant",
+            "output": "WaterLevel",
+            "everyFrame": false
+          },
+          {
+            "state": "Radiator Data",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "PressureCap",
+            "output": "PressureCap",
+            "everyFrame": false
+          },
+          {
+            "state": "Radiator Data",
+            "actionIndex": 3,
+            "actionType": "GetFsmFloat",
+            "variable": "Wear",
+            "output": "Wear",
+            "everyFrame": false
+          },
+          {
+            "state": "Flect",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "FlectEfficiency",
+            "output": "FlectEff",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolantHose": "CoolantHoseTop",
+        "mountPath": "CORRIS/Assemblies/VINP_RadiatorHoseTop",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_RadiatorHose1",
+        "readers": [
+          {
+            "state": "Hoses",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolantHose": "CoolantHoseBottom",
+        "mountPath": "CORRIS/Assemblies/VINP_RadiatorHoseBottom",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_RadiatorHose2",
+        "readers": [
+          {
+            "state": "Bottom hose",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Hoses",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness2",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolantHose": "CoolantHoseInlet",
+        "mountPath": "CORRIS/Assemblies/VINP_HeaterHoseInlet",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_HeaterHose1",
+        "readers": [
+          {
+            "state": "Hoses",
+            "actionIndex": 2,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness3",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolantHose": "CoolantHoseOutlet",
+        "mountPath": "CORRIS/Assemblies/VINP_HeaterHoseOutlet",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_HeaterHose2",
+        "readers": [
+          {
+            "state": "Hoses",
+            "actionIndex": 3,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness4",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "carburettor": "Carburettor",
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Carburettor",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Carburettor",
+        "readers": [
+          {
+            "state": "Hoses",
+            "actionIndex": 4,
+            "actionType": "GetFsmFloat",
+            "variable": "Tightness",
+            "output": "Tightness5",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolingAirflow": "Grille",
+        "mountPath": "CORRIS/Assemblies/VINP_Grille",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Grille",
+        "readers": [
+          {
+            "state": "Grille",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Grille and Cover",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "CoolingAirRateModifier",
+            "output": "Data",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolingAirflow": "GrilleBlockoff",
+        "mountPath": "CORRIS/AssembliesTuning/VINP_GrilleBlockoff",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_GrilleBlockoff",
+        "readers": [
+          {
+            "state": "Grille and Cover",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolingAirflow": "Hood",
+        "mountPath": "CORRIS/Assemblies/VINP_Hood",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Hood",
+        "readers": [
+          {
+            "state": "Hood",
+            "actionIndex": 0,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Hood installed",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "CoolingAirRateModifier",
+            "output": "Data",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolingAirflow": "FiberglassHood",
+        "mountPath": "CORRIS/AssembliesTuning/VINP_FiberglassHood",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Data",
+        "targetVariable": "db_Hood2",
+        "readers": [
+          {
+            "state": "Hood",
+            "actionIndex": 2,
+            "actionType": "GetFsmBool",
+            "variable": "Installed",
+            "output": "Installed1",
+            "everyFrame": false
+          },
+          {
+            "state": "Hood installed 2",
+            "actionIndex": 0,
+            "actionType": "GetFsmFloat",
+            "variable": "CoolingAirRateModifier",
+            "output": "Data",
+            "everyFrame": false
+          }
+        ]
+      },
+      {
+        "coolingAmbient": "CoolingAmbient",
+        "mountPath": "CORRIS/Functions/RoofCheck",
+        "readerPath": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "inputFsm": "Raycast",
+        "targetVariable": "RoofCheck",
+        "readers": [
+          {
+            "state": "Reset",
+            "actionIndex": 1,
+            "actionType": "GetFsmFloat",
+            "variable": "TempCar",
+            "output": "TempArea",
+            "everyFrame": false
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": 1,
+        "name": "WiringCoilHarness",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringCoilHarness",
+        "fsm": "Data",
+        "supportsBolted": false,
+        "settledState": "Basic state"
+      },
+      {
+        "id": 2,
+        "name": "WiringBatteryStarter",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringBatteryStarter",
+        "fsm": "Data",
+        "supportsBolted": true,
+        "settledState": "Set bolt"
+      },
+      {
+        "id": 3,
+        "name": "WiringBatteryHarness",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringBatteryHarness",
+        "fsm": "Data",
+        "supportsBolted": true,
+        "settledState": "Set bolt"
+      },
+      {
+        "id": 4,
+        "name": "WiringBatteryGround",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringBatteryGround",
+        "fsm": "Data",
+        "supportsBolted": true,
+        "settledState": "Set bolt"
+      },
+      {
+        "id": 5,
+        "name": "WiringIgnitionFusebox",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringIgnitionFusebox",
+        "fsm": "Data",
+        "supportsBolted": false,
+        "settledState": "Basic state",
+        "connection": {
+          "meshPath": "CORRIS/Wiring/Parts/ignition-fusebox",
+          "triggersPath": "CORRIS/Wiring/Triggers/IgnitionFusebox",
+          "firstEndpoint": "Fusebox",
+          "secondEndpoint": "Ignition",
+          "endpointFsm": "Assemble",
+          "finishState": "Finish assembly",
+          "resetState": "Init",
+          "resetEvent": "RESETWIRING",
+          "prerequisitePath": "CORRIS/Assemblies/VINP_SteeringColumn",
+          "prerequisiteFsm": "Data",
+          "prerequisiteVariable": "Installed",
+          "statusPath": "CORRIS/Wiring",
+          "statusFsm": "Status",
+          "statusState": "Steering",
+          "statusTarget": "tIgnitionFusebox",
+          "toolPath": "EQUIPMENTS/wiring mess(itemx)"
+        }
+      },
+      {
+        "id": 6,
+        "name": "WiringAlternatorRegulator",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringAlternatorRegulator",
+        "fsm": "Data",
+        "supportsBolted": false,
+        "settledState": "Basic state"
+      },
+      {
+        "id": 7,
+        "name": "WiringRegulatorHarness",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringRegulatorHarness",
+        "fsm": "Data",
+        "supportsBolted": false,
+        "settledState": "Basic state"
+      },
+      {
+        "id": 8,
+        "name": "WiringFueltank",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringFueltank",
+        "fsm": "Data",
+        "supportsBolted": false,
+        "settledState": "Basic state"
+      },
+      {
+        "id": 9,
+        "name": "WiringHeatercontrolFusebox",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringHeatercontrolFusebox",
+        "fsm": "Data",
+        "settledState": "Basic state",
+        "supportsBolted": false,
+        "projectNativeReads": true
+      },
+      {
+        "id": 10,
+        "name": "WiringHeater",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringHeater",
+        "fsm": "Data",
+        "settledState": "Basic state",
+        "supportsBolted": false,
+        "projectNativeReads": true
+      },
+      {
+        "id": 11,
+        "name": "WiringFuseboxWindow",
+        "path": "CORRIS/Wiring/DatabaseWiring/WiringFuseboxWindow",
+        "fsm": "Data",
+        "settledState": "Basic state",
+        "supportsBolted": false,
+        "projectNativeReads": true
+      }
+    ],
+    "battery": {
+      "path": "CORRIS/Assemblies/VINP_Battery",
+      "readVariables": [
+        "Installed",
+        "Charge",
+        "ChargeMax"
+      ],
+      "fsm": "Data",
+      "idleState": "Idle",
+      "readyStates": [
+        "Check joint",
+        "Delay 2",
+        "Calc",
+        "Died battery"
+      ]
+    },
+    "block": {
+      "path": "CORRIS/MotorPivot/MassCenter/Block/VINP_Block",
+      "fsm": "Data",
+      "idleState": "Idle",
+      "readyState": "Update",
+      "head": {
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Cylinderhead",
+        "rootPrefix": "VIN101",
+        "relativePath": "VINP_Cylinderhead",
+        "partPrefix": "VIN111",
+        "fsm": "Data",
+        "readyState": "UPDATE"
+      },
+      "carburettor": {
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_Carburettor",
+        "rootPrefix": "VIN111",
+        "relativePath": "VINP_Carburettor",
+        "partPrefix": "VIN113",
+        "fsm": "Data",
+        "readyState": "Update 2",
+        "alternatePartPrefixes": [
+          "CARB2BRLa0",
+          "CARB4BRLa0"
+        ]
+      },
+      "airCleaner": {
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_AirCleaner",
+        "rootPrefix": "VIN111",
+        "relativePath": "VINP_AirCleaner",
+        "partPrefix": "VIN135",
+        "fsm": "Data",
+        "readyState": "Update 2"
+      },
+      "exhaust": [
+        {
+          "name": "Headers",
+          "mountPath": "CARPARTS/StartParts/VIN1110/VINP_ExhaustManifold",
+          "rootPrefix": "VIN111",
+          "relativePath": "VINP_ExhaustManifold",
+          "partPrefix": "VIN114",
+          "alternatePartPrefixes": [
+            "VIN114B",
+            "HEADERSa0",
+            "HEADERSc0",
+            "HEADERSd0"
+          ],
+          "fsm": "Data",
+          "readyState": "Update 2"
+        },
+        {
+          "name": "Front",
+          "mountPath": "CORRIS/MotorPivot/MassCenter/VINP_ExhaustFront",
+          "rootPrefix": "",
+          "relativePath": "VINP_ExhaustFront",
+          "partPrefix": "VIN213",
+          "alternatePartPrefixes": [
+            "VIN213B"
+          ],
+          "fsm": "Data",
+          "readyState": "Update 2"
+        },
+        {
+          "name": "Rear",
+          "mountPath": "CORRIS/MotorPivot/MassCenter/Exhaust2MotorPivot/VINP_ExhaustRear",
+          "rootPrefix": "",
+          "relativePath": "VINP_ExhaustRear",
+          "partPrefix": "VIN214",
+          "alternatePartPrefixes": [
+            "EXHAUSTRa0"
+          ],
+          "fsm": "Data",
+          "readyState": "Update 2"
+        },
+        {
+          "name": "Muffler",
+          "mountPath": "CORRIS/MotorPivot/MassCenter/Exhaust2MotorPivot/VINP_ExhaustMuffler",
+          "rootPrefix": "",
+          "relativePath": "VINP_ExhaustMuffler",
+          "partPrefix": "VIN219",
+          "alternatePartPrefixes": [
+            "MUFFLERa0"
+          ],
+          "fsm": "Data",
+          "readyState": "Update 2"
+        }
+      ],
+      "oilpan": {
+        "mountPath": "CARPARTS/StartParts/VIN1010/VINP_Oilpan",
+        "rootPrefix": "VIN101",
+        "relativePath": "VINP_Oilpan",
+        "partPrefix": "VIN106",
+        "fsm": "Data",
+        "readyState": "Update 2"
+      },
+      "rockerCover": {
+        "mountPath": "CARPARTS/StartParts/VIN1110/VINP_RockerCover",
+        "rootPrefix": "VIN111",
+        "relativePath": "VINP_RockerCover",
+        "partPrefix": "VIN118",
+        "fsm": "Data",
+        "readyState": "Update 2"
+      },
+      "radiator": {
+        "mountPath": "CORRIS/Assemblies/VINP_Radiator",
+        "rootPrefix": "",
+        "relativePath": "VINP_Radiator",
+        "partPrefix": "VIN201",
+        "alternatePartPrefixes": [
+          "RADIATORa0",
+          "RADIATORb0"
+        ],
+        "fsm": "Data",
+        "readyState": "Update 2"
+      },
+      "coolantHoses": [
+        {
+          "name": "Top",
+          "mountPath": "CORRIS/Assemblies/VINP_RadiatorHoseTop",
+          "rootPrefix": "",
+          "relativePath": "VINP_RadiatorHoseTop",
+          "partPrefix": "VIN202",
+          "fsm": "Data",
+          "readyState": "Update 2"
+        },
+        {
+          "name": "Bottom",
+          "mountPath": "CORRIS/Assemblies/VINP_RadiatorHoseBottom",
+          "rootPrefix": "",
+          "relativePath": "VINP_RadiatorHoseBottom",
+          "partPrefix": "VIN203",
+          "fsm": "Data",
+          "readyState": "Update 2"
+        },
+        {
+          "name": "Inlet",
+          "mountPath": "CORRIS/Assemblies/VINP_HeaterHoseInlet",
+          "rootPrefix": "",
+          "relativePath": "VINP_HeaterHoseInlet",
+          "partPrefix": "VIN216",
+          "fsm": "Data",
+          "readyState": "Update",
+          "projectNativeReads": true
+        },
+        {
+          "name": "Outlet",
+          "mountPath": "CORRIS/Assemblies/VINP_HeaterHoseOutlet",
+          "rootPrefix": "",
+          "relativePath": "VINP_HeaterHoseOutlet",
+          "partPrefix": "VIN217",
+          "fsm": "Data",
+          "readyState": "Update",
+          "projectNativeReads": true
+        }
+      ],
+      "coolingAirflow": [
+        {
+          "name": "Grille",
+          "mountPath": "CORRIS/Assemblies/VINP_Grille",
+          "rootPrefix": "",
+          "relativePath": "VINP_Grille",
+          "partPrefix": "VIN413",
+          "fsm": "Data",
+          "readyState": "Update 2",
+          "alternatePartPrefixes": [
+            "VIN413B",
+            "VIN413C",
+            "VIN413D"
+          ]
+        },
+        {
+          "name": "GrilleBlockoff",
+          "mountPath": "CORRIS/AssembliesTuning/VINP_GrilleBlockoff",
+          "rootPrefix": "",
+          "relativePath": "VINP_GrilleBlockoff",
+          "partPrefix": "BLOCKOFF",
+          "fsm": "Data",
+          "readyState": "Update 2"
+        },
+        {
+          "name": "Hood",
+          "mountPath": "CORRIS/Assemblies/VINP_Hood",
+          "rootPrefix": "",
+          "relativePath": "VINP_Hood",
+          "partPrefix": "VIN411",
+          "fsm": "Data",
+          "readyState": "Update 2"
+        },
+        {
+          "name": "FiberglassHood",
+          "mountPath": "CORRIS/AssembliesTuning/VINP_FiberglassHood",
+          "rootPrefix": "",
+          "relativePath": "VINP_FiberglassHood",
+          "partPrefix": "HOODa0",
+          "fsm": "Data",
+          "readyState": "Update 2"
+        }
+      ],
+      "coolingAmbient": {
+        "path": "CORRIS/Functions/RoofCheck",
+        "fsm": "Raycast",
+        "variable": "TempCar",
+        "states": [
+          "Cast ray",
+          "Check roof",
+          "Under roof",
+          "Under sky"
+        ]
+      }
+    },
+    "gearbox": {
+      "path": "CORRIS/MotorPivot/MassCenter/Block/VINP_Gearbox",
+      "fsm": "Data",
+      "idleState": "Idle",
+      "readyState": "Update 2"
+    },
+    "valves": {
+      "readerPath": "CORRIS/Simulation/Engine/Valves",
+      "fsm": "Valves",
+      "targetVariable": "Cylinderhead",
+      "reference": "Valves",
+      "output": "Data",
+      "headState": "Get cam profile",
+      "headActionIndex": 8,
+      "readers": [
+        {
+          "state": "Cyl 1 intake",
+          "actionIndex": 0,
+          "arrayIndex": 0
+        },
+        {
+          "state": "Cyl 1 exhaust",
+          "actionIndex": 0,
+          "arrayIndex": 1
+        },
+        {
+          "state": "Cyl 2 intake",
+          "actionIndex": 0,
+          "arrayIndex": 2
+        },
+        {
+          "state": "Cyl 2 exhaust",
+          "actionIndex": 0,
+          "arrayIndex": 3
+        },
+        {
+          "state": "Cyl 3 intake",
+          "actionIndex": 0,
+          "arrayIndex": 4
+        },
+        {
+          "state": "Cyl 3 exhaust",
+          "actionIndex": 0,
+          "arrayIndex": 5
+        },
+        {
+          "state": "Cyl 4 intake",
+          "actionIndex": 0,
+          "arrayIndex": 6
+        },
+        {
+          "state": "Cyl 4 exhaust",
+          "actionIndex": 0,
+          "arrayIndex": 7
+        }
+      ]
+    }
+  },
+  "vehicleElectrical": {
+    "rootPath": "CORRIS",
+    "path": "CORRIS/Simulation/Systems/Electrics",
+    "fsm": "Electrics",
+    "rpmGlobal": "RPM",
+    "runningState": "Engine running?",
+    "chargingState": "Charge battery",
+    "batteryState": "Run on battery"
+  },
+  "vehicleCooling": {
+    "rootPath": "CORRIS",
+    "producerPath": "CORRIS/Simulation/CarData",
+    "producerFsm": "Measurements",
+    "producerState": "State 1",
+    "speedGlobal": "SpeedKMH",
+    "coolingPath": "CORRIS/Simulation/Systems/Cooling",
+    "coolingFsm": "Cooling",
+    "airState": "Air cooling",
+    "checkState": "Check temp",
+    "rpmGlobal": "RPM",
+    "pumpState": "Water Pump 2",
+    "fanState": "Fan",
+    "leakState": "Motor on?"
+  },
+  "vehicleHeat": {
+    "rootPath": "CORRIS",
+    "path": "CORRIS/Simulation/CarData",
+    "fsm": "HeatGeneration",
+    "runningState": "State 1",
+    "stoppedState": "State 2",
+    "objectVariable": "CarDrivetrain",
+    "componentType": "Drivetrain",
+    "torqueMember": "torque",
+    "torqueVariable": "Power",
+    "rpmGlobal": "RPM",
+    "temperatureGlobal": "EngineTemp"
+  },
+  "vehicleDrivetrainWear": {
+    "rootPath": "CORRIS",
+    "path": "CORRIS/Simulation/Systems/Drivetrain",
+    "fsm": "Wear",
+    "targets": [
+      {
+        "variable": "db_Driveshaft",
+        "path": "CORRIS/Assemblies/VINP_Driveshaft",
+        "rate": "RateDriveshaft",
+        "divisor": 42300.0
+      },
+      {
+        "variable": "db_Gearbox",
+        "path": "CORRIS/MotorPivot/MassCenter/Block/VINP_Gearbox",
+        "rate": "RateGearbox",
+        "divisor": 31500.0
+      },
+      {
+        "variable": "db_RearAxle",
+        "path": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RL/wheel_spindle_rl/VINP_RearAxle",
+        "rate": "RateRearAxle",
+        "divisor": 22800.0
+      }
+    ]
+  },
+  "vehicleDifferentialSpeed": {
+    "rootPath": "CORRIS",
+    "path": "CORRIS/Simulation/Systems/Drivetrain",
+    "fsm": "Wear",
+    "state": "State 1",
+    "wearState": "Wear",
+    "waitState": "State 2",
+    "index": 0,
+    "objectVariable": "Drivetrain",
+    "componentType": "Drivetrain",
+    "member": "differentialSpeed",
+    "output": "DiffSpeed"
+  },
+  "vehicleWearInputs": {
+    "rootPath": "CORRIS",
+    "path": "CORRIS/Simulation/Engine/Oil",
+    "readers": [
+      {
+        "fsm": "Pressure",
+        "state": "Oil pressure",
+        "index": 1,
+        "field": "float1",
+        "operation": "Divide",
+        "output": "Math2",
+        "everyFrame": true,
+        "global": "RPM",
+        "otherConstant": 15000.0
+      },
+      {
+        "fsm": "Wearing",
+        "state": "State 1",
+        "index": 7,
+        "field": "float1",
+        "operation": "Divide",
+        "output": "Math1",
+        "everyFrame": false,
+        "global": "RPM",
+        "otherConstant": 2000.0
+      },
+      {
+        "fsm": "Wearing",
+        "state": "Calculate rate",
+        "index": 1,
+        "field": "float2",
+        "operation": "Multiply",
+        "output": "Math2",
+        "everyFrame": false,
+        "global": "RPM",
+        "otherVariable": "Math1"
+      },
+      {
+        "fsm": "Wearing",
+        "state": "Calculate rate 2",
+        "index": 0,
+        "field": "float2",
+        "operation": "Multiply",
+        "output": "Math2",
+        "everyFrame": false,
+        "global": "RPM",
+        "otherVariable": "OilPressure"
+      },
+      {
+        "fsm": "Wearing",
+        "state": "Oil level",
+        "index": 2,
+        "field": "float2",
+        "operation": "Multiply",
+        "output": "Math2",
+        "everyFrame": false,
+        "global": "RPM",
+        "otherVariable": "Math1"
+      },
+      {
+        "fsm": "Wearing",
+        "state": "Pressure leak",
+        "index": 14,
+        "field": "float1",
+        "operation": "Divide",
+        "output": "MinPressure",
+        "everyFrame": false,
+        "global": "RPM",
+        "otherConstant": 8000.0
+      },
+      {
+        "fsm": "Oil",
+        "state": "Oil contamination",
+        "index": 2,
+        "field": "float1",
+        "operation": "Divide",
+        "output": "OilContaminationRate",
+        "everyFrame": false,
+        "global": "RPM",
+        "otherConstant": 250000.0
+      }
+    ]
+  },
+  "vehicleWheelHealth": {
+    "rootPath": "CORRIS",
+    "sources": [
+      {
+        "wheel": 0,
+        "path": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFL/ToeFL/DamagePivotFL/WHEELc_FL",
+        "targetPath": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFL/ToeFL/DamagePivotFL/WHEELc_FL/tire/VINP_WheelFL"
+      },
+      {
+        "wheel": 1,
+        "path": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFR/ToeFR/DamagePivotFR/WHEELc_FR",
+        "targetPath": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFR/ToeFR/DamagePivotFR/WHEELc_FR/tire/VINP_WheelFR"
+      },
+      {
+        "wheel": 2,
+        "path": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RL",
+        "targetPath": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RL/tire/VINP_WheelRL"
+      },
+      {
+        "wheel": 3,
+        "path": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RR",
+        "targetPath": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RR/tire/VINP_WheelRR"
+      }
+    ]
+  },
+  "vehicleTirePressure": {
+    "rootPath": "CORRIS",
+    "path": "CORRIS/Simulation/Systems/TirePressure",
+    "fsm": "Data",
+    "state": "WheelFriction",
+    "event": "TIRES",
+    "pressure": "Pressure",
+    "optimum": "PressureOptimal",
+    "wheels": [
+      {
+        "path": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFL/ToeFL/DamagePivotFL/WHEELc_FL",
+        "objectVariable": "WheelFL",
+        "pressureIndex": 0,
+        "optimumIndex": 1,
+        "enabled": true
+      },
+      {
+        "path": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFR/ToeFR/DamagePivotFR/WHEELc_FR",
+        "objectVariable": "WheelFR",
+        "pressureIndex": 2,
+        "optimumIndex": 3,
+        "enabled": false
+      },
+      {
+        "path": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RL",
+        "objectVariable": "WheelRL",
+        "pressureIndex": 4,
+        "optimumIndex": 5,
+        "enabled": false
+      },
+      {
+        "path": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RR",
+        "objectVariable": "WheelRR",
+        "pressureIndex": 6,
+        "optimumIndex": 7,
+        "enabled": false
+      }
+    ]
+  },
+  "vehicleTemperature": {
+    "sources": [
+      {
+        "rootPath": "CORRIS",
+        "gaugePath": "CORRIS/Simulation/Electricity/StandardGaugesData",
+        "sourcePath": "CORRIS/Simulation/Systems/Cooling",
+        "hostAuthoritative": true,
+        "readyState": "Coolant temp 2",
+        "engineGlobal": "EngineTemp",
+        "electricalInputs": {
+          "electricsPath": "CORRIS/Simulation/Systems/Electrics",
+          "electricsFsm": "Electrics",
+          "batteryState": "Battery",
+          "chargingState": "Charge battery",
+          "interiorPath": "CORRIS/InteriorLight/Electrics",
+          "interiorFsm": "Consumption",
+          "interiorBatteryState": "Battery"
+        },
+        "cabinInputs": {
+          "cabinPath": "CORRIS/Simulation/CarTempCorris",
+          "cabinFsm": "Data",
+          "cabinState": "Data",
+          "heaterPath": "CORRIS/Simulation/Electricity/PowerON/HeaterUnit",
+          "heaterFsm": "Function",
+          "heaterState": "Calc defrosting"
+        },
+        "engineInputs": {
+          "fuelPath": "CORRIS/Simulation/Engine/Fuel",
+          "fuelFsm": "FuelLine",
+          "mixtureFsm": "Mixture",
+          "oilPath": "CORRIS/Simulation/Engine/Oil",
+          "oilFsm": "Oil",
+          "pressureFsm": "Pressure",
+          "carburettorState": "Carburator",
+          "primingState": "Priming",
+          "densityState": "Calculate density",
+          "viscosityState": "Viscosity",
+          "pressureState": "Oil pressure"
+        },
+        "sourceFsm": "Cooling",
+        "sourceVariable": "CoolantTemp",
+        "gaugeVariable": "Angle"
+      },
+      {
+        "rootPath": "JOBS/TAXIJOB/MACHTWAGEN",
+        "gaugePath": "JOBS/TAXIJOB/MACHTWAGEN/Functions/Dashboard/DashSymbols/GaugeData",
+        "sourcePath": "JOBS/TAXIJOB/MACHTWAGEN/Simulation/CarTempTaxi/Radiator",
+        "hostAuthoritative": false,
+        "sourceFsm": "Cooling",
+        "sourceVariable": "Temp",
+        "gaugeVariable": "Rotation"
+      },
+      {
+        "rootPath": "SORBET(190-200psi)",
+        "gaugePath": "SORBET(190-200psi)/Functions/Dashboard/DashSymbols/GaugeData",
+        "sourcePath": "SORBET(190-200psi)/Simulation/CarTempSorbet/Radiator",
+        "hostAuthoritative": false,
+        "sourceFsm": "Cooling",
+        "sourceVariable": "Temp",
+        "gaugeVariable": "Rotation"
+      }
+    ]
+  },
+  "vehicleParkingJoint": {
+    "rootPath": "CORRIS",
+    "fsm": "LOD",
+    "releaseState": "Remove joint",
+    "releaseIndex": 0
+  },
+  "vehicleParkingBrake": {
+    "sources": [
+      {
+        "rootPath": "SORBET(190-200psi)",
+        "controlPath": "SORBET(190-200psi)/Functions/HandBrake/LeverPivot",
+        "fsm": "Use",
+        "variable": "KnobPos",
+        "idleState": "Wait player",
+        "increaseState": "INCREASE",
+        "decreaseState": "DECREASE"
+      }
+    ]
+  },
+  "vehicleEngineHandoff": {
+    "sources": [
+      {
+        "rootPath": "SORBET(190-200psi)",
+        "starterPath": "SORBET(190-200psi)/Simulation/STARTERxSorbet",
+        "ignitionPath": "SORBET(190-200psi)/Functions/SteeringColumnPivot/SteeringColumn/IGNITIONxSorbet"
+      }
+    ]
+  },
+  "vehicleEngineRpm": {
+    "sources": [
+      {
+        "rootPath": "CORRIS",
+        "producerPath": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "objectVariable": "CarDrivetrain",
+        "componentType": "Drivetrain",
+        "rpmMember": "rpm",
+        "globalVariable": "RPM",
+        "producers": [
+          {
+            "state": "Crank up",
+            "index": 1,
+            "actionType": "GetProperty",
+            "everyFrame": true
+          },
+          {
+            "state": "Start engine",
+            "index": 0,
+            "actionType": "GetProperty",
+            "everyFrame": true
+          },
+          {
+            "state": "Stall engine",
+            "index": 0,
+            "actionType": "GetProperty",
+            "everyFrame": true
+          },
+          {
+            "state": "Running",
+            "index": 7,
+            "actionType": "GetProperty",
+            "everyFrame": true
+          },
+          {
+            "state": "Turn key",
+            "index": 5,
+            "actionType": "SetFloatValue",
+            "everyFrame": true,
+            "sourceVariable": "StarterSpeed"
+          },
+          {
+            "state": "Fuel Mixture",
+            "index": 9,
+            "actionType": "SetFloatValue",
+            "everyFrame": true,
+            "sourceVariable": "StarterSpeed"
+          },
+          {
+            "state": "Start or not",
+            "index": 8,
+            "actionType": "SetFloatValue",
+            "everyFrame": true,
+            "sourceVariable": "StarterSpeed"
+          },
+          {
+            "state": "Wait",
+            "index": 18,
+            "actionType": "SetFloatValue",
+            "everyFrame": false,
+            "sourceConstant": 0
+          }
+        ]
+      }
+    ]
+  },
+  "guestEngineProtection": {
+    "writers": [
+      {
+        "path": "CORRIS/Simulation/Engine/Combustion",
+        "fsm": "Cylinders",
+        "poseActions": [
+          {
+            "state": "Random move",
+            "index": 8,
+            "targetVariable": "DistributorMesh",
+            "angleVariable": "Angle"
+          }
+        ],
+        "actions": [
+          {
+            "state": "Remove power",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "Oil"
+          },
+          {
+            "state": "Water leak",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "Oil"
+          },
+          {
+            "state": "Water leak",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Radiator",
+            "targetFsm": "Data",
+            "targetScalar": "Water"
+          },
+          {
+            "state": "Wear",
+            "index": 0,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston1",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Wear",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston2",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Wear",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston3",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Wear",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston4",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug1",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug1",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Random move",
+            "index": 6,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "Distributor",
+            "targetFsm": "Data",
+            "targetScalar": "SparkAngle"
+          },
+          {
+            "state": "Random move",
+            "index": 7,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Distributor",
+            "targetFsm": "Data",
+            "targetScalar": "SparkAngle"
+          },
+          {
+            "state": "Timing belt wear",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_TimingBelt",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Timing belt wear",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Distributor",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear 2",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug2",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear 2",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug2",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear 3",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug3",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear 3",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug3",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear 4",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug4",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Plug wear 4",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_SparkPlug4",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "FuelLine",
+        "actions": [
+          {
+            "state": "Airfilter",
+            "index": 0,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Carb1",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Engine/Fuel",
+        "fsm": "Mixture",
+        "actions": [
+          {
+            "state": "Oil smoke",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "Oil"
+          },
+          {
+            "state": "Oil smoke",
+            "index": 2,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "OilContamination"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Engine/GearboxManual/Clutch",
+        "fsm": "Wear",
+        "actions": [
+          {
+            "state": "Get data",
+            "index": 14,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Clutchdisc",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Oil",
+        "actions": [
+          {
+            "state": "No oil",
+            "index": 0,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "Oil"
+          },
+          {
+            "state": "No oil",
+            "index": 1,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "OilContamination"
+          },
+          {
+            "state": "No oil",
+            "index": 2,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "OilViscosity"
+          },
+          {
+            "state": "Calculate leak",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "Oil"
+          },
+          {
+            "state": "Wearing",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Headgasket",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Wearing 2",
+            "index": 4,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Waterpump",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Oil contamination",
+            "index": 0,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "OilContamination"
+          },
+          {
+            "state": "Oil contamination",
+            "index": 1,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Oilfilter",
+            "targetFsm": "Data",
+            "targetScalar": "Dirt"
+          },
+          {
+            "state": "Oil contamination",
+            "index": 4,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "OilContamination"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Engine/Oil",
+        "fsm": "Wearing",
+        "actions": [
+          {
+            "state": "Parts",
+            "index": 0,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_MainBearing1",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_MainBearing2",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_MainBearing3",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_MainBearing4",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts",
+            "index": 4,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_MainBearing5",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts",
+            "index": 5,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Crankshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts",
+            "index": 6,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_AuxShaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts 2",
+            "index": 0,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston1",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts 2",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston2",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts 2",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston3",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Parts 2",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Piston4",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Durability 1",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Oilpump",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Durability 2",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Durability 2",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Fuelpump",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Engine/Valves",
+        "fsm": "Valves",
+        "actions": [
+          {
+            "state": "Cyl1 power 9",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Cyl1 power 10",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Cyl1 power 11",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Cyl1 power 12",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Cyl1 power 13",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Cyl1 power 14",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Cyl1 power 15",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Cyl1 power 16",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Camshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/FIRE/LightLogic",
+        "fsm": "Flicker",
+        "actions": [
+          {
+            "state": "Random wear",
+            "index": 2,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "Part",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/STARTERxCorris",
+        "fsm": "Starter",
+        "actions": [
+          {
+            "state": "Fuel Mixture",
+            "index": 11,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Starter",
+            "targetFsm": "Data",
+            "targetScalar": "Wear",
+            "starterWear": true
+          },
+          {
+            "state": "Turn key",
+            "index": 6,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "Charge",
+            "starterDraw": "loaded"
+          },
+          {
+            "state": "Fuel Mixture",
+            "index": 8,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "Charge",
+            "starterDraw": "loaded"
+          },
+          {
+            "state": "Wait",
+            "index": 13,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "ChargeMax"
+          },
+          {
+            "state": "Start or not",
+            "index": 7,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "Charge",
+            "starterDraw": "loaded"
+          },
+          {
+            "state": "Start engine",
+            "index": 9,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "Charge",
+            "starterDraw": "loaded"
+          },
+          {
+            "state": "No Flywheel",
+            "index": 5,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "Charge",
+            "starterDraw": "unloaded"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Systems/Cooling",
+        "fsm": "Cooling",
+        "actions": [
+          {
+            "state": "Reset",
+            "index": 10,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Oilpan",
+            "targetFsm": "Data",
+            "targetScalar": "Oil"
+          },
+          {
+            "state": "Water leak",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Radiator",
+            "targetFsm": "Data",
+            "targetScalar": "Coolant"
+          },
+          {
+            "state": "Release pressure",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Radiator",
+            "targetFsm": "Data",
+            "targetScalar": "Coolant"
+          },
+          {
+            "state": "Radiator Data",
+            "index": 5,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Radiator",
+            "targetFsm": "Data",
+            "targetScalar": "Coolant"
+          },
+          {
+            "state": "Thermostat",
+            "index": 4,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Thermostat",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Empty coolant",
+            "index": 0,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Radiator",
+            "targetFsm": "Data",
+            "targetScalar": "Coolant"
+          },
+          {
+            "state": "Coolant temp 2",
+            "index": 6,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Radiator",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Systems/Electrics",
+        "fsm": "Electrics",
+        "actions": [
+          {
+            "state": "Wear",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Alternator",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Run on alternator",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Alternator",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Alternator eff",
+            "index": 6,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "ChargeMax"
+          },
+          {
+            "state": "Delay",
+            "index": 0,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "Charge"
+          },
+          {
+            "state": "Delay",
+            "index": 1,
+            "actionType": "AddFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "Charge"
+          },
+          {
+            "state": "No charge",
+            "index": 1,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "db_Battery",
+            "targetFsm": "Data",
+            "targetScalar": "ChargeMax"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFL/ToeFL/DamagePivotFL/WHEELc_FL",
+        "fsm": "Condition",
+        "wheelHealth": {
+          "wheel": 0,
+          "rim": {
+            "state": "Rim friction",
+            "wheelObject": "Wheel",
+            "radiusVariable": "RimRadius",
+            "soundVariable": "FlatSound",
+            "quietState": "State 1",
+            "radiusIndex": 0,
+            "frictionIndex": 1,
+            "quietIndex": 0,
+            "friction": 0.1
+          },
+          "reads": [
+            {
+              "state": "State 1",
+              "index": 12
+            },
+            {
+              "state": "Flat friction",
+              "index": 3
+            }
+          ]
+        },
+        "actions": [
+          {
+            "state": "State 1",
+            "index": 11,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          },
+          {
+            "state": "Flat friction",
+            "index": 0,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/PhysicalAssemblies/FRONT/AxleFront/LinkFR/ToeFR/DamagePivotFR/WHEELc_FR",
+        "fsm": "Condition",
+        "wheelHealth": {
+          "wheel": 1,
+          "rim": {
+            "state": "Rim friction",
+            "wheelObject": "Wheel",
+            "radiusVariable": "RimRadius",
+            "soundVariable": "FlatSound",
+            "quietState": "State 1",
+            "radiusIndex": 0,
+            "frictionIndex": 1,
+            "quietIndex": 0,
+            "friction": 0.1
+          },
+          "reads": [
+            {
+              "state": "State 1",
+              "index": 12
+            },
+            {
+              "state": "Flat friction",
+              "index": 3
+            }
+          ]
+        },
+        "actions": [
+          {
+            "state": "State 1",
+            "index": 11,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          },
+          {
+            "state": "Flat friction",
+            "index": 0,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RL",
+        "fsm": "Condition",
+        "wheelHealth": {
+          "wheel": 2,
+          "rim": {
+            "state": "Rim friction",
+            "wheelObject": "Wheel",
+            "radiusVariable": "RimRadius",
+            "soundVariable": "FlatSound",
+            "quietState": "State 1",
+            "radiusIndex": 0,
+            "frictionIndex": 1,
+            "quietIndex": 0,
+            "friction": 0.1
+          },
+          "reads": [
+            {
+              "state": "State 1",
+              "index": 12
+            },
+            {
+              "state": "Flat friction",
+              "index": 3
+            }
+          ]
+        },
+        "actions": [
+          {
+            "state": "State 1",
+            "index": 11,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          },
+          {
+            "state": "Flat friction",
+            "index": 0,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/PhysicalAssemblies/REAR/AxleDamagePivot/RearWheelsStatic/WHEELc_RR",
+        "fsm": "Condition",
+        "wheelHealth": {
+          "wheel": 3,
+          "rim": {
+            "state": "Rim friction",
+            "wheelObject": "Wheel",
+            "radiusVariable": "RimRadius",
+            "soundVariable": "FlatSound",
+            "quietState": "State 1",
+            "radiusIndex": 0,
+            "frictionIndex": 1,
+            "quietIndex": 0,
+            "friction": 0.1
+          },
+          "reads": [
+            {
+              "state": "State 1",
+              "index": 12
+            },
+            {
+              "state": "Flat friction",
+              "index": 3
+            }
+          ]
+        },
+        "actions": [
+          {
+            "state": "State 1",
+            "index": 11,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          },
+          {
+            "state": "Flat friction",
+            "index": 0,
+            "actionType": "SetFsmFloat",
+            "targetVariable": "ThisTire",
+            "targetFsm": "Data",
+            "targetScalar": "TireHealth"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Systems/Drivetrain/GearboxDamage",
+        "fsm": "Damage",
+        "gearboxCondition": {
+          "state": "Damage type",
+          "index": 0
+        },
+        "actions": [
+          {
+            "state": "Reverse",
+            "index": 6,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Gearbox",
+            "targetFsm": "Data",
+            "targetScalar": "Wear",
+            "gearboxWear": true
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Systems/Drivetrain",
+        "fsm": "Wear",
+        "actions": [
+          {
+            "state": "Wear",
+            "index": 1,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Driveshaft",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Wear",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Gearbox",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          },
+          {
+            "state": "Wear",
+            "index": 5,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_RearAxle",
+            "targetFsm": "Data",
+            "targetScalar": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Systems/Drivetrain",
+        "fsm": "Transmission",
+        "actions": [
+          {
+            "state": "Gearbox damage",
+            "index": 5,
+            "actionType": "SetFsmInt",
+            "targetVariable": "db_Gearbox",
+            "targetFsm": "Data",
+            "targetScalar": "DamageType"
+          }
+        ],
+        "eventActions": [
+          {
+            "state": "Shaft break",
+            "index": 0,
+            "targetVariable": "db_Driveshaft",
+            "targetFsm": "Data",
+            "event": "BREAKOFF"
+          }
+        ],
+        "drivetrainWear": [
+          {
+            "state": "Driveshaft",
+            "index": 2,
+            "part": 0,
+            "variable": "db_Driveshaft",
+            "output": "Wear"
+          },
+          {
+            "state": "Gearbox damage",
+            "index": 0,
+            "part": 1,
+            "variable": "db_Gearbox",
+            "output": "Wear"
+          },
+          {
+            "state": "Rear axle",
+            "index": 1,
+            "part": 2,
+            "variable": "db_Rearaxle",
+            "output": "Wear"
+          }
+        ]
+      },
+      {
+        "path": "CORRIS/Simulation/Systems/Drivetrain/GearboxAutomatic",
+        "fsm": "3 speed",
+        "actions": [
+          {
+            "state": "State 1",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Gearbox",
+            "targetFsm": "Data",
+            "targetScalar": "OilLevel",
+            "gearboxOilUse": true
+          },
+          {
+            "state": "State 3",
+            "index": 3,
+            "actionType": "SubtractFsmFloat",
+            "targetVariable": "db_Gearbox",
+            "targetFsm": "Data",
+            "targetScalar": "OilLevel",
+            "gearboxOilUse": true
+          }
+        ],
+        "drivetrainWear": [
+          {
+            "state": "Set stall speed",
+            "index": 3,
+            "part": 1,
+            "variable": "db_Gearbox",
+            "output": "GearboxWear"
+          }
+        ],
+        "gearboxOil": {
+          "state": "Set stall speed",
+          "index": 0,
+          "variable": "db_Gearbox",
+          "output": "Oil"
+        }
+      }
+    ],
+    "pausedFsms": [
+      {
+        "path": "CORRIS/Simulation/Systems/PartFallings",
+        "fsm": "Logic",
+        "requiredStates": [
+          "State 1",
+          "Break",
+          "Wait",
+          "State 2",
+          "Pick tire",
+          "Loosen part",
+          "Loosen tire",
+          "Get speed"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_Battery",
+        "fsm": "Data",
+        "blockExternalFloatWrites": true,
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Assemble 2",
+          "Set joint 2",
+          "Delay 2",
+          "Died battery",
+          "Check joint",
+          "Calc"
+        ]
+      },
+      {
+        "path": "CORRIS/MotorPivot/MassCenter/Block/VINP_Block",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Update",
+          "Install 1",
+          "State 1"
+        ]
+      },
+      {
+        "path": "CORRIS/MotorPivot/MassCenter/Block/VINP_Gearbox",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Remove other",
+          "Update 2",
+          "Remove other 2",
+          "State 1",
+          "Check Flywheel"
+        ],
+        "blockExternalIntWrites": true,
+        "blockExternalFloatWrites": true
+      },
+      {
+        "path": "CARPARTS/StartParts/VIN1010/VINP_Cylinderhead",
+        "fsm": "Data",
+        "rootPrefix": "VIN101",
+        "relativePath": "VINP_Cylinderhead",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "UPDATE"
+        ]
+      },
+      {
+        "path": "CARPARTS/StartParts/VIN1110/VINP_Carburettor",
+        "fsm": "Data",
+        "rootPrefix": "VIN111",
+        "relativePath": "VINP_Carburettor",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Remove other",
+          "Update 2",
+          "Load 2",
+          "Save 2",
+          "Init 2"
+        ]
+      },
+      {
+        "path": "CARPARTS/StartParts/VIN1110/VINP_AirCleaner",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ],
+        "rootPrefix": "VIN111",
+        "relativePath": "VINP_AirCleaner"
+      },
+      {
+        "path": "CARPARTS/StartParts/VIN1110/VINP_ExhaustManifold",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ],
+        "rootPrefix": "VIN111",
+        "relativePath": "VINP_ExhaustManifold"
+      },
+      {
+        "path": "CORRIS/MotorPivot/MassCenter/VINP_ExhaustFront",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CORRIS/MotorPivot/MassCenter/Exhaust2MotorPivot/VINP_ExhaustRear",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CORRIS/MotorPivot/MassCenter/Exhaust2MotorPivot/VINP_ExhaustMuffler",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CARPARTS/StartParts/VIN1010/VINP_Oilpan",
+        "fsm": "Data",
+        "rootPrefix": "VIN101",
+        "relativePath": "VINP_Oilpan",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CARPARTS/StartParts/VIN1110/VINP_RockerCover",
+        "fsm": "Data",
+        "rootPrefix": "VIN111",
+        "relativePath": "VINP_RockerCover",
+        "requiredStates": [
+          "Idle",
+          "Install 1",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_Radiator",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 1",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Remove other",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_RadiatorHoseTop",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_RadiatorHoseBottom",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_HeaterHoseInlet",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_HeaterHoseOutlet",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_Grille",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Assemble 2",
+          "Set joint 2",
+          "Update 2",
+          "Repair 4",
+          "State 1",
+          "Repair 2",
+          "Repair 3",
+          "Repair 5",
+          "Remove other"
+        ]
+      },
+      {
+        "path": "CORRIS/AssembliesTuning/VINP_GrilleBlockoff",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Update 2",
+          "State 1",
+          "State 2",
+          "State 3"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_Hood",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Assemble 2",
+          "Set joint 2",
+          "Update 2",
+          "Repair"
+        ]
+      },
+      {
+        "path": "CORRIS/AssembliesTuning/VINP_FiberglassHood",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Install 1",
+          "Assemble 2",
+          "Set joint 2",
+          "Update 2"
+        ]
+      },
+      {
+        "path": "CORRIS/Assemblies/VINP_Heaterbox",
+        "fsm": "Data",
+        "requiredStates": [
+          "Idle",
+          "Install 1",
+          "Install 2",
+          "Installed",
+          "Remove part",
+          "Allow removal?",
+          "Allow install?",
+          "Far",
+          "Near",
+          "Update 2"
+        ],
+        "blockExternalFloatWrites": true
+      }
+    ]
+  },
   "vehicleDamage": {
     "objectName": "PartBreakages",
     "fsmName": "Damages",
@@ -932,7 +5793,10 @@
     "contentsVariable": "CreateItemsDB",
     "quantityVariable": "Quantity",
     "openState": "Create Plug",
-    "openReadyStates": ["Wait player 2", "Wait button 2"],
+    "openReadyStates": [
+      "Wait player 2",
+      "Wait button 2"
+    ],
     "contentsFsm": "Spawn",
     "contentsEvent": "SPAWNITEM",
     "contentsCountVariable": "NumberOfProducts",
@@ -1135,6 +5999,76 @@
         "prefix": "boxwaterpumppulley0",
         "contentsPath": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/WaterpumpPulley127",
         "capacity": 1
+      },
+      {
+        "path": "Spawner/CreateItems",
+        "fsm": "Sparkplugs",
+        "prefix": "sparkplugbox0",
+        "contentsPath": "Spawner/CreateItems",
+        "contentsFsm": "Sparkplug",
+        "contentsSpawnPointVariable": "SpawnPoint",
+        "fixedCapacity": true,
+        "capacity": 4,
+        "itemName": "spark plug box(Clone)"
+      },
+      {
+        "path": "Spawner/CreateItems",
+        "fsm": "FusePackage",
+        "prefix": "fusepackage0",
+        "contentsPath": "Spawner/CreateItems",
+        "contentsFsm": "Fuse",
+        "contentsSpawnPointVariable": "SpawnPoint",
+        "fixedCapacity": true,
+        "capacity": 5,
+        "itemName": "fuse package(Clone)",
+        "openState": "Create Fuse",
+        "loadClampIndex": 2,
+        "supplyContents": {
+          "prefix": "fuse0",
+          "itemName": "fuse(Clone)",
+          "readyState": "State 5"
+        }
+      },
+      {
+        "path": "Spawner/CreateItems",
+        "fsm": "LightbulbBox",
+        "prefix": "lightbulbbox0",
+        "contentsPath": "Spawner/CreateItems",
+        "contentsFsm": "Lightbulb",
+        "contentsSpawnPointVariable": "SpawnPoint",
+        "fixedCapacity": true,
+        "capacity": 1,
+        "itemName": "car light bulb box(Clone)",
+        "openState": "Create Plug",
+        "loadClampIndex": 1,
+        "bulbContents": {
+          "prefab": "lightbulb",
+          "itemName": "car light bulb(itemx)",
+          "fsm": "Data",
+          "wear": "Wear",
+          "initial": "State 1",
+          "ready": "State 3",
+          "idle": "State 1"
+        }
+      },
+      {
+        "path": "Spawner/CreateItems",
+        "fsm": "R20BatteryBox",
+        "prefix": "r20batterybox0",
+        "contentsPath": "Spawner/CreateItems",
+        "contentsFsm": "R20Battery",
+        "contentsSpawnPointVariable": "SpawnPoint",
+        "fixedCapacity": true,
+        "capacity": 4,
+        "itemName": "r20 battery box(Clone)",
+        "openState": "Create Plug",
+        "loadClampIndex": 1,
+        "supplyContents": {
+          "prefix": "r20battery0",
+          "itemName": "r20 battery(Clone)",
+          "readyState": "State 5",
+          "retirementVariable": "Consumed"
+        }
       }
     ],
     "prefabVariable": "Prefab",
@@ -1308,6 +6242,7 @@
     "allEvent": "SPAWNALL",
     "contentsIdleState": "Idle",
     "contentsStartState": "State 1",
+    "contentsConsumedState": "Garbage",
     "spillCreateState": "Create product",
     "spillIdleState": "Idle",
     "spillPrefabVariable": "Prefab",
@@ -1315,7 +6250,11 @@
     "spillProductVariable": "ProductName",
     "spillSpawnPointVariable": "ShoppingBagSpawn",
     "spillEvent": "SPAWNITEM",
-    "spillFactoryPaths": ["Spawner/CreateItems", "Spawner/CreateSprayCans", "Spawner/CreatePartsPackages"],
+    "spillFactoryPaths": [
+      "Spawner/CreateItems",
+      "Spawner/CreateSprayCans",
+      "Spawner/CreatePartsPackages"
+    ],
     "pickupPath": "PLAYER/Pivot/AnimPivot/Camera/FPSCamera/1Hand_Assemble/Hand",
     "pickupFsm": "PickUp",
     "pickupEntryState": "Set pivot 2",
@@ -1327,10 +6266,27 @@
     "pickupJointVariable": "Joint",
     "pickupPivotVariable": "ItemPivot",
     "pickupEmptyVariable": "HandEmpty",
-    "readyStates": ["Wait player", "Wait button", "Confirm", "Spawn one", "Spawn all", "In car?", "Spoil 2", "In Fridge"],
+    "readyStates": [
+      "Wait player",
+      "Wait button",
+      "Confirm",
+      "Spawn one",
+      "Spawn all",
+      "In car?",
+      "Spoil 2",
+      "In Fridge"
+    ],
     "factories": [
-      { "path": "Spawner/CreateBagStore", "prefix": "shoppingbag", "contentsPath": "Spawner/BagContentsStore" },
-      { "path": "Spawner/CreateBagFleetari", "prefix": "shoppingbagfleetari", "contentsPath": "Spawner/BagContentsFleetari" }
+      {
+        "path": "Spawner/CreateBagStore",
+        "prefix": "shoppingbag",
+        "contentsPath": "Spawner/BagContentsStore"
+      },
+      {
+        "path": "Spawner/CreateBagFleetari",
+        "prefix": "shoppingbagfleetari",
+        "contentsPath": "Spawner/BagContentsFleetari"
+      }
     ]
   },
   "spawnContainers": [
@@ -1645,17 +6601,6 @@
       ]
     },
     {
-      "pathPrefix": "JOBS/ADs/AdvertSpawn/advert pile(itemx)",
-      "fsmName": "Use",
-      "states": [
-        "Open"
-      ],
-      "requireStates": [
-        "Wait button",
-        "Open"
-      ]
-    },
-    {
       "pathPrefix": "JOBS/HouseShit",
       "pathContains": "/PayMoney",
       "fsmName": "Use",
@@ -1671,6 +6616,7 @@
       "pathPrefix": "JOBS/HouseWood",
       "pathContains": "/PayMoney",
       "fsmName": "Use",
+      "hostPayment": "firewood",
       "states": [
         "State 1"
       ],
@@ -1752,17 +6698,6 @@
         "Switch",
         "Open",
         "Close"
-      ]
-    },
-    {
-      "pathPrefix": "FleaMarket/LOD/OpenHours/MoneyFlea",
-      "fsmName": "Use",
-      "states": [
-        "State 1"
-      ],
-      "requireStates": [
-        "Wait button",
-        "State 1"
       ]
     },
     {
@@ -2018,45 +6953,53 @@
       ]
     }
   ],
+  "utilityPayments": {
+    "sheet1": "Sheets/ElectricityBill1",
+    "sheet2": "Sheets/ElectricityBill2",
+    "sheetFsm": "Data",
+    "payChild": "Pay",
+    "payFsm": "Button",
+    "request": "Check money",
+    "commit": "Date",
+    "close": "Close",
+    "funds": "No money",
+    "idle": "State 1",
+    "calculate": "Set data",
+    "total": "Total",
+    "totalText": "TotalS",
+    "debt": "UnpaidBills",
+    "payEvent": "GLOBALEVENT"
+  },
+  "phonePayments": {
+    "sheet1": "Sheets/PhoneBill1",
+    "sheet2": "Sheets/PhoneBill2",
+    "sheetFsm": "Data",
+    "payChild": "Pay",
+    "payFsm": "Button",
+    "request": "Check money",
+    "commit": "Date",
+    "close": "Close",
+    "funds": "No money",
+    "idle": "State 1",
+    "calculate": "Set data",
+    "total": "CostFinal",
+    "totalText": "TotalS",
+    "debt": "UnpaidBills",
+    "payEvent": "GLOBALEVENT",
+    "minutes": "Minutes",
+    "longMinutes": "MinutesLong",
+    "connects": "Connects",
+    "longConnects": "ConnectsLong",
+    "base": "CostBase",
+    "connectionRate": "CostConnection",
+    "minuteRate": "CostPerMinute",
+    "longMinuteRate": "CostPerMinuteLong",
+    "localCalculate": "Set data 2",
+    "longCalculate": "Set data 3",
+    "totals": "Totals",
+    "oldBill": "OldBill"
+  },
   "buys": [
-    {
-      "pathContains": "ElectricityBill",
-      "fsmName": "Button",
-      "requireStates": [
-        "Check money",
-        "Date",
-        "No money"
-      ],
-      "entryGuards": [
-        {
-          "state": "Check money",
-          "event": "PAY"
-        }
-      ],
-      "resultStates": [
-        "Date",
-        "Close"
-      ]
-    },
-    {
-      "pathContains": "PhoneBill",
-      "fsmName": "Button",
-      "requireStates": [
-        "Check money",
-        "Date",
-        "No money"
-      ],
-      "entryGuards": [
-        {
-          "state": "Check money",
-          "event": "PAY"
-        }
-      ],
-      "resultStates": [
-        "Date",
-        "Close"
-      ]
-    },
     {
       "pathContains": "MegavetoTicket/Pay",
       "fsmName": "Button",
@@ -2431,10 +7374,14 @@
           "scalar": "SettingRotation",
           "boltPath": "Pivot/alternator/BoltPM"
         },
+        "alternatorDamageVariable": "Damaged",
         "scalars": [
           "Wear",
           "Tightness",
-          "SettingRotation"
+          "SettingRotation",
+          "Friction",
+          "Durability",
+          "Efficiency"
         ],
         "references": [
           {
@@ -2473,10 +7420,14 @@
           "scalar": "SettingRotation",
           "boltPath": "Pivot/alternator/BoltPM"
         },
+        "alternatorDamageVariable": "Damaged",
         "scalars": [
           "Wear",
           "Tightness",
-          "SettingRotation"
+          "SettingRotation",
+          "Friction",
+          "Durability",
+          "Efficiency"
         ],
         "references": [
           {
@@ -2576,7 +7527,9 @@
         "prefix": "VIN115",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "ValveTolerance"
         ],
         "references": [
           {
@@ -2603,7 +7556,8 @@
           "SetIsKinematic",
           "EnableFSM",
           "IntCompare"
-        ]
+        ],
+        "camProfileVariable": "CamProfile"
       },
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/CamshaftSprocket116",
@@ -2642,7 +7596,9 @@
         "prefix": "CAMTUNEa0",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "ValveTolerance"
         ],
         "references": [
           {
@@ -2667,14 +7623,17 @@
           "SetScale",
           "SetIsKinematic",
           "IntCompare"
-        ]
+        ],
+        "camProfileVariable": "CamProfile"
       },
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneB",
         "prefix": "CAMTUNEb0",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "ValveTolerance"
         ],
         "references": [
           {
@@ -2699,14 +7658,17 @@
           "SetScale",
           "SetIsKinematic",
           "IntCompare"
-        ]
+        ],
+        "camProfileVariable": "CamProfile"
       },
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneC",
         "prefix": "CAMTUNEc0",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "ValveTolerance"
         ],
         "references": [
           {
@@ -2731,14 +7693,17 @@
           "SetScale",
           "SetIsKinematic",
           "IntCompare"
-        ]
+        ],
+        "camProfileVariable": "CamProfile"
       },
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/CamTuneD",
         "prefix": "CAMTUNEd0",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "ValveTolerance"
         ],
         "references": [
           {
@@ -2763,7 +7728,8 @@
           "SetScale",
           "SetIsKinematic",
           "IntCompare"
-        ]
+        ],
+        "camProfileVariable": "CamProfile"
       },
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Fleetari/Carb2BRLa",
@@ -2946,6 +7912,32 @@
           "Tightness",
           "SparkAngle"
         ],
+        "distributorTiming": {
+          "fsm": "HandRotate",
+          "scalar": "SparkAngle",
+          "meshPath": "Pivot/mesh",
+          "meshVariable": "MeshRotate",
+          "mountVariable": "VINP",
+          "rotationVariable": "Rotation",
+          "scrollVariable": "Scroll",
+          "tightnessVariable": "Tightness",
+          "clockwiseState": "Clockwise",
+          "counterwiseState": "Counterwise",
+          "waitState": "Wait",
+          "inputState": "Input",
+          "pickState": "Wait Player",
+          "tightnessState": "Wait Player 2",
+          "bindState": "Collider",
+          "toolState": "Bolt loose?",
+          "delayState": "Delay",
+          "installedPoseState": "Install 2",
+          "readyStates": [
+            "Wait Player",
+            "Bolt loose?",
+            "Input"
+          ],
+          "cooldown": 0.01
+        },
         "references": [
           {
             "target": "InstallPoint",
@@ -2979,7 +7971,9 @@
         "prefix": "VIN125",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "OutputRate"
         ],
         "references": [
           {
@@ -3012,7 +8006,9 @@
         "prefix": "FUELPUMP0",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "OutputRate"
         ],
         "references": [
           {
@@ -3118,7 +8114,8 @@
         "prefix": "VIN132",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability"
         ],
         "references": [
           {
@@ -3148,6 +8145,9 @@
       },
       {
         "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Piston103",
+        "disabledInitActions": [
+          0
+        ],
         "prefix": "VIN103",
         "slotReference": "Pistons",
         "slotCount": 4,
@@ -3254,7 +8254,8 @@
         "prefix": "VIN130",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability"
         ],
         "references": [
           {
@@ -3263,7 +8264,8 @@
           },
           {
             "target": "PartBlocking",
-            "source": "PartBlocking"
+            "source": "PartBlocking",
+            "enabled": false
           }
         ],
         "initActions": [
@@ -3395,7 +8397,9 @@
         "prefix": "VIN126",
         "scalars": [
           "Wear",
-          "Tightness"
+          "Tightness",
+          "Durability",
+          "Efficiency"
         ],
         "references": [
           {
@@ -3409,6 +8413,41 @@
           "GetOwner",
           "GetName",
           "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/RadiatorFan137",
+        "prefix": "VIN137",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          },
+          {
+            "target": "PartBlocking",
+            "source": "PartBlocking"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
           "BuildStringFast",
           "BuildStringFast",
           "BuildStringFast",
@@ -3454,6 +8493,326 @@
           "SetIsKinematic",
           "IntCompare"
         ]
+      },
+      {
+        "path": "Spawner/CreateItems",
+        "fsm": "Fanbelt",
+        "bagOutput": true,
+        "prefix": "FANBELT0",
+        "beltVisual": {
+          "looseMeshVariable": "Mesh",
+          "mountVisualVariable": "FanBeltMesh",
+          "visualPath": "FanBelt",
+          "meshPath": "Mesh",
+          "rendererPath": "Mesh/FanbeltMesh",
+          "scaleBonePath": "Mesh/ScaleBone",
+          "animationPath": "Animations",
+          "fsm": "Jumping",
+          "scaleVariable": "Scale",
+          "scrollPath": "CORRIS/Simulation/Engine/SymptomsEngine/Animations",
+          "scrollFsm": "BeltAnimation"
+        },
+        "fitPrerequisite": {
+          "state": "Alternator",
+          "reference": "db_Installed2",
+          "scalar": "SettingRotation",
+          "result": "Setting",
+          "minimumExclusive": 6
+        },
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "Spawner/CreateItems",
+        "fsm": "Oilfilter",
+        "bagOutput": true,
+        "prefix": "OILFILTR0",
+        "handScrew": {
+          "fsm": "Screw",
+          "scalar": "Tightness",
+          "scratchVariable": "Tightness",
+          "rotationVariable": "Rot",
+          "tightenState": "Screw 2",
+          "loosenState": "Unscrew 2",
+          "poseState": "Set",
+          "inputState": "Get scroll",
+          "waitState": "Wait1 2",
+          "toolState": "Check tool",
+          "initState": "Setup 2",
+          "pickState": "Mouse off 2",
+          "readyStates": [
+            "Mouse off 2",
+            "Check tool",
+            "Get scroll"
+          ],
+          "cooldown": 0.2
+        },
+        "scalars": [
+          "Dirt",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "Spawner/CreateItems",
+        "fsm": "Sparkplug",
+        "prefix": "SPRKPLUG0",
+        "spawnPointVariable": "SpawnPoint",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "Durability"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "IntCompare"
+        ],
+        "slotReference": "Sparkplugs",
+        "slotCount": 4,
+        "removalLayer": 12,
+        "toolScrew": {
+          "fsm": "Screw",
+          "scalar": "Tightness",
+          "scratchVariable": "Tightness",
+          "tightenState": "Screw 2",
+          "loosenState": "Unscrew 2",
+          "poseState": "Set",
+          "idleState": "Idle",
+          "toolPath": "PLAYER/Pivot/AnimPivot/Camera/FPSCamera/2Spanner/Raycast",
+          "toolFsm": "Check",
+          "raycastFsm": "Raycast"
+        }
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Flywheel120",
+        "prefix": "VIN120",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "InertiaFactor"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Aftermarket/FlywheelA",
+        "prefix": "FLYWHEELa0",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "InertiaFactor"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_Aftermarket/FlywheelB",
+        "prefix": "FLYWHEELb0",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "InertiaFactor"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/Flexplate138",
+        "prefix": "VIN138",
+        "scalars": [
+          "Wear",
+          "Tightness",
+          "InertiaFactor"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
+      },
+      {
+        "path": "CARPARTS/PARTSYSTEM/SPAWNERS_VIN/IgnitionCoil212",
+        "prefix": "VIN212",
+        "scalars": [
+          "Wear",
+          "Tightness"
+        ],
+        "references": [
+          {
+            "target": "InstallPoint",
+            "source": "VINP"
+          }
+        ],
+        "initActions": [
+          "GetChild",
+          "RandomFloat",
+          "GetOwner",
+          "GetName",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "BuildStringFast",
+          "Exists"
+        ],
+        "statusActions": [
+          "BuildStringFast",
+          "SetName",
+          "SetScale",
+          "SetIsKinematic",
+          "IntCompare"
+        ]
       }
     ]
   },
@@ -3466,7 +8825,11 @@
     "positionKeyVariable": "UTPos",
     "assemblyKeySuffix": "AID",
     "positionKeySuffix": "POS",
-    "initializingStates": ["Init", "Load", "Status"]
+    "initializingStates": [
+      "Init",
+      "Load",
+      "Status"
+    ]
   },
   "parts": [
     {
@@ -3488,6 +8851,229 @@
       ]
     }
   ],
+  "taxiFare": {
+    "jobPath": "JOBS/TAXIJOB",
+    "jobFsm": "Logic",
+    "meterPath": "JOBS/TAXIJOB/MACHTWAGEN/TaxiFunctions/Tripmeter",
+    "meterFsm": "Function",
+    "customerVariable": "Customer",
+    "walkerFsm": "Logic",
+    "terminalVariable": "PaymentTerminal",
+    "terminalFsm": "Use",
+    "cashVariable": "Pay",
+    "cashFsm": "Use",
+    "boardState": "Open door",
+    "arrivedState": "State 9",
+    "chargeState": "Make payment",
+    "collectState": "State 1",
+    "printState": "State 6",
+    "takeState": "Drop ticket",
+    "giveState": "State 1",
+    "receiptVariable": "Receiptrigger",
+    "ticketVariable": "TicketPhysical",
+    "departureState": "Start walking"
+  },
+  "taxiMeter": {
+    "jobPath": "JOBS/TAXIJOB",
+    "jobFsm": "Logic",
+    "meterPath": "JOBS/TAXIJOB/MACHTWAGEN/TaxiFunctions/Tripmeter",
+    "meterFsm": "Function",
+    "knob": "KnobMode",
+    "knobFsm": "Knob",
+    "button": "ButtonMode",
+    "buttonFsm": "Use",
+    "display": "Indicators/LCDdata",
+    "displayFsm": "GetData",
+    "increase": "Volume dec",
+    "decrease": "Volume inc",
+    "select": "State 1",
+    "knobIdle": "Mouse off 2",
+    "toggle": "Flip Light",
+    "reset": "Reset tripmeter",
+    "buttonIdle": "Wait player"
+  },
+  "taxiService": {
+    "jobPath": "JOBS/TAXIJOB",
+    "jobFsm": "Logic",
+    "meterPath": "JOBS/TAXIJOB/MACHTWAGEN/TaxiFunctions/Tripmeter",
+    "meterFsm": "Function",
+    "customerVariable": "Customer",
+    "walkerFsm": "Logic",
+    "ringFsm": "Ring",
+    "phonePath": "JOBS/TAXIJOB/MACHTWAGEN/TaxiFunctions/Carphone/CarPhoneFunctions/UseHandle",
+    "phoneFsm": "Use",
+    "callState": "Call",
+    "answerState": "Pick phone",
+    "closeState": "Close phone",
+    "waitState": "Wait player",
+    "luggageFsm": "Suitcases",
+    "luggageResetState": "State 2",
+    "luggageReleaseState": "State 4",
+    "luggage0": "Suitcase1",
+    "luggage1": "Suitcase2",
+    "luggage2": "Suitcase3",
+    "luggage3": "Beercase1",
+    "luggage4": "Mattress1",
+    "luggagePool": "Luggage",
+    "paymentsFsm": "Payments",
+    "rundownVariable": "Rundown",
+    "rundownLetter": "RundownLetter",
+    "rundownList": "Rundown",
+    "envelopeFsm": "Use",
+    "envelopeOpenState": "Open ad",
+    "sheetVariable": "OpenThis",
+    "sheetFsm": "Setup",
+    "sheetCloseState": "State 2",
+    "settledState": "State 5"
+  },
+  "taxiPickup": {
+    "jobPath": "JOBS/TAXIJOB",
+    "jobFsm": "Logic",
+    "customer": "Customer",
+    "car": "Car",
+    "walker": "TaxiWalker",
+    "walkerFsm": "Logic",
+    "farState": "Distance 1",
+    "nearState": "Distance 2",
+    "carState": "Which car",
+    "cameraGlobal": "SavePlayerCam",
+    "playerGlobal": "SavePlayer",
+    "vehicleGlobal": "PlayerCurrentVehicle",
+    "vehicleName": "Taxi"
+  },
+  "firewoodDelivery": {
+    "loadPath": "FLATBED/Bed/LogTrigger",
+    "loadFsm": "Logic",
+    "groundPath": "FLATBED/GroundCheck",
+    "groundFsm": "Logic",
+    "logs": "Logs",
+    "firewood": "Firewood",
+    "mass": "Mass",
+    "bedScale": "ScalePileBed",
+    "unloaded": "NewPile",
+    "unload": "Unload",
+    "bedPile": "LogpileBed",
+    "groundPile": "LogpileGround",
+    "groundMesh": "LogpileGroundMesh",
+    "newGroundPile": "NewLogpile",
+    "pilePrefab": "Prefab",
+    "meshChild": "mesh",
+    "idle": "Wait log",
+    "visual": "Add scale",
+    "reset": "Reset",
+    "animate": "Animate",
+    "start": "State 2"
+  },
+  "firewoodBuyers": [
+    {
+      "jobPath": "JOBS/HouseWood1/WoodJob1Point",
+      "buyerPath": "JOBS/HouseWood1/LOD/CarPos/NPCWood/WoodCaller1",
+      "paymentPath": "JOBS/HouseWood1/LOD/CarPos/NPCWood/WoodCaller1/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right/hand_right/PayMoney",
+      "lodPath": "JOBS/HouseWood1"
+    },
+    {
+      "jobPath": "JOBS/HouseWood2/WoodJob2Point",
+      "buyerPath": "JOBS/HouseWood2/LOD/NPCWood/WoodCaller2",
+      "paymentPath": "JOBS/HouseWood2/LOD/NPCWood/WoodCaller2/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right/hand_right/PayMoney",
+      "lodPath": "JOBS/HouseWood2"
+    },
+    {
+      "jobPath": "JOBS/HouseWood3/WoodJob3Point",
+      "buyerPath": "JOBS/HouseWood3/LOD/NPCWood/WoodCaller3",
+      "paymentPath": "JOBS/HouseWood3/LOD/NPCWood/WoodCaller3/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right/hand_right/PayMoney",
+      "lodPath": "JOBS/HouseWood3"
+    },
+    {
+      "jobPath": "JOBS/HouseWood4/WoodJob4Point",
+      "buyerPath": "JOBS/HouseWood4/LOD/NPCWood/WoodCaller4",
+      "paymentPath": "JOBS/HouseWood4/LOD/NPCWood/WoodCaller4/skeleton/pelvis/spine_middle/spine_upper/collar_right/shoulder_right/arm_right/hand_right/PayMoney",
+      "lodPath": "JOBS/HouseWood4"
+    }
+  ],
+  "mooseChop": {
+    "path": "AnimalsMoose/Moose/Offset/dead moose(xxxxx)",
+    "detached": "dead moose(xxxxx)",
+    "mover": "AnimalsMoose/Moose",
+    "hitPath": "AnimalsMoose/Moose/Offset/Mesh/Collider",
+    "hitFsm": "CarHit",
+    "death": "State 2",
+    "hitIdle": "State 1",
+    "fsm": "Chop",
+    "rear": "spine2",
+    "idle": "State 1",
+    "compare": "State 2",
+    "pieces": "Pieces",
+    "create": "Create meat",
+    "cooldown": "State 3",
+    "sound": "Sound",
+    "object": "Object",
+    "spawnpoint": "Spawnpoint",
+    "spawner": "Spawner",
+    "axe": "PLAYER/Pivot/AnimPivot/Camera/Ax/Pivot",
+    "axeCollider": "PLAYER/Pivot/AnimPivot/Camera/Ax/Pivot/Collider",
+    "factorySpawnpoint": "SpawnPoint",
+    "body1": "neck/head",
+    "body2": "shoulder_left/arm_left",
+    "body3": "shoulder_left/arm_left/hand_left",
+    "body4": "shoulder_right/arm_right",
+    "body5": "shoulder_right/arm_right/hand_right",
+    "body6": "spine2",
+    "body7": "spine2/pelvis_left/leg_left",
+    "body8": "spine2/pelvis_left/leg_left/foot_left",
+    "body9": "spine2/pelvis_right/leg_right",
+    "body10": "spine2/pelvis_right/leg_right/foot_right"
+  },
+  "mooseMeat": {
+    "path": "Spawner/CreateMooseMeat",
+    "factoryFsm": "MooseMeat",
+    "prefix": "moosemeat0",
+    "prefab": "CreatePrefab",
+    "output": "New",
+    "factoryId": "ID",
+    "create": "Create product",
+    "loadCreate": "Create",
+    "factoryIdle": "Idle",
+    "prefabName": "moosemeat0",
+    "use": "Use",
+    "fire": "Fire",
+    "id": "ID",
+    "owner": "Owner",
+    "condition": "Condition",
+    "type": "Type",
+    "raw": "State 1",
+    "rotten": "Bad",
+    "grilled": "Grilled",
+    "charred": "Done 2",
+    "spoiled": "Bad 2",
+    "waitPlayer": "Wait player",
+    "waitButton": "Wait button",
+    "eat": "Eat",
+    "destroy": "Destroy",
+    "deleted": "State 6"
+  },
+  "milkCondition": {
+    "itemName": "milk(itemx)",
+    "spoiledName": "spoiled milk(itemx)",
+    "fsm": "Use",
+    "condition": "Condition",
+    "idle": "Wait player 2",
+    "spoil": "Spoil 2",
+    "fridge": "In Fridge",
+    "bad": "Bad",
+    "drink": "Check drink"
+  },
+  "cylinderHead": {
+    "nativeId": "VIN1110",
+    "parentNativeId": "VIN1010",
+    "mountPath": "VINP_Cylinderhead",
+    "boltPath": "Bolts/Masked/BoltPM"
+  },
+  "valveAdjustment": {
+    "parentPath": "ValveAdjustment/Masked",
+    "fsm": "Screw",
+    "reference": "Valves",
+    "headPrefix": "VIN111"
+  },
   "bolts": [
     {
       "fsmName": "Screw",
@@ -3912,16 +9498,525 @@
     ]
   },
   "vehicleClimate": {
+    "passengerHeating": {
+      "bodyPath": "BodyTemp",
+      "bodyFsm": "Calculations",
+      "ambientState": "Get temp",
+      "heatState": "Source",
+      "rainPath": "Rain",
+      "rainVariable": "Rain",
+      "rainFsm": "RoofCheck",
+      "heatVariable": "HeatSource",
+      "heatFsm": "Data",
+      "temperatureVariable": "Temperature"
+    },
+    "passengerCondensation": {
+      "state": "Player in?",
+      "entryVariable": "PlayerIn",
+      "sweatGlobal": "PlayerSweat",
+      "sweatVariable": "SweatRate",
+      "rateVariable": "FrostingRate",
+      "defaultRate": "DefaultRate",
+      "defrostingRate": "DefrostingRate"
+    },
     "pathPrefixes": [
       "SORBET(190-200psi)/",
-      "CORRIS/"
+      "CORRIS/",
+      "JOBS/TAXIJOB/MACHTWAGEN/"
     ],
     "carTempPathContains": [
       "/Simulation/CarTempSorbet",
-      "/Simulation/CarTempCorris"
+      "/Simulation/CarTempCorris",
+      "/Simulation/CarTempTaxi"
     ],
     "heaterPathContains": [
       "/HeaterUnit"
     ]
+  },
+  "stoves": {
+    "paths": [
+      "HOMENEW/Functions/ElectricThings/OvenStove",
+      "YARD/Building/KITCHEN/OvenStove"
+    ],
+    "simulation": "Simulation",
+    "simFsm": "Data",
+    "knobPrefix": "KnobPower",
+    "knobFsm": "Screw",
+    "rotation": "Rot",
+    "data": "Data",
+    "mesh": "Mesh",
+    "step": "ScrewAmount",
+    "up": "Screw",
+    "down": "Unscrew",
+    "read": "State 1",
+    "resetUp": "State 2",
+    "resetDown": "State 3",
+    "platePrefix": "HotPlate",
+    "heatSuffix": "Heat",
+    "grill": "GrillTrigger",
+    "burn": "FireTrigger",
+    "idle": "State 3",
+    "ignitionEnabled": [
+      false,
+      true
+    ],
+    "light": "StoveLight",
+    "smoke": "Smoke",
+    "smokeOff": "Stove light off",
+    "smokeProperty": "emit",
+    "hazardSuffix": "FireHazard"
+  },
+  "atfRefill": {
+    "prefix": "atfoil0",
+    "prefabName": "atfoil0",
+    "itemName": "automatic transmission fluid(itemx)",
+    "emptyName": "empty(itemx)",
+    "use": "Use",
+    "data": "Data",
+    "trigger": "ATFOilTrigger",
+    "particle": "fluid_particle",
+    "id": "ID",
+    "fluid": "Fluid",
+    "consumed": "Consumed",
+    "owner": "Owner",
+    "uniqueFluid": "UniqueTagFluid",
+    "pouring": "Pouring",
+    "mass": "Mass",
+    "getCan": "Get can",
+    "copyToChild": "State 3",
+    "copyToRoot": "State 2",
+    "save": "Save",
+    "empty": "State 4",
+    "emptyEvent": "GLOBALEVENT",
+    "factoryIdentity": "Spawner/CreateItems::ATFOil",
+    "rootPath": "CORRIS",
+    "mountPath": "CORRIS/MotorPivot/MassCenter/Block/VINP_Gearbox",
+    "capPath": "CORRIS/MotorPivot/MassCenter/Block/VINP_Gearbox/OpenCap",
+    "fillPath": "CORRIS/MotorPivot/MassCenter/Block/VINP_Gearbox/OpenCap/CapTrigger_ATFOil",
+    "gaugePath": "GUI/Indicators/Fluids/ATF/bar",
+    "dataFsm": "Data",
+    "capFsm": "Screw",
+    "fillFsm": "Trigger",
+    "gaugeFsm": "Scale",
+    "rotation": "Rot",
+    "step": "ScrewAmount",
+    "mesh": "CapMesh",
+    "capGui": "MotorOilGUI",
+    "up": "Screw",
+    "down": "Unscrew",
+    "open": "State 2",
+    "closed": "State 1",
+    "wait": "Wait",
+    "gaugeState": "State 1",
+    "gaugeTarget": "db_Part",
+    "gaugeFluid": "Fluid",
+    "gaugeMax": "Max",
+    "gaugeScale": "Scale",
+    "pour": "Pouring",
+    "stop": "State 4",
+    "fillIdle": "State 1",
+    "fillCheck": "State 2",
+    "fillGearbox": "Gearbox",
+    "fillCapacity": "MaxCapacity",
+    "fillOil": "OilLevel",
+    "fillPouring": "Pouring",
+    "fillName": "Name",
+    "fillGui": "GUI",
+    "oil": "OilLevel",
+    "oilMax": "OilMax",
+    "activePart": "ActivePart",
+    "installed": "Installed",
+    "assembly": "AssemblyID",
+    "type": "Type",
+    "mountReady": "Update 2",
+    "bottleTrigger": "ATFOilTrigger",
+    "bottleFluid": "Fluid",
+    "bottlePouring": "Pouring",
+    "capTrigger": "FluidTrigger",
+    "emptyCheck": "Load 3"
+  },
+  "train": {
+    "root": "TRAIN",
+    "east": "SpawnEast",
+    "west": "SpawnWest",
+    "targetEast": "TargetEast",
+    "targetWest": "TargetWest",
+    "body": "TRAIN",
+    "mesh": "Mesh",
+    "lights": "Mesh/Lights/BeamsShort",
+    "lightFsmPath": "Mesh/Lights",
+    "lightFsm": "Lights Switch",
+    "sound": "Sound",
+    "horn": "Whistle",
+    "raycastPath": "WhistleTrigger",
+    "raycastFsm": "Raycast",
+    "move": "Move",
+    "reset": "Reset",
+    "player": "Player",
+    "tunnel": "TunnelAudio",
+    "whistle": "Whistle",
+    "westbound": "State 1",
+    "westWait": "Delay",
+    "eastbound": "State 2",
+    "eastWait": "Delay2",
+    "hornState": "State 2",
+    "idle": "State 1",
+    "die": "Die 2",
+    "colliders": [
+      "Coll",
+      "Mesh/train",
+      "Mesh/train/Coll",
+      "Mesh/train_car",
+      "Mesh/train_car 1",
+      "Mesh/train_car 1/Coll",
+      "Mesh/train_car 2",
+      "Mesh/train_car 2/Coll",
+      "Mesh/train_car 3",
+      "Mesh/train_car 3/Coll",
+      "Mesh/train_car/Coll"
+    ]
+  },
+  "coffee": {
+    "pot": "EQUIPMENTS/coffee pan(itemx)",
+    "cup": "EQUIPMENTS/coffee cup(itemx)",
+    "cap": "Cap",
+    "target": "PanTarget",
+    "grounds": "Functions/TriggerCoffee",
+    "water": "Functions/TriggerWater",
+    "surface": "Functions/WaterSurface/CoffeeSurface",
+    "cupSurface": "mesh/Pivot/surface",
+    "cupTarget": "PourTarget",
+    "capMesh": "coffee_pan_cap",
+    "functions": "Functions",
+    "sound": "BoilSound",
+    "data": "Data",
+    "use": "Use",
+    "empty": "Empty",
+    "fire": "Fire",
+    "pour": "Pour",
+    "groundFsm": "Coffee",
+    "waterFsm": "Water",
+    "drink": "Play anim",
+    "checkDrink": "Check drink",
+    "fill": "State 5",
+    "delay": "Delay",
+    "open": "ON",
+    "close": "OFF",
+    "waitClosed": "Wait player",
+    "waitOpen": "Wait player 2",
+    "packetName": "ground coffee(itemx)",
+    "packetPrefix": "groundcoffee0",
+    "saveTagVar": "UniqueTagCoffee",
+    "potSaveTag": "CoffeePanCoffee",
+    "cupSaveTag": "CoffeeCupCoffee",
+    "packetPrefab": "groundcoffee0",
+    "packetReady": "Contents?",
+    "packetEmpty": "Empty",
+    "packetId": "ID",
+    "waterVar": "Water",
+    "groundVar": "Ground",
+    "coffeeVar": "Coffee",
+    "caffeineVar": "Caffeine",
+    "capVar": "CapOpen",
+    "volumeVar": "BoilVolume",
+    "groundMaxVar": "GroundMax"
+  },
+  "taxiPassengers": {
+    "path": "JOBS/TAXIJOB/MACHTWAGEN",
+    "driveTrigger": "Functions/PlayerTrigger/DriveTriggerX",
+    "driverMass": "Functions/MassDriver",
+    "customerMass": "Functions/MassPassenger",
+    "tutorial": "TaxiFunctions/Tutorial"
+  },
+  "sausages": {
+    "paths": [
+      "CABIN/Cabin/woodstove/Fireplace/SausageTrigger",
+      "COTTAGE/Stuff/Fireplace/SausageTrigger",
+      "COTTAGE/Stuff/Grill/Fireplace/SausageTrigger",
+      "EQUIPMENTS/grill(itemx)/Fireplace/SausageTrigger",
+      "HOMENEW/Functions/ElectricThings/OvenStove/SausageTrigger",
+      "JOBS/FACTORY/OpeningTimes/LOD1/Kitchen/OvenStoveJob/SausageTrigger",
+      "YARD/Building/KITCHEN/OvenStove/SausageTrigger",
+      "YARD/Building/LIVINGROOM/Fireplace/SausageTrigger"
+    ],
+    "fsm": "Logic",
+    "package": "Package",
+    "prefab": "SausagePrefab",
+    "prefabName": "sausage0",
+    "packageName": "sausages(itemx)",
+    "packagePrefix": "sausages",
+    "packageId": "ID",
+    "open": "State 4",
+    "idle": "State 3",
+    "use": "Use",
+    "fire": "Fire",
+    "condition": "Condition",
+    "grilled": "Grilled",
+    "owner": "Owner",
+    "wait": "Wait player",
+    "button": "Wait button",
+    "eat": "State 2",
+    "freshEat": "Fresh",
+    "grilledEat": "Grilled",
+    "destroy": "Destroy",
+    "raw": "State 1",
+    "cooked": "Done",
+    "charred": "Done 2",
+    "spoiled": "Bad",
+    "freshMesh": "fresh",
+    "grilledMesh": "grilled"
+  },
+  "tractorTrailer": {
+    "log": "Log",
+    "tractor": "KEKMET(350-400psi)",
+    "trailer": "FLATBED",
+    "bed": "Bed",
+    "support": "HookTarget/DetachPivot",
+    "target": "HookTarget",
+    "hook": "KEKMET(350-400psi)/Trailer/Hook",
+    "remove": "KEKMET(350-400psi)/Trailer/Remove",
+    "hydraulics": "KEKMET(350-400psi)/LOD/Dashboard/RearHyd",
+    "hookFsm": "Distance",
+    "detachFsm": "Detach",
+    "useFsm": "Use",
+    "attached": "TrailerAttached",
+    "attachState": "State 5",
+    "detachState": "State 2",
+    "releaseState": "Close door",
+    "idleState": "Wait player",
+    "attachedState": "State 3",
+    "waitingState": "State 2",
+    "feelState": "Feel trailer"
+  },
+  "householdFuses": {
+    "tables": [
+      {
+        "database": "YARD/Building/Dynamics/FuseTable/ElecDatabaseHouse",
+        "holders": [
+          "fuseholder1x",
+          "fuseholder2x",
+          "fuseholder3x",
+          "fuseholder4x",
+          "fuseholder5x",
+          "fuseholder6x",
+          "fuseholder7x"
+        ]
+      },
+      {
+        "database": "HOMENEW/Functions/ElectricThings/FuseTable/ElecDatabaseApartment",
+        "holders": [
+          "fuseholder8x",
+          "fuseholder9x",
+          "fuseholder10x",
+          "fuseholder11x"
+        ]
+      }
+    ],
+    "useFsm": "Use",
+    "partPickupState": "Set pivot",
+    "screwFsm": "Screw",
+    "removalFsm": "Removal",
+    "assemblyFsm": "Assembly",
+    "fusesList": "Fuses",
+    "holdersList": "Holders",
+    "slotsList": "Slots",
+    "insertTrigger": "FuseTrigger",
+    "tightenState": "Screw",
+    "loosenState": "Unscrew",
+    "removeState": "Remove part",
+    "assemblyState": "Assemble",
+    "assemblyWait": "Wait",
+    "screwIdle": "Mouse off 2",
+    "removalIdle": "Mouse off",
+    "assemblyIdle": "Check for Part collision",
+    "shockFsm": "Shock",
+    "shockEvent": "SHOCK"
+  },
+  "advertPhone": {
+    "number": "08231206",
+    "listings": "CARPARTS/PARTSYSTEM/PhoneNumbers",
+    "job": "JOBS/ADs",
+    "audio": "paskapostaus",
+    "subtitle": "\"Hi there. We have the mailer position open. It is up to you whether you do it or not. We send the adverts to you, have fun!\" ",
+    "phone0": "HOMENEW/Functions/FunctionsDisable/Telephone",
+    "keypad0": "Phone/KeypadPhone2",
+    "handle0": "Logic/UseHandle",
+    "ring0": "Logic/RingingNEW",
+    "phone1": "YARD/Building/LIVINGROOM/Telephone 1",
+    "keypad1": "Phone/KeypadPhone1",
+    "handle1": "Logic/UseHandle",
+    "ring1": "Logic/RingingOLD",
+    "phone2": "JOBS/TAXIJOB/MACHTWAGEN/TaxiFunctions/Carphone",
+    "keypad2": "KeypadPhone2",
+    "handle2": "CarPhoneFunctions/UseHandle",
+    "ring2": "CarPhoneFunctions/RingingTaxi",
+    "bill0": "Systems/PhoneBills2",
+    "bill1": "Systems/PhoneBills1"
+  },
+  "adverts": {
+    "root": "JOBS/ADs",
+    "data": "Data",
+    "reset": "ResetBoxes",
+    "pile": "advert pile(itemx)",
+    "use": "Use",
+    "scale": "ScalePivot",
+    "spawn": "AdvertSpawn",
+    "open": "Open",
+    "ready": "Wait player",
+    "empty": "RESET",
+    "mailboxFsm": "WaitAd",
+    "mailboxRoot": "MailBox",
+    "lod": "LOD",
+    "mailboxOpen": "Open",
+    "mailboxClose": "Close",
+    "mailboxIdle": "Idle",
+    "mailboxReset": "Get state",
+    "mailboxRetry": "State 3",
+    "db": "MailboxesDB",
+    "index": "BoxIndex",
+    "placed": "AdvertPlaced",
+    "sheets": "Sheets",
+    "delivered": "Delivered",
+    "stage": "JobStage",
+    "day": "NewDay",
+    "salary": "Salary",
+    "sheetName": "advert(Clone)",
+    "boxes": [
+      {
+        "path": "HOMENEW/Stuff/MailBox/BoxHatch",
+        "index": 18
+      },
+      {
+        "path": "HOMENEW/Stuff/MailBox/BoxHatch",
+        "index": 23
+      },
+      {
+        "path": "HOMENEW/Stuff/MailBox/BoxHatch",
+        "index": 20
+      },
+      {
+        "path": "HOMENEW/Stuff/MailBox/BoxHatch",
+        "index": 19
+      },
+      {
+        "path": "HOMENEW/Stuff/MailBox/BoxHatch",
+        "index": 17
+      },
+      {
+        "path": "HOMENEW/Stuff/MailBox/BoxHatch",
+        "index": 21
+      },
+      {
+        "path": "JOBS/HouseDrunk/LOD/MailBox/BoxHatch",
+        "index": 8
+      },
+      {
+        "path": "JOBS/HouseShit1/LOD/MailBox/BoxHatch",
+        "index": 1
+      },
+      {
+        "path": "JOBS/HouseShit3/LOD/MailBox/BoxHatch",
+        "index": 2
+      },
+      {
+        "path": "JOBS/HouseShit4/LOD/MailBox/BoxHatch",
+        "index": 4
+      },
+      {
+        "path": "JOBS/HouseShit4/LOD/MailBox/BoxHatch",
+        "index": 5
+      },
+      {
+        "path": "JOBS/HouseShit4/LOD/MailBox/BoxHatch",
+        "index": 3
+      },
+      {
+        "path": "JOBS/HouseShit4/LOD/MailBox/BoxHatch",
+        "index": 6
+      },
+      {
+        "path": "JOBS/HouseWood1/LOD/MailBox/BoxHatch",
+        "index": 7
+      },
+      {
+        "path": "JOBS/HouseWood3/MailBox/BoxHatch",
+        "index": 9
+      },
+      {
+        "path": "JOBS/HouseWood3/MailBox/BoxHatch",
+        "index": 10
+      },
+      {
+        "path": "JOBS/Mummola/LOD/MailBox/BoxHatch",
+        "index": 11
+      },
+      {
+        "path": "PERAJARVI/FarmArea1/MailBox/BoxHatch",
+        "index": 26
+      },
+      {
+        "path": "PERAJARVI/HouseRintama4/MailBox/BoxHatch",
+        "index": 24
+      },
+      {
+        "path": "PERAJARVI/MailBox/BoxHatch",
+        "index": 25
+      },
+      {
+        "path": "PERAJARVI/MailBox/BoxHatch",
+        "index": 27
+      },
+      {
+        "path": "STORE_AREA/Stuff/LOD/MailBox/BoxHatch",
+        "index": 13
+      },
+      {
+        "path": "STORE_AREA/Stuff/LOD/MailBox/BoxHatch",
+        "index": 15
+      },
+      {
+        "path": "STORE_AREA/Stuff/LOD/MailBox/BoxHatch",
+        "index": 12
+      },
+      {
+        "path": "STORE_AREA/Stuff/LOD/MailBox/BoxHatch",
+        "index": 14
+      },
+      {
+        "path": "STORE_AREA/Stuff/LOD/MailBox/BoxHatch",
+        "index": 16
+      },
+      {
+        "path": "YARD/Others/MailBox/BoxHatch",
+        "index": 0
+      }
+    ]
+  },
+  "motorOil": {
+    "factoryPath": "Spawner/CreateItemsSeparate/MotorOil",
+    "factoryFsm": "MotorOil",
+    "prefab": "Prefab",
+    "prefix": "motormoil1",
+    "itemName": "motor oil(itemx)",
+    "emptyName": "empty(itemx)",
+    "use": "Use",
+    "data": "Data",
+    "trigger": "MotorOilTrigger",
+    "particle": "fluid_particle",
+    "id": "ID",
+    "fluid": "Fluid",
+    "grade": "Type",
+    "viscosity": "Viscosity",
+    "consumed": "Consumed",
+    "copy": "State 3",
+    "empty": "State 4",
+    "save": "Save",
+    "material": "Get data",
+    "cap": "OpenCap",
+    "capFsm": "Screw",
+    "fill": "CapTrigger_MotorOil",
+    "fillFsm": "Trigger",
+    "gaugePath": "GUI/Indicators/Fluids/MotorOil/bar",
+    "gaugeFsm": "Scale"
   }
 }

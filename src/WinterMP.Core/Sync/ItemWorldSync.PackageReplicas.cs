@@ -121,11 +121,11 @@ namespace WinterMP.Core.Sync
                 use.FsmVariables.FindFsmString(c["itemIdVariable"]).Value = state.NativeId;
                 use.FsmVariables.FindFsmGameObject(c["ownerVariable"]).Value = clone;
                 use.FsmVariables.FindFsmGameObject(c["contentsVariable"]).Value = factory.Contents;
-                use.FsmVariables.FindFsmInt(c["capacityVariable"]).Value = factory.Rule.Capacity;
+                if (!factory.Rule.FixedCapacity) use.FsmVariables.FindFsmInt(c["capacityVariable"]).Value = factory.Rule.Capacity;
                 use.FsmVariables.FindFsmInt(c["quantityVariable"]).Value = state.Quantity;
                 if (!FsmHook.EnsureRemoteEntry(use, c["itemIdleState"]) || !FsmHook.EnsureRemoteEntry(use, c["emptyState"]))
                     throw new InvalidOperationException("Cannot initialize package interaction.");
-                PrepareGuestPackageOpening(use, id, c);
+                PrepareGuestPackageOpening(use, id, c, factory.Rule);
                 // Only the host's native opening changes quantity or creates a part.
                 foreach (string key in new[] { "saveState", "deleteState" })
                 {
@@ -133,7 +133,7 @@ namespace WinterMP.Core.Sync
                 }
                 var hook = new FsmHookAction(() => { AnnounceItemDespawn(id, "package garbage"); RetirePackage(use); });
                 garbage.Actions = new FsmStateAction[] { hook };
-                clone.name = state.Quantity == 0 ? c["emptyName"] : c["itemName"];
+                clone.name = state.Quantity == 0 ? c["emptyName"] : factory.Rule.ItemName;
                 clone.transform.localScale = Vector3.one;
                 body.isKinematic = false;
                 var item = new SyncedItem { Id = id, Body = body, Path = ScenePath.Of(body.transform), LastPosition = body.position };
@@ -148,6 +148,9 @@ namespace WinterMP.Core.Sync
                 use.Fsm.RestartOnEnable = true;
                 use.enabled = true;
                 clone.SetActive(true);
+                // A receipt can arrive before Unity calls Start. Starting Empty
+                // after a newer quantity was applied would clear that quantity.
+                if (!use.Fsm.Started) use.Fsm.Start();
                 SyncEventLog.Record("package-replica", state.NativeId + " " + id.ToString("X8"));
             }
             catch
@@ -164,7 +167,7 @@ namespace WinterMP.Core.Sync
             var value = binding.Use.FsmVariables.FindFsmInt(c["quantityVariable"]);
             if (value.Value == quantity) return;
             value.Value = quantity;
-            binding.Body.gameObject.name = quantity == 0 ? c["emptyName"] : c["itemName"];
+            binding.Body.gameObject.name = quantity == 0 ? c["emptyName"] : binding.Factory.Rule.ItemName;
             FsmHook.FireRemoteEntry(binding.Use, quantity == 0 ? c["emptyState"] : c["itemIdleState"]);
         }
 

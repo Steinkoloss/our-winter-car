@@ -43,7 +43,7 @@ namespace WinterMP.Core.Sync
         public int DoorCount => _doors.Count;
         public int PartCount => _parts.Count;
         public int BuyCount => _buys.Count;
-        public int BoltCount => _bolts.Count;
+        public int BoltCount => _bolts.Count + _valves.Count;
 
         public int IgnitionCount => _ignitions.Count;
         public int ControlCount => _controls.Count;
@@ -56,6 +56,7 @@ namespace WinterMP.Core.Sync
                 if (!pair.Value.Replica || pair.Value.ReplicaState != null) ids.Add(pair.Key);
             foreach (uint id in _buys.Keys) ids.Add(id);
             foreach (uint id in _bolts.Keys) ids.Add(id);
+            foreach (uint id in _valves.Keys) ids.Add(id);
             foreach (uint id in _ignitions.Keys) ids.Add(id);
             foreach (uint id in _controls.Keys) ids.Add(id);
             foreach (uint id in _starters.Keys) ids.Add(id);
@@ -70,6 +71,8 @@ namespace WinterMP.Core.Sync
             foreach (var pair in _parts)
                 ConsiderNearestFsm(origin, ref bestId, ref bestSq, pair.Key, pair.Value.Fsm);
             foreach (var pair in _bolts)
+                ConsiderNearestFsm(origin, ref bestId, ref bestSq, pair.Key, pair.Value.Fsm);
+            foreach (var pair in _valves)
                 ConsiderNearestFsm(origin, ref bestId, ref bestSq, pair.Key, pair.Value.Fsm);
 
             return bestId != 0 ? 1 : 0;
@@ -93,11 +96,15 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
+            RestoreGuestValves();
             ClearFsmHooks();
+            ClearFirewoodBuyers();
+            foreach (var control in _controls.Values) control.Payment?.Restore();
             _doors.Clear();
             _parts.Clear();
             _buys.Clear();
             _bolts.Clear();
+            _valves.Clear(); _pendingValves.Clear(); _hostValveReports.Clear();
             _ignitions.Clear();
             _controls.Clear();
             _starters.Clear();

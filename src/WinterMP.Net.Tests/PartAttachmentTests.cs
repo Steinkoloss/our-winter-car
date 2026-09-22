@@ -74,13 +74,17 @@ namespace WinterMP.Net.Tests
             var state = State(); state.ParentPath = "Assemblies/Kiinnitys ä";
             byte[] bytes = PacketCodec.Encode(state);
             int prefixLength = 46 + Encoding.UTF8.GetByteCount(state.NativeId) + 4 * state.Scalars.Length;
-            Assert.Equal(prefixLength + 48 + Encoding.UTF8.GetByteCount(state.ParentPath), bytes.Length);
+            Assert.Equal(prefixLength + 56 + Encoding.UTF8.GetByteCount(state.ParentPath), bytes.Length);
             using var reader = new BinaryReader(new MemoryStream(bytes), Encoding.UTF8);
             reader.BaseStream.Position = prefixLength;
             Assert.Equal(2, reader.ReadByte()); Assert.Equal(999u, reader.ReadUInt32());
             Assert.Equal(state.ParentPath, Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadUInt16())));
             foreach (float value in new[] { .25f, -.5f, .75f, 0, 0, 0, 1, 1, 2, 3 }) Assert.Equal(value, reader.ReadSingle());
             Assert.False(reader.ReadBoolean());
+            Assert.Equal(0u, reader.ReadUInt32());
+            Assert.Equal(0, reader.ReadByte());
+            Assert.Equal(0, reader.ReadUInt16());
+            Assert.Equal(0, reader.ReadByte());
             Assert.Equal(bytes.Length, reader.BaseStream.Position);
             var decoded = Assert.IsType<ReplacementPartState>(PacketCodec.Decode(bytes));
             Assert.True(Replica().Receive(decoded, out _)); Assert.True(PartAttachmentPolicy.Same(state, decoded));
@@ -168,7 +172,7 @@ namespace WinterMP.Net.Tests
         {
             var state = State(); var publication = new ReplacementPartPublication(); var replica = Replica();
             state.Revision = publication.Observe(state); Assert.True(replica.Receive(state, out uint id));
-            publication.MarkBroadcast(state.Revision);
+            publication.MarkBroadcast(state.Revision, state.PresentationRevision);
             state.Position.X = 100; Assert.Equal(1u, publication.Observe(state)); Assert.False(publication.NeedsBroadcast);
             Assert.True(replica.Receive(state, out _));
             foreach (Action<ReplacementPartState> change in new Action<ReplacementPartState>[] {
@@ -177,7 +181,7 @@ namespace WinterMP.Net.Tests
             {
                 change(state); Assert.False(replica.Receive(state, out _));
                 state.Revision = publication.Observe(state); Assert.True(publication.NeedsBroadcast);
-                Assert.True(replica.Receive(state, out _)); publication.MarkBroadcast(state.Revision);
+                Assert.True(replica.Receive(state, out _)); publication.MarkBroadcast(state.Revision, state.PresentationRevision);
                 Assert.True(PartAttachmentPolicy.Same(state, replica.Get(id)!));
             }
             replica.Get(id)!.ParentPath = "Changed";

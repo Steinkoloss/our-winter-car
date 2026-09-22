@@ -16,22 +16,21 @@ namespace WinterMP.Core.Sync
         /// <summary>
         /// Host-side ownership gate for a guest's first transform packet. Once a
         /// guest owns a tracked item it may continue and send its reliable final;
-        /// a new claim must originate beside an unowned item, never steal an active
-        /// remote owner or begin from across the map.
+        /// a new claim must originate beside an unowned item. A seated driver may
+        /// also take over a vehicle whose previous simulator has left its seat.
         /// </summary>
         public bool TryAcceptGuestItemTransform(ItemTransform message, byte playerId)
         {
-            if (message.OwnerPlayerId != playerId || !_items.TryGetValue(message.ItemId, out var item)
+            if (playerId == 0 || playerId == WorldSyncIds.NoOwner || message.OwnerPlayerId != playerId
+                || !_items.TryGetValue(message.ItemId, out var item)
                 || item.Body == null || !CanSyncItemMotion(item))
                 return false;
 
-            if (_bags.ContainsKey(message.ItemId) && IsHeldByLocalPlayer(item.Body)) return false;
+            if (((_bags.ContainsKey(message.ItemId) || item == _taxiReceipt || IsTaxiLuggage(item) || IsHouseholdFuseItem(item) || _supplies.ContainsKey(message.ItemId))
+                && IsHeldByLocalPlayer(item.Body)) || IsAtfHeldLocally(message.ItemId)) return false;
 
             if (item.RemoteOwner == playerId)
                 return true;
-            if (item.RemoteOwner != WorldSyncIds.NoOwner)
-                return false;
-
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return false;
             float now = Time.unscaledTime;
@@ -42,14 +41,18 @@ namespace WinterMP.Core.Sync
                     return false;
 
                 float maxDistance = item.IsVehicle ? GuestClaimVehicleDistance : GuestClaimItemDistance;
-                return (player.Position - item.Body.transform.position).sqrMagnitude <= maxDistance * maxDistance;
+                bool nearby = (player.Position - item.Body.transform.position).sqrMagnitude <= maxDistance * maxDistance;
+                return item.RemoteOwner == WorldSyncIds.NoOwner ? nearby
+                    : ItemTransformPolicy.CanGuestDriverTakeOverRemote(item.IsVehicle,
+                        item.LocallyOwned, item.RemoteIsDriver, item.RemoteOwner, playerId,
+                        message.IsDriver, message.IsFinal, nearby);
             }
             return false;
         }
 
-        public void OnRemoteItemTransform(ItemTransform message)
+        public bool OnRemoteItemTransform(ItemTransform message)
         {
-            if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null || !CanSyncItemMotion(item)) return;
+            if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null || !CanSyncItemMotion(item)) return false;
 
             // Validate the wire pose BEFORE mutating any ownership/sequence state. Wire
             // floats reach the transform verbatim (NetReader reinterprets raw bytes,
@@ -66,7 +69,7 @@ namespace WinterMP.Core.Sync
             {
                 WinterMPPlugin.Log.LogWarning(
                     $"WorldSync: dropping non-finite transform for item {message.ItemId} from player {message.OwnerPlayerId}.");
-                return;
+                return false;
             }
 
             float now = Time.unscaledTime;
@@ -85,7 +88,7 @@ namespace WinterMP.Core.Sync
                 {
                     if (!message.IsFinal && !message.IsDriver)
                         ConnectionQuality.Instance.NoteUnreliableDropped();
-                    return;
+                    return false;
                 }
             }
 
@@ -98,7 +101,7 @@ namespace WinterMP.Core.Sync
                         ItemTransformPolicy.IsCargoStreamFresh(item.RemoteCargoAt, now),
                         item.RemoteCargoOwner,
                         message.OwnerPlayerId))
-                    return;
+                    return false;
 
                 ReleaseRemoteCargo(item, item.Body, now, seedVelocity: false);
             }
@@ -115,15 +118,20 @@ namespace WinterMP.Core.Sync
                         message.IsDriver,
                         session.LocalPlayerId,
                         message.OwnerPlayerId))
-                    return;
+                    return false;
                 item.LocallyOwned = false;
                 item.LocalDriveActive = false;
+                _vehicles?.StopRelinquishedEngine(item);
             }
 
-            if (_bags.ContainsKey(message.ItemId) && session != null && message.OwnerPlayerId != session.LocalPlayerId)
-                ReleaseHeldBag(item.Body);
+            if (session != null && message.OwnerPlayerId != session.LocalPlayerId)
+            {
+                if (_bags.ContainsKey(message.ItemId) || IsTaxiLuggage(item) || IsHouseholdFuseItem(item) || _supplies.ContainsKey(message.ItemId)) ReleaseHeldBag(item.Body);
+                if (_atf.ContainsKey(message.ItemId)) ReleaseHeldAtf(message.ItemId);
+            }
 
-            bool firstPacket = item.RemoteOwner != message.OwnerPlayerId;
+            byte previousOwner = item.RemoteOwner;
+            bool firstPacket = previousOwner != message.OwnerPlayerId;
             item.RemoteOwner = message.OwnerPlayerId;
             item.RemoteIsDriver = message.IsDriver;
             item.RemoteVehicleStream = message.IsVehicle && !message.IsFinal;
@@ -142,9 +150,8 @@ namespace WinterMP.Core.Sync
 
             if (message.IsFinal)
             {
+                if (!MoveRemoteBody(item, position, rotation, resumePhysics: !item.OriginalKinematic)) return false;
                 body.isKinematic = item.OriginalKinematic;
-                body.transform.position = position;
-                body.transform.rotation = rotation;
                 if (!body.isKinematic)
                 {
                     body.velocity = Vector3.zero;
@@ -178,8 +185,7 @@ namespace WinterMP.Core.Sync
                     if ((body.transform.position - position).sqrMagnitude
                         > RemoteSnapDistance * RemoteSnapDistance)
                     {
-                        body.transform.position = position;
-                        body.transform.rotation = rotation;
+                        if (!MoveRemoteBody(item, position, rotation)) return false;
                     }
                 }
 
@@ -216,9 +222,11 @@ namespace WinterMP.Core.Sync
                 if (item.IsVehicle)
                     SetSeatBlocked(item, message.IsDriver);
             }
+            _vehicles?.OnConditionMotionAccepted(item, previousOwner, message);
+            return true;
         }
 
-        private static void ApplyRemoteSmoothing(SyncedItem item, Rigidbody body)
+        private void ApplyRemoteSmoothing(SyncedItem item, Rigidbody body)
         {
             // Spawned prefabs may finish native initialization after binding and
             // restore local physics. A live remote owner still controls this body.
@@ -236,14 +244,12 @@ namespace WinterMP.Core.Sync
 
             if ((transform.position - target).sqrMagnitude > RemoteSnapDistance * RemoteSnapDistance)
             {
-                transform.position = target;
-                transform.rotation = item.TargetRotation;
+                if (!MoveRemoteBody(item, target, item.TargetRotation)) return;
             }
             else
             {
                 float t = 1f - Mathf.Exp(-RemoteLerpSpeed * Time.deltaTime);
-                transform.position = Vector3.Lerp(transform.position, target, t);
-                transform.rotation = Quaternion.Slerp(transform.rotation, item.TargetRotation, t);
+                if (!MoveRemoteBody(item, Vector3.Lerp(transform.position, target, t), Quaternion.Slerp(transform.rotation, item.TargetRotation, t))) return;
             }
 
             item.LastPosition = transform.position;

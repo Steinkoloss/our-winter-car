@@ -5,8 +5,9 @@ namespace WinterMP.Net.Messages
     /// (COVERAGE-ROADMAP 3.2). The job stage, employment, kilometres driven and the fare
     /// account run per-client, so peers disagree on whether a job is active and what it paid.
     /// The taxi job belongs to the world, so the <b>host</b> owns it: it broadcasts the stage
-    /// / employment / earnings on change + join; guests apply them. Fare payout reaches the
-    /// shared wallet through the host's own payment logic. The taxi vehicle itself streams via
+    /// / employment / earnings on change + join; guests apply them. The native customer
+    /// records completed fares in Tripmeter.IncomeTotal; wages later reach the bank.
+    /// Activation, controls and the live Tripmeter.Price are not included here. The taxi vehicle streams via
     /// the normal vehicle path (registered by the 0.2 structural check). See TaxiJobSync.
     /// </summary>
     public sealed class TaxiJobState : IMessage
@@ -19,7 +20,7 @@ namespace WinterMP.Net.Messages
         public float Money;
         public float KMsDriven;
         public byte Flags;
-        /// <summary>Live per-ride fare (`Customer1/TaxiWalker :: Logic` Cost). Appended v87.</summary>
+        /// <summary>Finalized fare offer (`TaxiWalker :: Logic` Cost), populated at payment. Appended v87.</summary>
         public float FareCost;
 
         public bool Employed => (Flags & FlagEmployed) != 0;

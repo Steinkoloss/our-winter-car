@@ -127,8 +127,7 @@ namespace WinterMP.Core.Sync
             ReleaseRemoteCargo(item, body, Time.unscaledTime, seedVelocity: false);
             item.LocalCargoVehicleId = 0;
             RestoreCargoPhysics(item);
-            body.transform.position = position;
-            body.transform.rotation = rotation;
+            if (!MoveRemoteBody(item, position, rotation)) return;
             if (!body.isKinematic)
             {
                 body.velocity = Vector3.zero;

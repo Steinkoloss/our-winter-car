@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using HutongGames.PlayMaker;
 using UnityEngine;
 using WinterMP.Core.Catalog;
+using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.Sync
 {
@@ -10,11 +12,13 @@ namespace WinterMP.Core.Sync
     {
         private sealed class BagSpillFactory
         {
-            public PlayMakerFSM Fsm = null!, Use = null!;
+            public PlayMakerFSM Fsm = null!;
+            public PlayMakerFSM? Use;
             public Rigidbody Template = null!;
             public FsmGameObject Output = null!;
             public string Path = string.Empty, Failure = string.Empty;
             public bool Package;
+            public ReplacementFactory? Replacement;
             public readonly HashSet<string> Names = new HashSet<string>();
             public readonly Queue<BagSpillRequest> Requests = new Queue<BagSpillRequest>();
         }
@@ -33,10 +37,25 @@ namespace WinterMP.Core.Sync
             public string Path = string.Empty;
         }
 
+        private sealed class BagSpillPart
+        {
+            public PlayMakerFSM Data = null!;
+            public uint Id;
+        }
+
+        private sealed class BagBodyComparer : IEqualityComparer<Rigidbody>
+        {
+            // Unity 5 changes a destroyed Rigidbody's native hash to zero. The
+            // capture must still find its persistent part after fitting destroys it.
+            public bool Equals(Rigidbody? left, Rigidbody? right) => ReferenceEquals(left, right);
+            public int GetHashCode(Rigidbody body) => RuntimeHelpers.GetHashCode(body);
+        }
+
         private readonly Dictionary<PlayMakerFSM, BagSpillFactory> _bagSpillFactories = new Dictionary<PlayMakerFSM, BagSpillFactory>();
         private readonly Dictionary<PlayMakerFSM, List<BagSpillSource>> _bagSpillSources = new Dictionary<PlayMakerFSM, List<BagSpillSource>>();
         private readonly List<BagHook> _bagSpillHooks = new List<BagHook>();
-        private readonly Dictionary<Rigidbody, BagSpillFactory> _bagSpillBodies = new Dictionary<Rigidbody, BagSpillFactory>();
+        private readonly Dictionary<Rigidbody, BagSpillFactory> _bagSpillBodies = new Dictionary<Rigidbody, BagSpillFactory>(new BagBodyComparer());
+        private readonly Dictionary<Rigidbody, BagSpillPart> _bagSpillParts = new Dictionary<Rigidbody, BagSpillPart>(new BagBodyComparer());
         private readonly Dictionary<string, Rigidbody> _bagSpillTemplates = new Dictionary<string, Rigidbody>();
         private readonly HashSet<string> _ambiguousBagSpillTemplates = new HashSet<string>();
         private string _bagSpillFailure = string.Empty;
@@ -47,6 +66,7 @@ namespace WinterMP.Core.Sync
             var c = SyncCatalog.ShoppingBags;
             if (c == null) throw new InvalidOperationException("Shopping bag spill catalog is unavailable.");
             RefreshPackageFactories();
+            RefreshReplacementFactories();
             foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
@@ -83,6 +103,13 @@ namespace WinterMP.Core.Sync
                     if (package.Failed) throw new InvalidOperationException("Native bag package factory is disabled.");
                     factory.Package = true;
                 }
+            foreach (var replacement in _replacementFactories.Values)
+                if (replacement.Fsm == fsm)
+                {
+                    if (replacement.Failed || !replacement.Rule.BagOutput)
+                        throw new InvalidOperationException("Native bag part factory is disabled.");
+                    factory.Replacement = replacement;
+                }
             var actions = new List<FsmStateAction>();
             foreach (var action in state.Actions) if (!(action is FsmHookAction)) actions.Add(action);
             int creates = 0;
@@ -112,12 +139,13 @@ namespace WinterMP.Core.Sync
                     if (use != null) throw new InvalidOperationException("Ambiguous bag product Use FSM.");
                     use = candidate;
                 }
-            if (template == null || use == null)
+            if (template == null || (use == null && factory.Replacement == null))
                 throw new InvalidOperationException("This bag product needs a dedicated native part adapter.");
-            if (!use.Fsm.Initialized) use.Fsm.Init(use);
+            if (use != null && !use.Fsm.Initialized) use.Fsm.Init(use);
             factory.Template = template; factory.Use = use; factory.Output = output;
-            if (!factory.Package)
+            if (!factory.Package && factory.Replacement == null)
             {
+                if (use == null) throw new InvalidOperationException("Native bag product Use FSM is missing.");
                 foreach (var itemState in use.Fsm.States)
                     foreach (var action in itemState.Actions)
                     {
@@ -215,12 +243,12 @@ namespace WinterMP.Core.Sync
                     found = candidate;
                 }
                 if (found == null || found.Failure.Length != 0 || !found.Fsm.enabled || !found.Fsm.Fsm.Started
-                    || found.Fsm.ActiveStateName != c["spillIdleState"])
+                    || found.Fsm.ActiveStateName != c["spillIdleState"] || found.Replacement?.Failed == true)
                     throw new InvalidOperationException("Shopping bag product is unavailable: " + product.Key
                         + (found != null && found.Failure.Length != 0 ? " (" + found.Failure + ")" : string.Empty));
             }
             foreach (var factory in _bagSpillFactories.Values) factory.Requests.Clear();
-            _bagSpillBodies.Clear(); _bagSpillFailure = string.Empty;
+            _bagSpillBodies.Clear(); _bagSpillParts.Clear(); _bagSpillFailure = string.Empty;
             return new PendingSpawn { ContainerId = bag.Id, Epoch = MintSpawnEpoch(bag.Id), StateName = stateName,
                 IsHost = true, Near = bag.Body.position, HasNear = true, StableSince = Time.unscaledTime };
         }
@@ -253,10 +281,18 @@ namespace WinterMP.Core.Sync
                 if (opening != _bagOpening || output == request.Previous || body == null
                     || opening.Capture.Captured.Contains(body))
                     throw new InvalidOperationException("Native bag factory did not produce one new body.");
-                if (!factory.Package)
+                if (!factory.Package && factory.Replacement == null)
                 {
                     if (_trackedBodies.ContainsKey(body)) throw new InvalidOperationException("Bag output already has an item identity.");
                     _trackedBodies[body] = true;
+                }
+                if (factory.Replacement != null)
+                {
+                    var parts = SyncCatalog.ReplacementParts!;
+                    string nativeId = factory.Fsm.FsmVariables.FindFsmString(parts["idVariable"]).Value;
+                    if (!factory.Replacement.Rule.Identity.TryId(nativeId, out uint id))
+                        throw new InvalidOperationException("Native bag part has an invalid persistent identity.");
+                    _bagSpillParts[body] = new BagSpillPart { Data = FindReplacementData(output!, parts), Id = id };
                 }
                 opening.Capture.Captured.Add(body);
                 opening.Capture.StableSince = Time.unscaledTime;
@@ -273,7 +309,13 @@ namespace WinterMP.Core.Sync
                     if (request.Opening == opening) return false;
             foreach (var body in opening.Capture.Captured)
             {
-                if (body == null || !body.gameObject.activeInHierarchy || !_bagSpillBodies.TryGetValue(body, out var factory)) return false;
+                if (!_bagSpillBodies.TryGetValue(body, out var factory)) return false;
+                if (factory.Replacement != null)
+                {
+                    if (!TryBagReplacementState(body, factory.Replacement, out _)) return false;
+                    continue;
+                }
+                if (body == null || !body.gameObject.activeInHierarchy) return false;
                 if (factory.Package)
                 {
                     bool registered = false;
@@ -282,6 +324,7 @@ namespace WinterMP.Core.Sync
                     continue;
                 }
                 if (!factory.Names.Contains(body.gameObject.name)) return false;
+                if (factory.Use == null) throw new InvalidOperationException("Native bag product Use FSM is missing.");
                 foreach (var use in body.GetComponents<PlayMakerFSM>())
                 {
                     if (use.FsmName != factory.Use.FsmName) continue;
@@ -293,6 +336,23 @@ namespace WinterMP.Core.Sync
                 }
             }
             return Time.unscaledTime - opening.Capture.StableSince >= SpawnCaptureStableSeconds;
+        }
+
+        private bool TryBagReplacementState(Rigidbody body, ReplacementFactory factory, out ReplacementPartState? state)
+        {
+            state = null;
+            if (factory.Failed) throw new InvalidOperationException("Native bag part factory failed during initialization.");
+            if (!_bagSpillParts.TryGetValue(body, out var captured)) return false;
+            if (_spawnLifecycle.IsRetired(captured.Id)) return true;
+            var data = captured.Data;
+            if (data == null || !_bridge.PartIdentities.TryRootId(data, out uint id) || id != captured.Id
+                || !_replacementParts.TryGetValue(id, out var part) || part.Factory != factory || part.Data != data
+                || (NativePartIdentity.Phase(data) == WinterMP.Net.Sync.NativePartPhase.Loose
+                    && (!_items.TryGetValue(id, out var item) || item.Body != data.GetComponent<Rigidbody>()))) return false;
+            // Fitting destroys Rigidbody while Data survives. A quick fit or native
+            // disposal must not leave the bag's completed inventory locked forever.
+            state = BuildReplacementPartState(id);
+            return state != null;
         }
 
         private void CacheBagSpillTemplate(string name, Rigidbody template)
@@ -326,6 +386,7 @@ namespace WinterMP.Core.Sync
             }
             _bagSpillHooks.Clear(); _bagSpillFactories.Clear(); _bagSpillSources.Clear();
             _bagSpillBodies.Clear(); _bagSpillTemplates.Clear(); _ambiguousBagSpillTemplates.Clear();
+            _bagSpillParts.Clear();
             _bagSpillFailure = string.Empty; _nextBagSpillDiscovery = 0;
         }
     }

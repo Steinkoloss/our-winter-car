@@ -95,6 +95,7 @@ namespace WinterMP.Core.Sync
                         factory.Contents = logic;
                         PackageStateActions(logic, c["contentsIdleState"]);
                         PackageStateActions(logic, c["contentsStartState"]);
+                        ValidateBagContentsConsumed(logic, c);
                         bool one = false, all = false;
                         foreach (var transition in logic.Fsm.GlobalTransitions)
                         {
@@ -116,6 +117,25 @@ namespace WinterMP.Core.Sync
                     break;
                 }
             }
+        }
+
+        private static FsmState ValidateBagContentsConsumed(PlayMakerFSM logic, ShoppingBagsData c)
+        {
+            var state = PackageStateActions(logic, c["contentsConsumedState"], "SendEventByName");
+            var action = state.Actions[0];
+            var target = PackageField<FsmEventTarget>(action, "eventTarget");
+            var delay = PackageField<FsmFloat>(action, "delay");
+            var command = PackageField<FsmString>(action, "sendEvent");
+            if (state.Transitions.Length != 0 || target == null
+                || (target.target != FsmEventTarget.EventTarget.GameObject
+                    && (target.target != FsmEventTarget.EventTarget.GameObjectFSM || target.fsmName.Value != c["itemFsm"]))
+                || target.gameObject.OwnerOption != OwnerDefaultOption.SpecifyGameObject
+                || !ReferenceEquals(target.gameObject.GameObject, logic.FsmVariables.FindFsmGameObject(c["currentBagVariable"]))
+                || target.sendToChildren.Value || delay == null || delay.UseVariable || delay.Value != 0f
+                || command == null || command.UseVariable || command.Value != c["garbageEvent"]
+                || action.GetType().GetField("everyFrame")?.GetValue(action) is not bool everyFrame || everyFrame)
+                throw new InvalidOperationException("Bag contents retirement is no longer an immediate terminal command.");
+            return state;
         }
 
         private static GameObject ValidateBagFactoryOutput(BagFactory factory, FsmStateAction create,

@@ -63,9 +63,8 @@ namespace WinterMP.Core.Sync
             if (session.PlayerCount == 0) return;
             EnsureBuilt();
             if (_config == null) return;
-            if (Time.unscaledTime >= _probeAt)
+            if (ScenePath.TryBeginDiscovery(ref _probeAt, 5f))
             {
-                _probeAt = Time.unscaledTime + 5f;
                 try { Locate(); }
                 catch (Exception e) { WinterMPPlugin.Log.LogWarning("Slot discovery will retry: " + e.Message); }
             }

@@ -22,13 +22,15 @@ namespace WinterMP.Core.Sync
                 if (fsm == null) continue;
                 try
                 {
+                    string name = fsm.FsmName;
+                    if (name != _config.StatsFsm && name != _config.FsmName) continue;
                     string path = ScenePath.Of(fsm.transform);
-                    if (path == _config.StatsPath && fsm.FsmName == _config.StatsFsm)
+                    if (path == _config.StatsPath && name == _config.StatsFsm)
                     {
                         _statsIn = fsm.FsmVariables.FindFsmFloat(_config.StatsMoneyIn);
                         _statsOut = fsm.FsmVariables.FindFsmFloat(_config.StatsMoneyOut);
                     }
-                    if (fsm.FsmName != _config.FsmName) continue;
+                    if (name != _config.FsmName) continue;
                     foreach (var machine in _machines.Values)
                     {
                         for (int i = 0; i < 7; i++)

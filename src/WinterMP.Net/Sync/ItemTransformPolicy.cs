@@ -74,6 +74,13 @@ namespace WinterMP.Net.Sync
             return remoteOwnerId < localPlayerId;
         }
 
+        /// <summary>A parked simulator retains ownership, but cannot reserve an empty driver's seat.</summary>
+        public static bool CanGuestDriverTakeOverRemote(bool isVehicle, bool hostOwns, bool currentRemoteIsDriver,
+            byte currentRemoteOwner, byte claimant, bool incomingIsDriver, bool incomingIsFinal, bool freshNearby)
+            => isVehicle && !hostOwns && !currentRemoteIsDriver && incomingIsDriver && !incomingIsFinal && freshNearby
+                && currentRemoteOwner != 0 && currentRemoteOwner != NoRemoteOwner
+                && claimant != 0 && claimant != NoRemoteOwner && claimant != currentRemoteOwner;
+
         /// <summary>Wrap-aware stale unreliable packet check for one owner.</summary>
         public static bool IsStaleSequence(ushort lastSequence, ushort newSequence)
         {

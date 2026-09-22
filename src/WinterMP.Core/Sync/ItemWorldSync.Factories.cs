@@ -77,13 +77,18 @@ namespace WinterMP.Core.Sync
             SyncCatalog.EnsureLoaded();
             var c = SyncCatalog.TrophyFactories;
             if (c == null || _trophyFactories.Count == c.Factories.Count) return;
+            var names = new HashSet<string>();
+            foreach (var rule in c.Factories) names.Add(rule.Fsm);
             foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
                 if (fsm == null || !fsm.Fsm.Initialized) continue;
+                string fsmName = fsm.FsmName;
+                if (!names.Contains(fsmName)) continue;
+                string? path = null;
                 foreach (var rule in c.Factories)
                 {
-                    if (fsm.FsmName != rule.Fsm || ScenePath.Of(fsm.transform) != rule.Path) continue;
+                    if (fsmName != rule.Fsm || (path ?? (path = ScenePath.Of(fsm.transform))) != rule.Path) continue;
                     uint id = FactoryItemIdentity.FactoryId(rule.Path, rule.Fsm);
                     if (_trophyFactories.ContainsKey(id)) break;
                     var factory = new TrophyFactory { Rule = rule, Id = id, Fsm = fsm };

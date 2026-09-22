@@ -7,18 +7,13 @@ using WinterMP.Net.Messages;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Shared taxi job (MACHTWAGEN) lifecycle as host-owned world state
-    /// (COVERAGE-ROADMAP 3.2 + R2.8). The job stage, employment and accounts run per-client,
-    /// so peers disagree on whether a job is active and what it paid. The taxi job belongs to
-    /// the world, so the <b>host</b> owns it: it reads <c>JOBS/TAXIJOB :: Logic</c> (JobStage),
-    /// <c>TaxiFunctions :: Payments</c> (Employed / Money / KMsDriven — the *employment payday*
-    /// account, not the per-ride fare) and the customer's <c>TaxiWalker :: Logic</c> Cost (the
-    /// per-ride fare meter, v87) and broadcasts on change + join; guests apply them. The
-    /// customer itself is a host-authoritative ScriptedMover, so the fare press passes the
-    /// host's PayMoney proximity gate and pays the host's Cost into the shared wallet; the
-    /// taxi vehicle streams through the normal vehicle path (2.4).
+    /// Taxi job scalar snapshots, shared calls/customer presentation and native
+    /// host pickup, meter calculation and physical receipt handoff for guest drivers.
+    /// Shared luggage and native payday reports complete the outputs. Customer Cost is the finalized offer;
+    /// Tripmeter.Price is the live meter, IncomeTotal records completed fares,
+    /// and Payments later settles wages into the bank (native build 23268598).
     /// </summary>
-    internal sealed class TaxiJobSync
+    internal sealed partial class TaxiJobSync
     {
         private const string LogicPath = "JOBS/TAXIJOB";
         private const string CustomerWalkerPath = "JOBS/TAXIJOB/Customer1/TaxiWalker";
@@ -28,15 +23,15 @@ namespace WinterMP.Core.Sync
 
         private PlayMakerFSM? _logic;      // JOBS/TAXIJOB :: Logic
         private PlayMakerFSM? _payments;   // TaxiFunctions :: Payments
-        // Per-ride fare meter on the (host-authoritative, ScriptedMover-streamed)
-        // customer. On guests that Logic FSM is frozen, so this synced value is what
-        // makes their meter read the fare the host will actually charge (R2.8).
+        // Kept as the finalized customer offer to preserve message 103's contract.
         private FsmFloat? _fareCost;
         private FsmInt? _jobStage;
         private FsmFloat? _money;
         private FsmFloat? _kms;
         private FsmBool? _employed;
         private bool _loggedFound;
+        private TaxiPickupBinding? _pickup;
+        private bool _pickupFailed;
 
         private float _nextProbeAt;
         private float _nextHostTickAt;
@@ -54,6 +49,9 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
+            ClearMeter();
+            ClearService();
+            _pickup?.Restore(); _pickup = null; _pickupFailed = false;
             _logic = _payments = null;
             _jobStage = null; _money = _kms = _fareCost = null; _employed = null;
             _loggedFound = false;
@@ -64,20 +62,48 @@ namespace WinterMP.Core.Sync
 
         public void Update(SessionManager session)
         {
-            if (session.PlayerCount == 0) return;
+            if (session.PlayerCount == 0)
+            {
+                // Hosting continues after the last peer leaves; release its driver
+                // context even though there is nobody to receive snapshots.
+                if (session.IsHost)
+                {
+                    try { _pickup?.Update(session); } catch (System.Exception e) { PickupFailed(e); }
+                    try { _service?.CheckCaller(session); } catch (System.Exception e) { ServiceFailed(e); }
+                }
+                return;
+            }
 
             if (Time.unscaledTime >= _nextProbeAt)
             {
                 _nextProbeAt = Time.unscaledTime + ProbeIntervalSeconds;
                 Locate();
+                if (session.IsHost && _pickup == null && !_pickupFailed)
+                {
+                    try { _pickup = TaxiPickupBinding.TryBind(); }
+                    catch (System.Exception e) { PickupFailed(e); }
+                }
             }
 
+            UpdateService(session);
+            UpdateMeter(session);
+            UpdateFare(session);
             if (!session.IsHost) return;
+            try { _pickup?.Update(session); }
+            catch (System.Exception e) { PickupFailed(e); }
             if (Time.unscaledTime < _nextHostTickAt) return;
             _nextHostTickAt = Time.unscaledTime + HostTickSeconds;
             bool keepAlive = Time.unscaledTime >= _nextKeepAliveAt;
             if (keepAlive) _nextKeepAliveAt = Time.unscaledTime + KeepAliveSeconds;
             HostBroadcastIfChanged(session, keepAlive);
+        }
+
+        private void PickupFailed(System.Exception e)
+        {
+            _pickupFailed = true;
+            try { _pickup?.Restore(); }
+            finally { _pickup = null; }
+            WinterMPPlugin.Log.LogError("Guest taxi pickup unavailable; native host pickup retained: " + e);
         }
 
         public TaxiJobState? BuildSnapshot()

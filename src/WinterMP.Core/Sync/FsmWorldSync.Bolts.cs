@@ -53,7 +53,7 @@ namespace WinterMP.Core.Sync
             return false;
         }
 
-        private static void BindNativeBolt(SyncedBolt bolt)
+        internal static void BindNativeBolt(SyncedBolt bolt)
         {
             var fsm = bolt.Fsm; var vars = fsm.FsmVariables;
             var screw = BoltActions(fsm, "Screw", new[] { "IntAdd", "ArrayListSet", "AddFsmFloat", "ConvertIntToFloat", "SendEventByName" },

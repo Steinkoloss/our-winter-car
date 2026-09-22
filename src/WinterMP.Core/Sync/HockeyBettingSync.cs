@@ -143,15 +143,24 @@ namespace WinterMP.Core.Sync
             {
                 if (_originalLists != null)
                 {
-                    for (int i = 0; i < _lists.Length; i++) Set(_lists[i].List(), _originalLists[i]);
-                    var tables = LiveTables();
-                    for (int i = 0; i < tables.Length; i++)
+                    // Level changes are observed after Unity destroys the old scene.
+                    // Restore surviving proxies on disconnect; dead proxies have no
+                    // local world left to restore and must never be queried again.
+                    for (int i = 0; i < _lists.Length; i++)
+                        if (_lists[i].Component != null) Set(_lists[i].List(), _originalLists[i]);
+                    for (int i = 0; i < _tables.Length; i++)
                     {
-                        tables[i].Clear();
-                        foreach (DictionaryEntry entry in _originalTables![i]) tables[i].Add(entry.Key, entry.Value);
+                        if (_tables[i].Component == null) continue;
+                        var table = _tables[i].Table();
+                        table.Clear();
+                        foreach (DictionaryEntry entry in _originalTables![i]) table.Add(entry.Key, entry.Value);
                     }
-                    _ints[0].Value = _originalInts![0]; _gamesPlayed!.Value = _originalInts[1]; _kurpaWins!.Value = _originalWin;
-                    RefreshDisplays();
+                    if (_betting != null) _ints[0].Value = _originalInts![0];
+                    if (_season != null)
+                    {
+                        _gamesPlayed!.Value = _originalInts![1]; _kurpaWins!.Value = _originalWin;
+                    }
+                    if (_betting != null && _season != null) RefreshDisplays();
                 }
             }
             catch (Exception e) { WinterMPPlugin.Log.LogWarning("Hockey state restore failed: " + e.Message); }

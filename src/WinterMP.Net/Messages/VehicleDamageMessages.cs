@@ -1,10 +1,10 @@
 namespace WinterMP.Net.Messages
 {
     /// <summary>
-    /// Current fitted engine-part condition, streamed by the owner through the host.
-    /// The host owns parked cars. Only concrete failures are replayed; SEIZE/CAMFAIL
-    /// are random selectors, not durable breakage. Known wear values also carry repairs
-    /// and clear old damage. Unbound slots preserve the previous condition.
+    /// Host-owned fitted engine-part condition, retained as a passive guest snapshot.
+    /// OwnerPlayerId is always zero, independently of the vehicle's driver. Guests
+    /// never replay native failure events. Known wear includes repairs; unknown slots
+    /// retain only the condition already represented by the host's complete mask.
     /// </summary>
     public sealed class VehicleDamage : IMessage
     {

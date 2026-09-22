@@ -3,7 +3,7 @@ namespace WinterMP.Net.Messages
     /// <summary>
     /// Guest -> host: periodic report of local need stats (PLAN.md §4.4).
     /// Host stores these in the guest profile sidecar for reconnect.
-    /// Wire v28 appends BodyTemp (PLAYER/BodyTemp.Temperature) as the 5th need.
+    /// Wire v189 corrects BodyTemp to global PlayerTemp and appends HasBodyTemp.
     /// Wire v30 appends Stress (global) and Drunk ("Drunk Mode" FSM DrunkCurrent).
     /// Wire v55 appends Dirtiness (global PlayerDirtiness) after Sequence.
     /// Wire v56 appends HasDirtiness after Dirtiness: false when the guest's
@@ -29,11 +29,15 @@ namespace WinterMP.Net.Messages
         public float PlayerAlco;
         /// <summary>Wire v78: false when PlayerAlco has not resolved locally (host records unknown).</summary>
         public bool HasAlco;
+        /// <summary>v189: native PlayerTemp resolved and finite; zero is a valid known value.</summary>
+        public bool HasBodyTemp;
+        public bool ValidBodyTemp => PlayerWarmthPolicy.Valid(HasBodyTemp, BodyTemp);
 
         public MessageId Id => MessageId.PlayerNeedsReport;
 
         public void Write(NetWriter writer)
         {
+            if (!ValidBodyTemp) throw new ProtocolException("Invalid player body warmth.");
             writer.WriteByte(PlayerId);
             writer.WriteSingle(Hunger);
             writer.WriteSingle(Fatigue);
@@ -47,6 +51,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(HasDirtiness ? (byte)1 : (byte)0);
             writer.WriteSingle(PlayerAlco);
             writer.WriteByte(HasAlco ? (byte)1 : (byte)0);
+            writer.WriteByte(HasBodyTemp ? (byte)1 : (byte)0);
         }
 
         public void Read(NetReader reader)
@@ -64,6 +69,10 @@ namespace WinterMP.Net.Messages
             HasDirtiness = reader.ReadByte() != 0;
             PlayerAlco = reader.ReadSingle();
             HasAlco = reader.ReadByte() != 0;
+            byte warmth = reader.ReadByte();
+            if (warmth > 1) throw new ProtocolException("Invalid body warmth availability.");
+            HasBodyTemp = warmth == 1;
+            if (!ValidBodyTemp) throw new ProtocolException("Invalid player body warmth.");
         }
     }
 

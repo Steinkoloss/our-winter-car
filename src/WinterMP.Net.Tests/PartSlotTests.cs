@@ -45,7 +45,7 @@ namespace WinterMP.Net.Tests
         [InlineData(PartFitOperation.Install, 33)]
         [InlineData(PartFitOperation.Remove, 1)]
         [InlineData(PartFitOperation.Remove, 32)]
-        [InlineData((PartFitOperation)4, 0)]
+        [InlineData((PartFitOperation)8, 0)]
         public void InvalidSlotsCannotEnterTheLedgerOrClient(PartFitOperation operation, byte slot)
         {
             var request = new PartFitRequest { PlayerId = 1, Token = 2, Operation = operation, SlotIndex = slot };
@@ -165,11 +165,12 @@ namespace WinterMP.Net.Tests
             string text = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sync-catalog.json"));
             var data = SyncCatalogJson.Parse(text).ReplacementParts!;
             var slots = data.Factories.Where(f => f.SlotCount != 0).ToDictionary(f => f.Prefix);
-            Assert.Equal(3, slots.Count);
+            Assert.Equal(4, slots.Count);
+            Assert.Equal("Sparkplugs", slots["SPRKPLUG0"].SlotReference); Assert.Equal((byte)4, slots["SPRKPLUG0"].SlotCount);
             Assert.Equal("Pistons", slots["VIN103"].SlotReference); Assert.Equal((byte)4, slots["VIN103"].SlotCount);
             Assert.Equal("MainBearings", slots["VIN104"].SlotReference); Assert.Equal((byte)5, slots["VIN104"].SlotCount);
             Assert.Equal("Rockers", slots["VIN117"].SlotReference); Assert.Equal((byte)8, slots["VIN117"].SlotCount);
-            Assert.Equal(27, data.Factories.Count(f => f.SlotCount == 0 && f.SlotReference == string.Empty));
+            Assert.Equal(33, data.Factories.Count(f => !f.BagOutput && f.SlotCount == 0 && f.SlotReference == string.Empty));
             foreach (string key in ReplacementPartsData.RequiredBindings.Where(k => k.StartsWith("slot", StringComparison.Ordinal)))
             {
                 var broken = JsonNode.Parse(text)!; broken["replacementParts"]!.AsObject().Remove(key);

@@ -21,7 +21,7 @@ namespace WinterMP.Net.Tests
         public void EveryNativePackageTypeHasAnUnambiguousContentsBinding()
         {
             var packages = Packages();
-            Assert.Equal(30, packages.Factories.Count);
+            Assert.Equal(34, packages.Factories.Count);
             Assert.DoesNotContain(packages.Factories, r => r.Fsm == "Plugwires" || r.Fsm == "BrakeBiasRegulator");
             var ids = new HashSet<uint>();
             foreach (var rule in packages.Factories)
@@ -30,8 +30,8 @@ namespace WinterMP.Net.Tests
                     string nativeId = rule.Prefix + counter.ToString(CultureInfo.InvariantCulture);
                     Assert.True(packages.Identities.TryResolve(nativeId, rule.ContentsPath, out uint id));
                     Assert.True(ids.Add(id));
-                    Assert.Equal(FactoryItemIdentity.ItemId(FactoryItemIdentity.FactoryId(packages["factoryPath"], rule.Fsm), nativeId), id);
-                    foreach (var wrong in packages.Factories.Where(other => other != rule))
+                    Assert.Equal(FactoryItemIdentity.ItemId(FactoryItemIdentity.FactoryId(rule.Path, rule.Fsm), nativeId), id);
+                    foreach (var wrong in packages.Factories.Where(other => other.ContentsPath != rule.ContentsPath))
                         Assert.False(packages.Identities.TryResolve(nativeId, wrong.ContentsPath, out _));
                 }
         }
@@ -96,7 +96,7 @@ namespace WinterMP.Net.Tests
                 Assert.Equal(pair.Key, guest[decoded.ItemId]);
                 positions[guest[decoded.ItemId]] = decoded.Position.X;
             }
-            Assert.Equal(120, positions.Count);
+            Assert.Equal(136, positions.Count);
         }
 
         [Fact]

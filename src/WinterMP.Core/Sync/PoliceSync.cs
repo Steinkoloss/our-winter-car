@@ -246,8 +246,7 @@ namespace WinterMP.Core.Sync
 
         private void Scan(bool force = false)
         {
-            if (!force && Time.unscaledTime < _nextScanAt) return;
-            _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
+            if (!ScenePath.TryBeginDiscovery(ref _nextScanAt, ScanIntervalSeconds, force)) return;
             try
             {
                 var fsms = ScenePath.ScanFsms();
@@ -255,16 +254,18 @@ namespace WinterMP.Core.Sync
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null) continue;
+                    string fsmName = fsm.FsmName;
+                    if (fsmName != "Activate" && fsmName != "Animations") continue;
                     string path = ScenePath.Of(fsm.transform);
-                    if (path == FinesPath && fsm.FsmName == "Activate" && _finePrice == null)
+                    if (path == FinesPath && fsmName == "Activate" && _finePrice == null)
                     {
                         _finePrice = fsm.FsmVariables.FindFsmString("Price");
                         WinterMPPlugin.Log.LogInfo("PoliceSync: registered fines record.");
                     }
                     else if (path.StartsWith(CheckpointPrefix, StringComparison.Ordinal)
-                        && fsm.FsmName == "Animations")
+                        && fsmName == "Animations")
                     {
-                        uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+                        uint id = StableHash.Fnv1a32(path + "::" + fsmName);
                         if (!_checkpoints.ContainsKey(id)) BindCheckpoint(path, fsm, id);
                     }
                 }

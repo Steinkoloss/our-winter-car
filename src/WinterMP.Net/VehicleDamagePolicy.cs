@@ -6,6 +6,9 @@ namespace WinterMP.Net
     /// <summary>Concrete current part condition; random trigger events are never durable state.</summary>
     public static class VehicleDamagePolicy
     {
+        public static bool IsAuthority(bool protectedGuestWorld, bool sessionActive, bool isHost) =>
+            !protectedGuestWorld && (!sessionActive || isHost);
+
         public static uint Reconcile(uint previous, uint known, uint broken)
         {
             known &= VehicleDamage.ConcretePartsMask;
@@ -35,5 +38,9 @@ namespace WinterMP.Net
                     return false;
             return true;
         }
+
+        public static VehicleDamage Copy(VehicleDamage state) => new VehicleDamage {
+            VehicleId = state.VehicleId, OwnerPlayerId = state.OwnerPlayerId, DamageMask = state.DamageMask,
+            Sequence = state.Sequence, KnownPartsMask = state.KnownPartsMask, Wear = (float[])state.Wear.Clone() };
     }
 }

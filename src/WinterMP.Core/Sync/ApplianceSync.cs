@@ -8,18 +8,12 @@ using WinterMP.Net.Messages;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Shared kitchen appliances (oven/stove) as host-owned world state
-    /// (COVERAGE-ROADMAP 6.1 / 6.4 / R2.3). The hotplate heats, fire-hazard sim and fuse run
-    /// per-client, so an unattended stove burning down one player's house is absent on the
-    /// other's. The <b>host</b> owns each oven: it reads <c>OvenStove/Simulation :: Data</c>
-    /// and broadcasts the hotplate heats + fuse on change + join; guests apply them.
-    /// Ignition is edge-carried (v85): the "Start fire N" commit states are one-frame
-    /// transients inside a polling loop that rests elsewhere, so level-sampling
-    /// <c>ActiveStateName</c> almost never sees them — the host hooks the four commit states,
-    /// bumps a wrapping FireCount, and guests replay the igniting plate's state once per
-    /// bump. A multi-source host broadcaster like <see cref="UtilityBillSync"/>.
+    /// Host-owned kitchen stove simulation. Guests request native knob steps and
+    /// receive absolute settings, heat and cooking outputs while their simulation
+    /// is paused. Ignition commits remain edge-carried because their native states
+    /// are transients that polling cannot reliably observe.
     /// </summary>
-    internal sealed class ApplianceSync
+    internal sealed partial class ApplianceSync
     {
         private const float ProbeIntervalSeconds = 5f;
         private const float HostTickSeconds = 1.5f;
@@ -52,6 +46,10 @@ namespace WinterMP.Core.Sync
             public readonly HashSet<string> HookedFireStates = new HashSet<string>();
             public byte AppliedFireCount;
             public bool FireSeeded;
+            public StoveBinding? Stove;
+            public bool StoveFailed;
+            public ApplianceState? StoveObserved, StoveReceived, StovePending;
+            public uint StoveSentRevision;
             // Guest fire reports (v89): pacing + replay echo suppression.
             public float NextFireReportAt;
             public float SuppressFireReportUntil;
@@ -68,6 +66,7 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
+            foreach (var oven in _ovens) RestoreStove(oven);
             _ovens.Clear();
             _lastFireReportSequences.Clear();
             _outFireSequence = 0;
@@ -88,6 +87,8 @@ namespace WinterMP.Core.Sync
                     EnsureFireHooks(_ovens[i]);
                 }
             }
+            foreach (var oven in _ovens)
+                if (oven.StovePending != null && oven.Stove != null) ReceiveStove(oven, oven.StovePending);
 
             if (!session.IsHost) return;
             if (Time.unscaledTime < _nextHostTickAt) return;
@@ -103,7 +104,11 @@ namespace WinterMP.Core.Sync
             for (int i = 0; i < _ovens.Count; i++)
             {
                 Locate(_ovens[i]);
-                if (_ovens[i].Ready) yield return BuildState(_ovens[i]);
+                if (_ovens[i].Ready && !StoveWaiting(_ovens[i]))
+                {
+                    var state = BuildState(_ovens[i]);
+                    if (!_ovens[i].StoveFailed) yield return state;
+                }
             }
         }
 
@@ -116,7 +121,9 @@ namespace WinterMP.Core.Sync
             for (int i = 0; i < _ovens.Count; i++) if (_ovens[i].Id == message.ApplianceId) { oven = _ovens[i]; break; }
             if (oven == null) return;
             Locate(oven);
+            if (message.StoveRevision != 0) { ReceiveStove(oven, message); return; }
             if (!oven.Ready) return;
+            if (oven.Stove != null) return;
 
             byte[] heats = { message.Heat1, message.Heat2, message.Heat3, message.Heat4 };
             try
@@ -130,6 +137,11 @@ namespace WinterMP.Core.Sync
                 WinterMPPlugin.Log.LogDebug("ApplianceSync: apply failed for " + oven.ContainerPath + ": " + e.Message);
             }
 
+            ApplyIgnition(oven, message);
+        }
+
+        private static void ApplyIgnition(Oven oven, ApplianceState message)
+        {
             if (!oven.FireSeeded)
             {
                 oven.FireSeeded = true;
@@ -153,6 +165,11 @@ namespace WinterMP.Core.Sync
         {
             if (oven.Sim == null) return;
             string stateName = IgnitionStates[plate - 1];
+            if (oven.Stove != null && oven.Stove.Pause.Active)
+            {
+                foreach (var action in oven.Stove.Ignitions[plate - 1]) if (action.Enabled) action.OnEnter();
+                return;
+            }
             if (!FsmHook.EnsureRemoteEntry(oven.Sim, stateName))
             {
                 WinterMPPlugin.Log.LogWarning($"ApplianceSync: cannot replay ignition '{stateName}' on {oven.ContainerPath}.");
@@ -223,7 +240,7 @@ namespace WinterMP.Core.Sync
             for (int i = 0; i < _ovens.Count; i++) if (_ovens[i].Id == message.ApplianceId) { oven = _ovens[i]; break; }
             if (oven == null) return false;
             Locate(oven);
-            if (!oven.Ready) return false;
+            if (!oven.Ready || StoveWaiting(oven) || oven.Stove != null || oven.StoveFailed) return false;
 
             if (_lastFireReportSequences.TryGetValue(message.PlayerId, out ushort previous))
             {
@@ -238,15 +255,20 @@ namespace WinterMP.Core.Sync
         }
 
         /// <summary>Host: a player (re)joined — its report counter restarted; drop the stale latch.</summary>
-        public void ForgetPlayer(byte playerId) => _lastFireReportSequences.Remove(playerId);
+        public void ForgetPlayer(byte playerId)
+        {
+            _lastFireReportSequences.Remove(playerId);
+            foreach (var oven in _ovens) oven.Stove?.Ledger.Forget(playerId);
+        }
 
         private void HostBroadcastIfChanged(SessionManager session, Oven oven, bool keepAlive)
         {
             Locate(oven);
-            if (!oven.Ready) return;
+            if (!oven.Ready || StoveWaiting(oven)) return;
             var state = BuildState(oven);
+            if (oven.StoveFailed) return;
             bool changed = !oven.HasLast || oven.LastFlags != state.Flags
-                || oven.LastSentFireCount != state.FireCount;
+                || oven.LastSentFireCount != state.FireCount || oven.StoveSentRevision != state.StoveRevision;
             byte[] heats = { state.Heat1, state.Heat2, state.Heat3, state.Heat4 };
             for (int i = 0; i < 4 && !changed; i++) changed = oven.LastHeat[i] != heats[i];
             if (!changed && !keepAlive) return;
@@ -254,6 +276,7 @@ namespace WinterMP.Core.Sync
             oven.HasLast = true;
             oven.LastFlags = state.Flags;
             oven.LastSentFireCount = state.FireCount;
+            oven.StoveSentRevision = state.StoveRevision;
             for (int i = 0; i < 4; i++) oven.LastHeat[i] = heats[i];
             session.SendWorldMessage(state, Channel.ReliableOrdered);
         }
@@ -266,7 +289,7 @@ namespace WinterMP.Core.Sync
             try { onFire = oven.Sim != null && oven.Sim.Fsm != null && oven.Sim.Fsm.ActiveStateName == "Fire"; } catch { }
             if (onFire) flags |= ApplianceState.FlagFire;
             if (oven.Fuse == null || oven.Fuse.Value) flags |= ApplianceState.FlagFuseOk;
-            return new ApplianceState
+            var state = new ApplianceState
             {
                 ApplianceId = oven.Id,
                 Kind = ApplianceState.KindOven,
@@ -275,6 +298,9 @@ namespace WinterMP.Core.Sync
                 FireCount = oven.FireCount,
                 FirePlate = oven.LastFirePlate,
             };
+            try { CaptureStove(oven, state); }
+            catch (System.Exception error) { FailStove(oven, error); }
+            return state;
         }
 
         private void EnsureBuilt()
@@ -292,7 +318,7 @@ namespace WinterMP.Core.Sync
 
         private void Locate(Oven oven)
         {
-            if (oven.Ready) return;
+            if (oven.Ready) { BindStove(oven); return; }
             GameObject? container;
             try { container = GameObject.Find(oven.ContainerPath); }
             catch { return; }
@@ -302,7 +328,7 @@ namespace WinterMP.Core.Sync
             if (sim == null) return;
             foreach (var fsm in sim.GetComponents<PlayMakerFSM>())
             {
-                if (fsm == null || fsm.FsmName != "Data") continue;
+                if (fsm == null || fsm.FsmName != "Data" || !fsm.Fsm.Initialized || !fsm.Fsm.Started) continue;
                 oven.Sim = fsm;
                 var v = fsm.FsmVariables;
                 for (int i = 0; i < 4; i++) oven.Heats[i] = v.FindFsmFloat("HotPlate" + (i + 1) + "Heat");
@@ -315,6 +341,7 @@ namespace WinterMP.Core.Sync
                 oven.LoggedFound = true;
                 WinterMPPlugin.Log.LogInfo($"ApplianceSync: located oven '{oven.ContainerPath}'.");
             }
+            if (oven.Ready) BindStove(oven);
         }
     }
 }

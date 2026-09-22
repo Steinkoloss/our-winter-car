@@ -32,13 +32,20 @@ namespace WinterMP.Core.Sync
         {
             if (!_nativeParts.TryGetValue(id, out var previous) || previous != data) _nativeParts[id] = data;
             TrackReplacementPart(data, id);
+            TrackCylinderHead(data, id);
         }
 
         internal bool CanSyncItemMotion(SyncedItem item)
         {
+            if (_fuseHolders != null) foreach (var holder in _fuseHolders)
+                if (holder.Item == item) return FuseHolderLoose(holder);
+            int luggage = Array.IndexOf(_taxiLuggage, item);
+            if (luggage >= 0 && (_taxiLuggageMask & (1 << luggage)) == 0) return false;
+            if (item == _taxiReceipt && !_taxiReceiptLoose) return false;
+            if (item.FleaListed) return false;
             if (!_nativeParts.TryGetValue(item.Id, out var data)) return true;
             if (IsPendingGuestPartIsolation(data)) return false;
-            return NativePartIdentity.Phase(data) == NativePartPhase.Loose && data.gameObject.activeInHierarchy
+            return PresentedPartPhase(data) == NativePartPhase.Loose && data.gameObject.activeInHierarchy
                 && data.GetComponent<Rigidbody>() == item.Body
                 && (_replacementReplica == null || _replacementReplica.AllowsLooseMotion(item.Id));
         }
@@ -54,6 +61,7 @@ namespace WinterMP.Core.Sync
                 {
                     if (pair.Value == null && _replacementParts.TryGetValue(pair.Key, out var replica) && replica.Replica)
                     {
+                        DestroyPartBeltView(replica);
                         _bridge.ForgetReplacementBolts(pair.Value);
                         // A local parent graph can disappear before its host update.
                         // Losing a temporary child is not authority to dispose of the host part.
@@ -63,7 +71,7 @@ namespace WinterMP.Core.Sync
                         _pendingReplacements.Add(pair.Key);
                         continue;
                     }
-                    var phase = NativePartIdentity.Phase(pair.Value);
+                    var phase = PresentedPartPhase(pair.Value);
                     if (phase == NativePartPhase.Retired)
                     {
                         if (session.IsHost) AnnounceNativePartDespawn(pair.Key, "native part disposed");
@@ -121,7 +129,7 @@ namespace WinterMP.Core.Sync
             {
                 TrackNativePart(data, id);
                 if (IsPendingGuestPartIsolation(data)) return true;
-                if (NativePartIdentity.Phase(data) != NativePartPhase.Loose
+                if (PresentedPartPhase(data) != NativePartPhase.Loose
                     || (_replacementReplica != null && !_replacementReplica.AllowsLooseMotion(id))) return true;
                 if (_items.TryGetValue(id, out var previous))
                 {

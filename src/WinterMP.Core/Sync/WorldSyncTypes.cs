@@ -13,6 +13,10 @@ namespace WinterMP.Core.Sync
     public string Path = string.Empty;
     public uint Id;
     public bool IsVehicle;
+    public bool HostTrailerAttached;
+    public bool FleaListed;
+    public ParkingBrakeBinding? ParkingBrake;
+    public float NextParkingBrakeProbeAt;
 
     public bool KinematicSaved;
     public bool OriginalKinematic;
@@ -149,6 +153,10 @@ namespace WinterMP.Core.Sync
     public float NextSystemsProbeAt;
     public GameObject? AudioEngine;
     public HutongGames.PlayMaker.FsmFloat? EngineRevsVar;
+    public VehicleWorldSync.NativeEngineRpmBinding? NativeEngineRpm;
+    public HutongGames.PlayMaker.FsmFloat? NativeEngineRpmOutput;
+    public bool RequiresNativeEngineRpm;
+    public float NextEngineRpmErrorAt;
     public HutongGames.PlayMaker.FsmFloat? GaugeSpeedVar;
     public HutongGames.PlayMaker.FsmFloat? GaugeSpeedAngleVar;
     public HutongGames.PlayMaker.FsmFloat? GaugeRpmVar;
@@ -164,55 +172,84 @@ namespace WinterMP.Core.Sync
     public HutongGames.PlayMaker.FsmBool? BlinkerLeftVar;
     public HutongGames.PlayMaker.FsmBool? BlinkerRightVar;
     public HutongGames.PlayMaker.FsmBool? BlinkerHazardsVar;
-    public HutongGames.PlayMaker.FsmFloat? GaugeCoolantVar;
-    public HutongGames.PlayMaker.FsmFloat? GaugeCoolantAngleVar;
+    public VehicleWorldSync.NativeDrivetrainWear? DrivetrainWear;
+    public float NextDrivetrainWearProbeAt, NextDrivetrainWearErrorAt;
+    public VehicleWorldSync.NativeDifferentialSpeed? DifferentialSpeedSource;
+    public float NextDifferentialProbeAt, NextDifferentialErrorAt;
+    public VehicleWorldSync.NativeWearInputs? NativeWear;
+    public float NextWearInputProbeAt, NextWearInputErrorAt;
+    public VehicleWorldSync.NativeTemperatureBinding? NativeTemperature;
+    public bool RequiresNativeTemperature;
+    public bool RequiresHostCoolant;
+    public WinterMP.Net.Messages.VehicleCoolantState? HostCoolant;
+    public VehicleWorldSync.NativeEngineTemperatureInputs? NativeEngineTemperature;
+    public VehicleWorldSync.NativeCabinTemperatureInputs? NativeCabinTemperature;
+    public VehicleWorldSync.NativeEngineTemperatureInputs? NativeElectricalTemperature;
+    public float NextElectricalTemperatureProbeAt, NextElectricalTemperatureErrorAt;
+    public float NextCabinTemperatureProbeAt, NextCabinTemperatureErrorAt;
+    public float NextEngineTemperatureProbeAt, NextEngineTemperatureErrorAt;
+    public float NextTemperatureProbeAt;
+    public float NextTemperatureErrorAt;
     public bool RemoteHazard;
     public byte RemoteCoolantTemp;
     public GameObject? GaugeTachNeedle;
     public PlayMakerFSM? ElectricityPowerFsm;
     public PlayMakerFSM? GaugeTachDataFsm;
-    // Engine part-breakage (owner-authoritative; see VehicleWorldSync.Damage).
+    // Host engine condition is independent of vehicle movement ownership.
     public PlayMakerFSM? PartBreakagesFsm;
-    public bool DamageHooksInstalled;
     public bool DamageSyncDisabled;
     public HutongGames.PlayMaker.FsmGameObject?[]? DamagePartReferences;
-    public bool ApplyingRemoteDamage;
     public WinterMP.Net.Messages.VehicleDamage? LastSentDamage;
-    public WinterMP.Net.Messages.VehicleDamage? PendingDamage;
-    public uint AppliedDamageParts;
-    public bool HasDamageSequence;
     public uint LiveDamageMask;
-    public uint AppliedDamageMask;
     public ushort OutDamageSequence;
-    public ushort LastDamageSequence;
-    // Whose sequence space LastDamageSequence belongs to. Ownership is fluid; without
-    // the rebase a handoff leaves every receiver rejecting the new owner's low counter
-    // until it out-counts the previous owner's latch (minutes of silent blackout).
-    public byte LastDamageSequenceOwner = WorldSyncIds.NoOwner;
     public float NextDamageTickAt;
     public float NextDamageKeepAliveAt;
     // Drivetrain wear + per-wheel tire condition (owner-authoritative; VehicleWorldSync.Condition).
-    public bool ConditionProbed;
+    public Rigidbody? ConditionProbeBody;
+    public byte ConditionReadyMask;
+    public bool ConditionNeedsApply;
     public float NextConditionProbeAt;
+    public PlayMakerFSM? TirePressureFsm, DrivetrainDamageFsm;
     public HutongGames.PlayMaker.FsmFloat? TirePressureVar;
     public HutongGames.PlayMaker.FsmInt? DrivetrainDamageVar;
     public HutongGames.PlayMaker.FsmInt? GearVar;    // Drivetrain :: Gears "Gear" (owner->peers gear indicator)
     public PlayMakerFSM?[]? WheelConditionFsms;      // [FL, FR, RL, RR]
+    public readonly float[] NextWheelRimRetryAt = new float[4];
     public HutongGames.PlayMaker.FsmFloat?[]? WheelHealthVars;
     public bool HasSentCondition;
     public ushort OutConditionSequence;
-    public ushort LastConditionSequence;
-    public byte LastConditionSequenceOwner = WorldSyncIds.NoOwner;
+    public WinterMP.Net.Messages.VehicleCondition? AcceptedVehicleCondition;
+    public WinterMP.Net.Messages.VehicleCondition? ApplyingVehicleCondition;
+    public WinterMP.Net.Messages.VehicleCondition? ParkedVehicleCondition;
+    public Rigidbody? ParkedConditionBody;
+    public WinterMP.Net.Messages.VehicleCondition? ClaimedVehicleCondition;
+    public Rigidbody? ClaimedConditionBody;
+    public byte ConditionClaimant = WorldSyncIds.NoOwner;
+    public WinterMP.Net.Messages.VehicleCondition? SentFinalCondition;
+    public WinterMP.Net.Messages.VehicleConditionReleaseAck? PendingConditionRelease, ApprovedConditionRelease;
+    public Rigidbody? ConditionReleaseBody;
+    public VehicleWorldSync.NativeTirePressureBinding? NativeTirePressure;
+    public float NextTirePressureProbeAt;
     public byte LastCondPressure, LastCondDrivetrain, LastCondFlags;
+    public byte LastCondAvailability;
     public byte LastCondHFL, LastCondHFR, LastCondHRL, LastCondHRR;
     public float NextConditionTickAt;
     public float NextConditionKeepAliveAt;
     public ushort OutVehicleStateSequence;
     public float NextVehicleStateAt;
-    public ushort LastVehicleStateSequence;
+    public bool LastSentIgnitionActive;
+    public VehicleWorldSync.NativeCoolingInputs? NativeCooling;
+    public VehicleWorldSync.NativeElectricalInputs? NativeElectrical;
+    public float NextElectricalInputProbeAt, NextElectricalInputErrorAt;
+    public float NextCoolingInputProbeAt, NextCoolingInputErrorAt;
+    public VehicleWorldSync.NativeHeatBinding? NativeHeat;
+    public float NextHeatProbeAt, NextHeatErrorAt;
+    public WinterMP.Net.Messages.VehicleState? AcceptedVehicleState;
     public bool RemoteEngineOn;
     public bool RemoteAccOn;
     public bool RemoteElectricsApplied;
+    public bool HasRemoteElectricsState;
+    public float NextRemoteElectricsAttemptAt;
     // Set when a new VehicleState packet or an electrics toggle changes the dash; the per-frame
     // remote-presentation path re-applies gauges/lights only when this is set, then clears it.
     public bool RemoteDashDirty;
@@ -238,12 +275,12 @@ namespace WinterMP.Core.Sync
 
     // Vehicles only: frost + heater (M4).
     public bool ClimateReady;
+    public VehicleWorldSync.NativePassengerCondensation? PassengerCondensation;
+    public float NextPassengerCondensationProbeAt, NextPassengerCondensationErrorAt;
     public PlayMakerFSM? GlassFrostingFsm;
     public PlayMakerFSM? FreezingFsm;
     public PlayMakerFSM? CarTempDataFsm;
     public HutongGames.PlayMaker.FsmFloat? FrostVar;
-    public HutongGames.PlayMaker.FsmFloat? SweatRateVar;
-    public HutongGames.PlayMaker.FsmFloat? GlassTempVar;
     public HutongGames.PlayMaker.FsmBool? PlayerInVar;
     public HutongGames.PlayMaker.FsmFloat? InteriorTempVar;
     public HutongGames.PlayMaker.FsmColor? FrostColorVar;
@@ -279,14 +316,12 @@ namespace WinterMP.Core.Sync
     public byte PresentedHeaterDirection;
     public ushort OutClimateSequence;
     public float NextClimateAt;
-    public ushort LastClimateSequence;
-    // Sender of the climate sequence baseline above. Lets a second nearby observer reset the
-    // baseline instead of being permanently locked out by the first sender's higher sequence.
-    public byte LastClimateSequenceOwner = WorldSyncIds.NoOwner;
+    public WinterMP.Net.Messages.VehicleClimate? AcceptedVehicleClimate;
     public byte RemoteFrost;
     public byte RemoteIce;
-    public byte RemoteFog;
+    public byte RemoteIceSideLeft, RemoteIceSideRight, RemoteIceDoorLeft, RemoteIceDoorRight, RemoteIceRear, RemoteIceMask;
     public byte RemoteCabinTemp;
+    public bool RemoteHasCabinTemperature;
     public bool RemotePlayerIn;
     public bool RemoteWindowHeater;
     public bool RemoteGlassDefrosting;
@@ -455,6 +490,7 @@ namespace WinterMP.Core.Sync
     public string? LastSyncedState;
     public HutongGames.PlayMaker.FsmFloat? ScalarFloat;
     public string? ScalarCommitState;
+    public FirewoodPaymentGuard? Payment;
 }
 
     internal struct PendingRadiatorThermostatState

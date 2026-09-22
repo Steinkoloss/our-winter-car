@@ -32,12 +32,12 @@ namespace WinterMP.Core.Catalog
         public static int PartRuleCount => _parts.Count;
         public static int BoltRuleCount => _bolts.Count;
 
-        private static readonly List<CatalogRule> _doors = new List<CatalogRule>();
-        private static readonly List<CatalogRule> _spawnContainers = new List<CatalogRule>();
-        private static readonly List<CatalogRule> _controls = new List<CatalogRule>();
-        private static readonly List<CatalogRule> _switchRules = new List<CatalogRule>();
-        private static readonly List<CatalogRule> _ignitions = new List<CatalogRule>();
-        private static readonly List<CatalogRule> _starters = new List<CatalogRule>();
+        private static readonly CatalogRuleSet _doors = new CatalogRuleSet();
+        private static readonly CatalogRuleSet _spawnContainers = new CatalogRuleSet();
+        private static readonly CatalogRuleSet _controls = new CatalogRuleSet();
+        private static readonly CatalogRuleSet _switchRules = new CatalogRuleSet();
+        private static readonly CatalogRuleSet _ignitions = new CatalogRuleSet();
+        private static readonly CatalogRuleSet _starters = new CatalogRuleSet();
         private static readonly List<BuyCatalogRule> _buys = new List<BuyCatalogRule>();
         private static readonly List<PartCatalogRule> _parts = new List<PartCatalogRule>();
         private static readonly List<BoltCatalogRule> _bolts = new List<BoltCatalogRule>();
@@ -45,8 +45,49 @@ namespace WinterMP.Core.Catalog
         private static PickableRegistrationConfig _pickables = new PickableRegistrationConfig();
         private static ConsumableConfig _consumables = new ConsumableConfig();
         private static VehicleClimateConfig _vehicleClimate = new VehicleClimateConfig();
+        internal static PassengerCondensationData? PassengerCondensation { get; private set; }
+        internal static PassengerHeatingData? PassengerHeating { get; private set; }
+        internal static string? PassengerHeatingError { get; private set; }
         internal static BankingData? Banking { get; private set; }
         internal static VehicleDamageData? VehicleDamage { get; private set; }
+        internal static GuestEngineProtectionData? GuestEngineProtection { get; private set; }
+        internal static string? GuestEngineProtectionError { get; private set; }
+        internal static VehicleElectricalData? VehicleElectrical { get; private set; }
+        internal static string? VehicleElectricalError { get; private set; }
+        internal static VehicleCoolingData? VehicleCooling { get; private set; }
+        internal static string? VehicleCoolingError { get; private set; }
+        internal static VehicleDrivetrainWearData? VehicleDrivetrainWear { get; private set; }
+        internal static string? VehicleDrivetrainWearError { get; private set; }
+        internal static VehicleDifferentialSpeedData? VehicleDifferentialSpeed { get; private set; }
+        internal static string? VehicleDifferentialSpeedError { get; private set; }
+        internal static VehicleHeatData? VehicleHeat { get; private set; }
+        internal static string? VehicleHeatError { get; private set; }
+        internal static VehicleWearInputData? VehicleWearInputs { get; private set; }
+        internal static string? VehicleWearInputsError { get; private set; }
+        internal static VehicleTemperatureData? VehicleTemperature { get; private set; }
+        internal static string? VehicleTemperatureError { get; private set; }
+        internal static VehicleTirePressureData? VehicleTirePressure { get; private set; }
+        internal static VehicleWheelHealthData? VehicleWheelHealth { get; private set; }
+        internal static string? VehicleTirePressureError { get; private set; }
+        internal static string? VehicleWheelHealthError { get; private set; }
+        internal static VehicleEngineRpmData? VehicleEngineRpm { get; private set; }
+        internal static ParkingJointData? ParkingJoint { get; private set; }
+        internal static AtfRefillData? AtfRefill { get; private set; }
+        internal static MotorOilData? MotorOil { get; private set; }
+        internal static AdvertPhoneData? AdvertPhone { get; private set; }
+        internal static AdvertsData? Adverts { get; private set; }
+        internal static TrainData? Train { get; private set; }
+        internal static CoffeeData? Coffee { get; private set; }
+        internal static TaxiPassengersData? TaxiPassengers { get; private set; }
+        internal static SausagesData? Sausages { get; private set; }
+        internal static TractorTrailerData? TractorTrailer { get; private set; }
+        internal static HouseholdFuseData? HouseholdFuses { get; private set; }
+        internal static StoveData? Stoves { get; private set; }
+        internal static ParkingBrakeData? ParkingBrake { get; private set; }
+        internal static VehicleEngineHandoffData? VehicleEngineHandoff { get; private set; }
+        internal static string? VehicleEngineRpmError { get; private set; }
+        internal static GuestEngineInputsData? GuestEngineInputs { get; private set; }
+        internal static string? GuestEngineInputsError { get; private set; }
         internal static SlotMachineData? SlotMachines { get; private set; }
         internal static PokerData? VideoPoker { get; private set; }
         internal static DebtLetterData? DebtLetter { get; private set; }
@@ -61,6 +102,20 @@ namespace WinterMP.Core.Catalog
         internal static ShoppingBagsData? ShoppingBags { get; private set; }
         internal static PartIdentityData? PartIdentity { get; private set; }
         internal static ReplacementPartsData? ReplacementParts { get; private set; }
+        internal static ValveAdjustmentData? ValveAdjustment { get; private set; }
+        internal static CylinderHeadData? CylinderHead { get; private set; }
+        internal static FirewoodDeliveryData? FirewoodDelivery { get; private set; }
+        internal static TaxiFareData? TaxiFare { get; private set; }
+        internal static TaxiMeterData? TaxiMeter { get; private set; }
+        internal static TaxiServiceData? TaxiService { get; private set; }
+        internal static TaxiPickupData? TaxiPickup { get; private set; }
+        internal static List<FirewoodBuyerData>? FirewoodBuyers { get; private set; }
+        internal static FleaSaleData? FleaSale { get; private set; }
+        internal static UtilityPaymentsData? UtilityPayments { get; private set; }
+        internal static UtilityPaymentsData? PhonePayments { get; private set; }
+        internal static MooseChopData? MooseChop { get; private set; }
+        internal static MooseMeatData? MooseMeat { get; private set; }
+        internal static MilkConditionData? MilkCondition { get; private set; }
 
         public static void Load()
         {
@@ -71,6 +126,13 @@ namespace WinterMP.Core.Catalog
             ShoppingBags = null;
             PartIdentity = null;
             ReplacementParts = null;
+            FirewoodBuyers = null; FirewoodDelivery = null;
+            TaxiFare = null;
+            TaxiMeter = null;
+            TaxiService = null;
+            TaxiPickup = null;
+            FleaSale = null;
+            ValveAdjustment = null; CylinderHead = null; MilkCondition = null; MooseMeat = null; MooseChop = null; UtilityPayments = null; PhonePayments = null;
             _controls.Clear();
             _switchRules.Clear();
             _ignitions.Clear();
@@ -82,8 +144,37 @@ namespace WinterMP.Core.Catalog
             _pickables = new PickableRegistrationConfig();
             _consumables = new ConsumableConfig();
             _vehicleClimate = new VehicleClimateConfig();
+            PassengerCondensation = null;
+            PassengerHeating = null;
+            PassengerHeatingError = null;
             Banking = null;
             VehicleDamage = null;
+            GuestEngineProtection = null;
+            GuestEngineProtectionError = null;
+            VehicleElectrical = null;
+            VehicleElectricalError = null;
+            VehicleCooling = null;
+            VehicleCoolingError = null;
+            VehicleDrivetrainWear = null;
+            VehicleDrivetrainWearError = null;
+            VehicleDifferentialSpeed = null;
+            VehicleDifferentialSpeedError = null;
+            VehicleHeat = null;
+            VehicleHeatError = null;
+            VehicleWearInputs = null;
+            VehicleWearInputsError = null;
+            VehicleTemperature = null;
+            VehicleTemperatureError = null;
+            VehicleTirePressure = null;
+            VehicleWheelHealth = null;
+            VehicleTirePressureError = null;
+            VehicleWheelHealthError = null;
+            VehicleEngineRpm = null;
+            VehicleEngineHandoff = null;
+            ParkingBrake = null; ParkingJoint = null; Stoves = null; HouseholdFuses = null; TractorTrailer = null; Sausages = null; TaxiPassengers = null; Coffee = null; Train = null; Adverts = null; AdvertPhone = null; MotorOil = null; AtfRefill = null;
+            VehicleEngineRpmError = null;
+            GuestEngineInputs = null;
+            GuestEngineInputsError = null;
             SlotMachines = null;
             VideoPoker = null;
             DebtLetter = null;
@@ -133,6 +224,59 @@ namespace WinterMP.Core.Catalog
                 ApplyVehicleConfig(data);
                 Banking = data.Banking;
                 VehicleDamage = data.VehicleDamage;
+                GuestEngineProtection = data.GuestEngineProtection;
+                GuestEngineProtectionError = data.GuestEngineProtectionError;
+                VehicleElectrical = data.VehicleElectrical;
+                VehicleElectricalError = data.VehicleElectricalError;
+                VehicleCooling = data.VehicleCooling;
+                VehicleCoolingError = data.VehicleCoolingError;
+                VehicleDrivetrainWear = data.VehicleDrivetrainWear;
+                VehicleDrivetrainWearError = data.VehicleDrivetrainWearError;
+                VehicleDifferentialSpeed = data.VehicleDifferentialSpeed;
+                VehicleDifferentialSpeedError = data.VehicleDifferentialSpeedError;
+                VehicleHeat = data.VehicleHeat;
+                VehicleHeatError = data.VehicleHeatError;
+                VehicleWearInputs = data.VehicleWearInputs;
+                VehicleWearInputsError = data.VehicleWearInputsError;
+                VehicleTemperature = data.VehicleTemperature;
+                VehicleTemperatureError = data.VehicleTemperatureError;
+                VehicleTirePressure = data.VehicleTirePressure;
+                VehicleWheelHealth = data.VehicleWheelHealth;
+                VehicleTirePressureError = data.VehicleTirePressureError;
+                VehicleWheelHealthError = data.VehicleWheelHealthError;
+                VehicleEngineRpm = data.VehicleEngineRpm;
+                ParkingBrake = data.ParkingBrake;
+                ParkingJoint = data.ParkingJoint;
+                AtfRefill = data.AtfRefill;
+                if (data.AtfRefillError != null) WinterMPPlugin.Log.LogError("ATF refill metadata unavailable: " + data.AtfRefillError);
+                MotorOil = data.MotorOil;
+                if (data.MotorOilError != null) WinterMPPlugin.Log.LogWarning("Motor oil unavailable: " + data.MotorOilError);
+                AdvertPhone = data.AdvertPhone;
+                if (data.AdvertPhoneError != null) WinterMPPlugin.Log.LogWarning("Advert phone unavailable: " + data.AdvertPhoneError);
+                Adverts = data.Adverts;
+                if (data.AdvertsError != null) WinterMPPlugin.Log.LogWarning("Adverts unavailable: " + data.AdvertsError);
+                Train = data.Train;
+                if (data.TrainError != null) WinterMPPlugin.Log.LogWarning("Train unavailable: " + data.TrainError);
+                Coffee = data.Coffee;
+                if (data.CoffeeError != null) WinterMPPlugin.Log.LogWarning("Home coffee unavailable: " + data.CoffeeError);
+                TaxiPassengers = data.TaxiPassengers;
+                if (data.TaxiPassengersError != null) WinterMPPlugin.Log.LogWarning("Taxi passengers unavailable: " + data.TaxiPassengersError);
+                Sausages = data.Sausages;
+                if (data.SausagesError != null) WinterMPPlugin.Log.LogWarning("Sausages unavailable: " + data.SausagesError);
+                TractorTrailer = data.TractorTrailer;
+                if (data.TractorTrailerError != null) WinterMPPlugin.Log.LogWarning("Tractor trailer unavailable: " + data.TractorTrailerError);
+                HouseholdFuses = data.HouseholdFuses;
+                if (data.HouseholdFusesError != null) WinterMPPlugin.Log.LogWarning("Household fuses unavailable: " + data.HouseholdFusesError);
+                Stoves = data.Stoves;
+                if (data.StovesError != null) WinterMPPlugin.Log.LogError("Stove metadata unavailable: " + data.StovesError);
+                if (data.ParkingJointError != null) WinterMPPlugin.Log.LogError("Parking joint metadata unavailable: " + data.ParkingJointError);
+                if (data.ParkingBrakeError != null) WinterMPPlugin.Log.LogError("Parking brake sync unavailable: " + data.ParkingBrakeError);
+                VehicleEngineHandoff = data.VehicleEngineHandoff;
+                if (data.VehicleEngineHandoffError != null)
+                    WinterMPPlugin.Log.LogError("SyncCatalog: engine handoff unavailable: " + data.VehicleEngineHandoffError);
+                VehicleEngineRpmError = data.VehicleEngineRpmError;
+                GuestEngineInputs = data.GuestEngineInputs;
+                GuestEngineInputsError = data.GuestEngineInputsError;
                 SlotMachines = data.SlotMachines;
                 VideoPoker = data.VideoPoker;
                 DebtLetter = data.DebtLetter;
@@ -147,6 +291,32 @@ namespace WinterMP.Core.Catalog
                 ShoppingBags = data.ShoppingBags;
                 PartIdentity = data.PartIdentity;
                 ReplacementParts = data.ReplacementParts;
+                FirewoodDelivery = data.FirewoodDelivery;
+                TaxiFare = data.TaxiFare;
+                if (data.TaxiFareError != null) WinterMPPlugin.Log.LogWarning("Shared taxi fare disabled: " + data.TaxiFareError);
+                TaxiMeter = data.TaxiMeter;
+                if (data.TaxiMeterError != null) WinterMPPlugin.Log.LogWarning("Shared taxi meter disabled: " + data.TaxiMeterError);
+                TaxiService = data.TaxiService;
+                if (data.TaxiServiceError != null) WinterMPPlugin.Log.LogWarning("Shared taxi service disabled: " + data.TaxiServiceError);
+                TaxiPickup = data.TaxiPickup;
+                if (data.TaxiPickupError != null) WinterMPPlugin.Log.LogWarning("Guest taxi pickup disabled: " + data.TaxiPickupError);
+                if (data.FirewoodDeliveryError != null) WinterMPPlugin.Log.LogWarning("Firewood delivery sync disabled: " + data.FirewoodDeliveryError);
+                FirewoodBuyers = data.FirewoodBuyers;
+                if (data.FirewoodBuyersError != null) WinterMPPlugin.Log.LogWarning("Firewood buyer sync disabled: " + data.FirewoodBuyersError);
+                ValveAdjustment = data.ValveAdjustment; CylinderHead = data.CylinderHead; MilkCondition = data.MilkCondition;
+                FleaSale = data.FleaSale;
+                if (data.FleaSaleError != null) WinterMPPlugin.Log.LogError("Flea sale metadata unavailable: " + data.FleaSaleError);
+                UtilityPayments = data.UtilityPayments;
+                PhonePayments = data.PhonePayments;
+                if (data.PhonePaymentsError != null) WinterMPPlugin.Log.LogWarning("Phone payments disabled: " + data.PhonePaymentsError);
+                if (data.UtilityPaymentsError != null) WinterMPPlugin.Log.LogWarning("Electricity payments disabled: " + data.UtilityPaymentsError);
+                MooseChop = data.MooseChop;
+                if (data.MooseChopError != null) WinterMPPlugin.Log.LogWarning("Moose chopping disabled: " + data.MooseChopError);
+                MooseMeat = data.MooseMeat;
+                if (data.MooseMeatError != null) WinterMPPlugin.Log.LogWarning("Moose meat sync disabled: " + data.MooseMeatError);
+                if (data.MilkConditionError != null) WinterMPPlugin.Log.LogWarning("Milk condition sync disabled: " + data.MilkConditionError);
+                if (data.CylinderHeadError != null) WinterMPPlugin.Log.LogWarning("Cylinder head attachment disabled: " + data.CylinderHeadError);
+                if (data.ValveAdjustmentError != null) WinterMPPlugin.Log.LogWarning("Valve adjustment disabled: " + data.ValveAdjustmentError);
             }
             catch (Exception e)
             {
@@ -155,6 +325,30 @@ namespace WinterMP.Core.Catalog
             }
 
             Loaded = true;
+            if (GuestEngineProtectionError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: guest engine protection unavailable; saved-part isolation must wait: " + GuestEngineProtectionError);
+            if (VehicleElectricalError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: vehicle electrical RPM unavailable: " + VehicleElectricalError);
+            if (VehicleCoolingError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: vehicle cooling speed unavailable: " + VehicleCoolingError);
+            if (VehicleDrivetrainWearError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: drivetrain wear unavailable: " + VehicleDrivetrainWearError);
+            if (VehicleDifferentialSpeedError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: differential speed unavailable: " + VehicleDifferentialSpeedError);
+            if (VehicleHeatError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: vehicle heat inputs unavailable: " + VehicleHeatError);
+            if (VehicleWearInputsError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: vehicle wear inputs unavailable: " + VehicleWearInputsError);
+            if (VehicleTemperatureError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: vehicle temperature source unavailable: " + VehicleTemperatureError);
+            if (VehicleTirePressureError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: tyre pressure application unavailable: " + VehicleTirePressureError);
+            if (VehicleWheelHealthError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: wheel health input unavailable: " + VehicleWheelHealthError);
+            if (VehicleEngineRpmError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: vehicle engine RPM source unavailable: " + VehicleEngineRpmError);
+            if (GuestEngineInputsError != null)
+                WinterMPPlugin.Log.LogError("SyncCatalog: guest engine input projection unavailable: " + GuestEngineInputsError);
             string build = data.GameBuild ?? "?";
             WinterMPPlugin.Log.LogInfo(
                 $"SyncCatalog: loaded {_doors.Count} doors, {_spawnContainers.Count} spawn-containers, {_controls.Count} controls, " +
@@ -174,13 +368,15 @@ namespace WinterMP.Core.Catalog
         {
             if (!Loaded || _controls.Count == 0) return null;
 
-            string scenePath = ScenePath.Of(fsm.transform);
-            string objectName = fsm.gameObject.name;
+            string? scenePath = null, objectName = null;
             string fsmName = fsm.FsmName;
-            foreach (var rule in _controls)
+            var candidates = _controls.ForName(fsmName);
+            if (candidates == null) return null;
+            foreach (var rule in candidates)
             {
-                if (!rule.Matches(scenePath, objectName, fsmName, fsm)) continue;
-                return new CatalogControlMatch(rule.States, rule.ScalarFloatName, rule.ScalarCommitState);
+                if (!rule.Matches(scenePath ?? (scenePath = ScenePath.Of(fsm.transform)),
+                        objectName ?? (objectName = fsm.gameObject.name), fsmName, fsm)) continue;
+                return new CatalogControlMatch(rule.States, rule.ScalarFloatName, rule.ScalarCommitState, rule.HostPayment);
             }
 
             return null;
@@ -191,6 +387,9 @@ namespace WinterMP.Core.Catalog
         public static string[]? TryMatchIgnition(PlayMakerFSM fsm) => TryMatch(_ignitions, fsm);
 
         public static string[]? TryMatchStarter(PlayMakerFSM fsm) => TryMatch(_starters, fsm);
+
+        internal static bool HasStarterOrControlRules(string fsmName) => Loaded
+            && (_starters.ForName(fsmName) != null || _controls.ForName(fsmName) != null);
 
         /// <summary>Host-authoritative purchase / payment pipelines from catalog buys.</summary>
         public static bool TryMatchBuy(PlayMakerFSM fsm, out CatalogBuyMatch? match)
@@ -284,6 +483,9 @@ namespace WinterMP.Core.Catalog
 
             if (data.VehicleClimate != null)
             {
+                PassengerCondensation = data.VehicleClimate.PassengerCondensation;
+                PassengerHeating = data.VehicleClimate.PassengerHeating;
+                PassengerHeatingError = data.VehicleClimate.PassengerHeatingError;
                 if (data.VehicleClimate.PathPrefixes.Count > 0)
                     _vehicleClimate.PathPrefixes = data.VehicleClimate.PathPrefixes.ToArray();
                 if (data.VehicleClimate.CarTempPathContains.Count > 0)
@@ -293,7 +495,7 @@ namespace WinterMP.Core.Catalog
             }
         }
 
-        private static void LoadRules(List<CatalogRuleData> source, List<CatalogRule> target)
+        private static void LoadRules(List<CatalogRuleData> source, CatalogRuleSet target)
         {
             foreach (var rule in source)
             {
@@ -306,6 +508,7 @@ namespace WinterMP.Core.Catalog
                     rule.States.ToArray(),
                     rule.ScalarFloatName,
                     rule.ScalarCommitState,
+                    rule.HostPayment,
                     rule.RequireStates.ToArray(),
                     rule.ExcludePathPrefixes.ToArray()));
             }
@@ -361,17 +564,19 @@ namespace WinterMP.Core.Catalog
             }
         }
 
-        private static string[]? TryMatch(List<CatalogRule> rules, PlayMakerFSM fsm)
+        private static string[]? TryMatch(CatalogRuleSet rules, PlayMakerFSM fsm)
         {
             if (!Loaded || rules.Count == 0) return null;
 
-            string scenePath = ScenePath.Of(fsm.transform);
-            string objectName = fsm.gameObject.name;
+            string? scenePath = null, objectName = null;
             string fsmName = fsm.FsmName;
 
-            foreach (var rule in rules)
+            var candidates = rules.ForName(fsmName);
+            if (candidates == null) return null;
+            foreach (var rule in candidates)
             {
-                if (!rule.Matches(scenePath, objectName, fsmName, fsm)) continue;
+                if (!rule.Matches(scenePath ?? (scenePath = ScenePath.Of(fsm.transform)),
+                        objectName ?? (objectName = fsm.gameObject.name), fsmName, fsm)) continue;
                 return rule.States;
             }
 
@@ -384,6 +589,20 @@ namespace WinterMP.Core.Catalog
             if (string.IsNullOrEmpty(location))
                 return ".";
             return Path.GetDirectoryName(location) ?? ".";
+        }
+
+        private sealed class CatalogRuleSet
+        {
+            private readonly Dictionary<string, List<CatalogRule>> _byName = new Dictionary<string, List<CatalogRule>>(StringComparer.Ordinal);
+            internal int Count { get; private set; }
+            internal void Add(CatalogRule rule)
+            {
+                if (!_byName.TryGetValue(rule.FsmName, out var group)) _byName.Add(rule.FsmName, group = new List<CatalogRule>());
+                group.Add(rule);
+                Count++;
+            }
+            internal void Clear() { _byName.Clear(); Count = 0; }
+            internal List<CatalogRule>? ForName(string name) => _byName.TryGetValue(name, out var group) ? group : null;
         }
 
         private sealed class CatalogRule
@@ -399,6 +618,7 @@ namespace WinterMP.Core.Catalog
             internal readonly string[] States;
             internal readonly string? ScalarFloatName;
             internal readonly string? ScalarCommitState;
+            internal readonly string? HostPayment;
 
             internal CatalogRule(
                 string pathPrefix,
@@ -409,6 +629,7 @@ namespace WinterMP.Core.Catalog
                 string[] states,
                 string? scalarFloatName,
                 string? scalarCommitState,
+                string? hostPayment,
                 string[] requireStates,
                 string[] excludePathPrefixes)
             {
@@ -420,9 +641,12 @@ namespace WinterMP.Core.Catalog
                 States = states;
                 ScalarFloatName = scalarFloatName;
                 ScalarCommitState = scalarCommitState;
+                HostPayment = hostPayment;
                 _requireStates = requireStates;
                 _excludePathPrefixes = excludePathPrefixes;
             }
+
+            internal string FsmName => _fsmName;
 
             internal bool Matches(string scenePath, string objectName, string fsmName, PlayMakerFSM fsm)
             {
@@ -633,12 +857,14 @@ namespace WinterMP.Core.Catalog
         public readonly string[] States;
         public readonly string? ScalarFloatName;
         public readonly string? ScalarCommitState;
+        public readonly string? HostPayment;
 
-        internal CatalogControlMatch(string[] states, string? scalarFloatName, string? scalarCommitState)
+        internal CatalogControlMatch(string[] states, string? scalarFloatName, string? scalarCommitState, string? hostPayment)
         {
             States = states;
             ScalarFloatName = scalarFloatName;
             ScalarCommitState = scalarCommitState;
+            HostPayment = hostPayment;
         }
     }
 }

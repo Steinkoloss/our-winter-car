@@ -196,10 +196,9 @@ namespace WinterMP.Net
         // v86: WorldScalarsState (104 — the range's virgin gap) mirrors the daily scrap
         //      price, the bank prime interest rate, and Database/Keys progression
         //      (UncleStage/GIFU/Conline number); each re-rolled or progressed per-client.
-        // v87: TaxiJobState (103) gains FareCost — the customer's per-ride meter. The
-        //      customer became a host-authoritative ScriptedMover in the same change, so
-        //      the fare accrues host-side off the guest's synced taxi and the PayMoney
-        //      press (now catalogued) passes the host's proximity gate.
+        // v87: TaxiJobState (103) gains customer Cost and a catalogued PayMoney press.
+        //      Native audit: Cost is the finalized offer, not live Tripmeter.Price;
+        //      completed fares accumulate in IncomeTotal before later bank wages.
         // v88: HockeyBettingState (160, opening the economy-2 range) mirrors the hockey
         //      betting round (matchup ids, odds, result, KurPaWins) — every payout-deciding
         //      input of the per-client season sim. The standings TABLE stays per-client
@@ -253,7 +252,137 @@ namespace WinterMP.Net
         // v118: part requests include the observed native array slot.
         // v119: acknowledged native alternator hand rotation through part operations 2/3.
         // v120: shared persistent bags, atomic host-owned openings (190–192); retire guest spill offers53.
-        public const ushort Version = 120;
+        // v121: direct bag-created fan belts and oil filters use replacement state 185 and native part IDs.
+        // v122: acknowledged oil-filter hand tightening/loosening through dedicated part operations 4/5.
+        // v123: replacement state appends a presentation revision and optional host-owned fitted fan-belt cosmetics.
+        // v124: vehicle damage is host-only; guests retain passive condition without native wear writes or replay.
+        // v125: catalogued distributor timing uses part rotation operations 2/3 with its native adjustment profile.
+        // v126: vehicle engine streams require simulator ownership, retain per-sender sequences and order final OFF before release.
+        // v127: accepted distributor replacement state supplies isolated guest combustion inputs without changing state 185's layout.
+        // v128: starter state 185 appends Durability and supplies three isolated native starter inputs.
+        // v129: water pump state 185 appends Durability/Efficiency for isolated Oil and Cooling inputs.
+        // v130: stock/racing fuel pumps append Durability/OutputRate and share isolated engine inputs.
+        // v131: oil pump appends Durability; Oil/Wearing project multiple independent part sources.
+        // v132: camshafts append Durability/ValveTolerance and actual CamProfile; typed engine inputs.
+        // v133: eight rocker slots project host fitted tightness into native cylinder Bolted reads.
+        // v134: stock/upgraded alternators append Friction and supply isolated Oil inputs.
+        // v135: alternators append Durability/Efficiency and mount damage state for electrical inputs.
+        // v136: host fan-belt installation feeds Oil, Valves, Cooling and Electrics readers.
+        // v137: host timing-belt installation and wear feed native combustion readers.
+        // v138: host crankshaft, crank pulley and auxiliary shaft/sprocket feed native engine readers.
+        // v139: host gasket, thermostat/housing and oil-filter state feed native engine readers.
+        // v140: all five applied host main-bearing slots feed native oil-pressure condition reads.
+        // v141: four applied host piston slots feed cylinder firing and mixture smoke checks.
+        // v142: applied host radiator fan gates native mechanical load and cooling.
+        // v143: fixed-capacity spark-plug boxes and individual host-created plug replicas.
+        // v144: replacement removal validates each family's native pick layer, including spark plugs.
+        // v145: host-validated spark-plug wrench turns (part operations 6/7).
+        // v146: host spark-plug condition supplies the four native cylinder inputs.
+        // v147: flywheel/flexplate Installed/InertiaFactor inputs; four new factory profiles.
+        // v148: Cylinders uses applied host rev-limiter installation and RPM setting.
+        // v149: native ignition-coil replicas and host-installed input to Cylinders.
+        // v150: host wiring inputs for ignition, starter and electrical calculations.
+        // v151: starter flywheel installation follows the applied host part, as combustion does.
+        // v152: host battery engine inputs and guest saved-battery simulation protection.
+        // v153: host engine block inputs (195) and direct native starter reads.
+        // v154: host gearbox type (196) for the native starter interlock.
+        // v155: engine block state (195) includes installed cylinder-head input.
+        // v156: block state appends carburettor chamber/reserve/mixture with fitted flag.
+        // v157: host carburettor/air-cleaner performance and filter installation inputs.
+        // v158: four independent native exhaust performance groups in block state.
+        // v159: native cylinder-head valve adjustments in engine block state.
+        // v160: host oilpan condition and lubrication inputs in block state.
+        // v161: host rocker-cover installation/tightness for native oil leaks (195).
+        // v162: host radiator installation, coolant, wear, cap pressure and fan input (195).
+        // v163: four host coolant hose inputs and carburettor clamp tightness (195).
+        // v164: host grille, cover and bonnet cooling airflow inputs (195).
+        // v165: host shelter-adjusted cooling ambient input (195).
+        // v166: accepted VehicleState RPM feeds native host oil-pressure and wear calculations.
+        // v167: delegated RPM also feeds the host's native oil-contamination calculation.
+        // v168: VehicleState appends native torque availability/value for host heat generation.
+        // v169: VehicleState appends actual movement speed for host cooling, separate from wheel speed.
+        // v170: accepted driver RPM supplies native cooling pump, fan and leak checks.
+        // v171: host coolant dashboard state (197), independent of driver ownership.
+        // v172: host engine degrees appended to 197 for fuel and oil calculations.
+        // v173: host thermal state also supplies native cabin and heater calculations.
+        // v174: host heat supplies native battery cold penalties and charging limits.
+        // v175: accepted guest-driver RPM supplies native host battery charging/drain.
+        // v176: protect the guest battery mount from external native scalar writers.
+        // v177: host battery maximum appended to 194; external battery reads use host inputs.
+        // v178: authenticated native starter draw batches reach the host battery (198).
+        // v179: guest native cranking duration drives host starter wear (199).
+        // v180: host heater installation/wear inputs and saved guest heater protection (200).
+        // v181: host heater/defroster wiring inputs extend state 193 source identities to 11.
+        // v182: native heater inlet/outlet reads consume host hose installation (state 195 unchanged).
+        // v183: HeaterState appends independent rear-window element availability/installation.
+        // v184: VehicleClimate preserves six independent window cutoffs and availability.
+        // v185: climate follows established vehicle ownership; stale reports do not relay; final climate is reliable.
+        // v186: shared cabin occupancy never writes local PlayerIn; reports include accepted passenger seats.
+        // v187: native condensation is material alpha; retired Fog never writes tint or calculation scratch.
+        // v188: player poses append sweat availability/value; accepted seats supply native condensation inputs.
+        // v189: body warmth uses native PlayerTemp with explicit availability; legacy air samples are retired.
+        // v190: climate marks cabin-temperature availability; seated passengers consume current cabin heat.
+        // v191: death/respawn retire passenger seats without resetting claim history.
+        // v192: condition stream validates current ownership, per-sender history and host snapshots.
+        // v193: guests suppress native wheel TireHealth and reverse-gear Wear writes to saved originals.
+        // v194: observer wheel health reads retain accepted condition without changing saved tyre data.
+        // v195: accepted final condition survives explicit parked release; new claims publish a fresh baseline.
+        // v196: accepted observer pressure reaches audited native wheel properties without toggling simulation.
+        // v197: append explicit pressure/drivetrain/wheel availability to condition; retry late native discovery.
+        // v198: native guest observer gearbox damage checks consume accepted condition without saved-part writes.
+        // v199: guest physics claims retain accepted tyre/gearbox inputs without loading local saved condition into reports.
+        // v200: host confirms guest condition releases (201); approved parked state supplies host snapshots/checksums.
+        // v201: guests suppress all three native periodic drivetrain Wear writes to saved mounts.
+        // v202: VehicleState appends explicit signed native differential-speed availability/value.
+        // v203: validated guest differential speed drives bounded native host drivetrain wear.
+        // v204: host drivetrain wear results (202), revisioned independently of driving leases.
+        // v205: guarded native drivetrain consumers use host wear; guests suppress failure writes/events.
+        // v206: host gearbox oil feeds guarded native automatic shift and stall calculations.
+        // v207: native automatic shift callbacks request host-owned gearbox oil use.
+        // v208: native damaged-gearbox kick-out callbacks request host-owned saved wear.
+        // v209: host wheel health feeds guest native tyre-condition readers.
+        // v210: radiator-fan inputs use VIN137; VIN127 remains the separate water-pump pulley.
+        // v211: sleep consent cancels on host withdrawal/last guest departure;
+        //      first answers from requested, connected guests determine the round.
+        // v212: cabin proximity no longer establishes a vehicle driver claim;
+        // actual native driver exit releases FlagDriver even beside a running car.
+        // v213: catalogued vehicle engines transfer accepted native running state
+        // on driver claim; raw starter/ignition replay is retired for those vehicles.
+        // v214: guest pose/needs start after the initial spawn offer is applied;
+        // either returning spawn choice restores needs, resyncs cannot respawn.
+        // v215: valve adjusters accept host-validated raw turns and publish float state 206.
+        // v216: persistent cylinder-head attachment state (207).
+        // v220: host-owned firewood buyer/offer presentation (209), including guest-aware native LOD.
+        // v217: firewood payment state is a live host-only collection intent, never a payout replay.
+        // v218: host-owned milk condition and spoiled state (208).
+        // v219: persistent cylinder-head fit/remove intents reuse 188/189 and native host prerequisites.
+        // v223: effective electricity supply, physical switch and bill visibility; guest electricity timers pause.
+        // v224: native moose-meat identity, creation pose and host food presentation (210).
+        // v225: revisioned electricity invoices and acknowledged mailbox payments.
+        // v226: death releases seats before native teardown; respawn requires live movement after loading.
+        // v227: native host permadeath setting, runtime session updates, and guest load override.
+        // v231: host-owned flatbed loads/piles and guest unloading intents (216/217); signed firewood job adjustments.
+        // v232: native guest puncture requests (218) and per-wheel health lifecycle epochs (205).
+        // v233: host stove knob intents and native heat/trigger/knob receipts.
+        // v234: host ATF bottle/filler state and bounded guest cap/refill intents.
+        // v235: root-relative ATF cap pose keeps guest refill geometry on the host endpoint.
+        // v236: flea rental checkout and once-only proceeds receipts replace unpaid rent intents.
+        // v237: shared flea listings, durable native identities and exact host sale retirement.
+        // v238: ordinary fuse-box contents use durable supply identities and the shared opening ledger.
+        // v239: shared ignition-wire installation, endpoint readiness and host destruction presentation.
+        // v240: TaxiServiceState (230), TaxiCallIntent (231): native host calls and customer presentation.
+        // v241: TaxiMeterState (232), TaxiMeterIntent (233): host fare and guest duty/meter controls.
+        // v242: host-owned taxi arrival/terminal quote and customer collection.
+        // v245: taxi payday rundown and shared native read acknowledgement (236).
+        // v246: native household fuse holders, insertion, power and guest actions (237–239).
+        // v248: explicit package-to-four sausage conversion and host food replicas.
+        // v249: taxi human passenger seats 0/2; rear-right seat 1 remains reserved.
+        // v250: host-owned home coffee, conserved cup filling and accepted drinking.
+        // v251: host train movement, lifecycle, colliders, light and horn stream (248).
+        // v252: single-use bulb boxes and host-owned session-only loose bulb condition.
+        // v253: advert pile/sheets, exact native mailbox ledger and guest delivery intents.
+        // v256: advert telephone enrolment intents/results (256-257).
+        public const ushort Version = 257;
     }
 
     /// <summary>

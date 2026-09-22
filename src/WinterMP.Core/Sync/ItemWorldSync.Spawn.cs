@@ -125,9 +125,18 @@ namespace WinterMP.Core.Sync
             ProcessPackageRemovals();
             ProcessPackages(session);
             ProcessReplacementParts(session);
+            ProcessSupplies(session);
+            ProcessBulbs(session);
+            ProcessAdverts(session);
+            ProcessMotorOil(session);
+            UpdateHouseholdFuses(session);
             ProcessPackageOpening(session);
             ProcessPartFitting(session);
             ProcessTrophySpawns(session);
+            ProcessMeat(session);
+            ProcessSausages(session);
+            ProcessCoffee(session);
+            ProcessMooseChop(session);
             if (_pendingSpawns.Count == 0) return;
             float now = Time.unscaledTime;
 
@@ -161,7 +170,9 @@ namespace WinterMP.Core.Sync
                 var body = pending.Captured[i];
                 if (body == null) continue;
 
-                uint netId = StableHash.Fnv1a32("spawn:" + pending.ContainerId + ":" + pending.Epoch + ":" + i);
+                uint netId = CoffeePacketIdentity(body, out uint coffeePacket) ? coffeePacket
+                    : TrySausagePackageId(body, out uint sausagePackage) ? sausagePackage
+                    : StableHash.Fnv1a32("spawn:" + pending.ContainerId + ":" + pending.Epoch + ":" + i);
                 if (_items.TryGetValue(netId, out var existing))
                 {
                     if (existing.Body != body) throw new InvalidOperationException("Spawn item ID collision.");
@@ -174,6 +185,8 @@ namespace WinterMP.Core.Sync
                     TryRegisterConsumableHooks(item);
                 }
 
+                TryScanCoffeePacket(body);
+                TryScanAtf(body);
                 manifest.Items.Add(new ItemSpawn.Entry
                 {
                     NetId = netId,
@@ -206,6 +219,7 @@ namespace WinterMP.Core.Sync
         internal IEnumerable<ItemSpawn> BuildSpawnReplayManifests()
         {
             foreach (var factory in BuildTrophyReplayManifests()) yield return factory;
+            foreach (var saved in BuildSavedProductManifests()) yield return saved;
             List<long>? dead = null;
 
             foreach (var pair in _hostSpawnManifests)
@@ -290,6 +304,8 @@ namespace WinterMP.Core.Sync
 
         private bool MaterializeSpawnEntry(ItemSpawn.Entry entry, byte ownerId, float now, bool allowSteal, bool logFailures = true)
         {
+            if (IsAtfManifest(entry)) return true;
+            if (SyncCatalog.MotorOil != null && (entry.TemplateName == SyncCatalog.MotorOil["itemName"] || _motorOil.ContainsKey(entry.NetId) || _pendingMotorOil.ContainsKey(entry.NetId))) return true;
             bool exists = _items.TryGetValue(entry.NetId, out var existing);
             if (!_spawnLifecycle.ShouldMaterialize(entry.NetId, exists && existing!.Body != null)) return false;
             if (exists) RemoveTrackedItem(entry.NetId, existing!.Body);
@@ -383,7 +399,7 @@ namespace WinterMP.Core.Sync
             {
                 var item = pair.Value;
                 if (item.IsVehicle || item.Body == null) continue;
-                if (FindPackageUse(item.Body) != null || NativePartIdentity.FindData(item.Body.transform) != null) continue;
+                if (FindPackageUse(item.Body) != null || SupplyRule(item.Body, out _) != null || BulbData(item.Body) != null || IsAdvertBody(item.Body) || IsMotorOilBody(item.Body) || NativePartIdentity.FindData(item.Body.transform) != null) continue;
                 if (_snapshotSeenIds.Contains(pair.Key)) continue;
                 if (item.Body.gameObject.name != entry.TemplateName) continue;
                 if ((item.Body.transform.position - near).sqrMagnitude > radiusSqr) continue;
@@ -442,7 +458,7 @@ namespace WinterMP.Core.Sync
                     }
 
                     bool tracked = _trackedBodies.ContainsKey(body);
-                    if (FindPackageUse(body) != null || NativePartIdentity.FindData(body.transform) != null) continue;
+                    if (FindPackageUse(body) != null || SupplyRule(body, out _) != null || BulbData(body) != null || IsAdvertBody(body) || IsMotorOilBody(body) || NativePartIdentity.FindData(body.transform) != null) continue;
                     if (untrackedOnly && tracked) continue;
                     if (!SyncCatalog.IsPickableRigidbody(body)) continue;
 
@@ -540,6 +556,8 @@ namespace WinterMP.Core.Sync
             item.LastRemoteSequenceOwner = ownerId;
 
             _items[entry.NetId] = item;
+            TrackSausagePackageReplica(entry.NetId, body, entry.TemplateName);
+            TryTrackMilk(item, entry.TemplateName);
             TryRegisterConsumableHooks(item);
         }
     }

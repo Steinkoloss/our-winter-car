@@ -48,7 +48,9 @@ namespace WinterMP.Core.Sync
                 if (use.FsmName == c["itemFsm"] && use.FsmVariables.FindFsmString(c["itemIdVariable"]) != null
                     && use.FsmVariables.FindFsmGameObject(c["contentsVariable"]) != null
                     && use.FsmVariables.FindFsmInt(c["quantityVariable"]) != null
-                    && FsmHook.FindState(use, c["openState"]) != null) return use;
+                    )
+                    foreach (var rule in c.Factories)
+                        if (FsmHook.FindState(use, rule.OpenState) != null) return use;
             }
             return null;
         }

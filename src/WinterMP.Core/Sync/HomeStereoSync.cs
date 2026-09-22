@@ -162,8 +162,7 @@ namespace WinterMP.Core.Sync
 
         private void Scan(bool force = false)
         {
-            if (!force && Time.unscaledTime < _nextScanAt) return;
-            _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
+            if (!ScenePath.TryBeginDiscovery(ref _nextScanAt, ScanIntervalSeconds, force)) return;
             try
             {
                 var fsms = ScenePath.ScanFsms();
@@ -171,24 +170,26 @@ namespace WinterMP.Core.Sync
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null) continue;
+                    string fsmName = fsm.FsmName;
+                    if (fsmName != "Knob" && fsmName != "Use" && fsmName != "ChangeChannel") continue;
                     string path = ScenePath.Of(fsm.transform);
-                    if (path == ButtonsPath + "/Volume" && fsm.FsmName == "Knob" && _volume == null)
+                    if (path == ButtonsPath + "/Volume" && fsmName == "Knob" && _volume == null)
                     {
                         _volumeFsm = fsm;
                         _volume = fsm.FsmVariables.FindFsmFloat("Volume");
                     }
-                    else if (path == ButtonsPath + "/Bass" && fsm.FsmName == "Knob" && _bass == null)
+                    else if (path == ButtonsPath + "/Bass" && fsmName == "Knob" && _bass == null)
                     {
                         _bassFsm = fsm;
                         _bass = fsm.FsmVariables.FindFsmFloat("Bass");
                     }
-                    else if (path == ButtonsPath + "/RadioCDSwitch" && fsm.FsmName == "Use" && _radioOn == null)
+                    else if (path == ButtonsPath + "/RadioCDSwitch" && fsmName == "Use" && _radioOn == null)
                     {
                         _radioFsm = fsm;
                         _radioOn = fsm.FsmVariables.FindFsmBool("RadioOn");
                         _anchor = fsm.transform;
                     }
-                    else if (path == ButtonsPath + "/TrackChannelSwitch" && fsm.FsmName == "ChangeChannel" && _channel == null)
+                    else if (path == ButtonsPath + "/TrackChannelSwitch" && fsmName == "ChangeChannel" && _channel == null)
                     {
                         _channelFsm = fsm;
                         _channel = fsm.FsmVariables.FindFsmBool("Channel");

@@ -92,6 +92,7 @@ namespace WinterMP.Core.Sync
                 {
                     if (bag != null && session.IsHost)
                     {
+                        ReleaseHeldBag(bag.Body);
                         // Keep the native root/Consumed flag for SAVEGAME cleanup.
                         RecordItemRetirement(bag.Id);
                         if (_items.TryGetValue(bag.Id, out var item)) item.DespawnSent = true;
@@ -175,8 +176,12 @@ namespace WinterMP.Core.Sync
         {
             var c = SyncCatalog.ShoppingBags;
             var logic = bag.Factory.Contents;
-            return c != null && logic != null && logic.enabled && logic.Fsm.Started
-                && (logic.ActiveStateName == c["contentsIdleState"] || logic.ActiveStateName == c["contentsStartState"]);
+            if (c == null || logic == null || !logic.enabled || !logic.Fsm.Started) return false;
+            if (logic.ActiveStateName == c["contentsIdleState"] || logic.ActiveStateName == c["contentsStartState"]) return true;
+            // Emptying the bag ends in a terminal Garbage state, with no return
+            // to Idle. Wait for its final native command before publishing.
+            return logic.ActiveStateName == c["contentsConsumedState"]
+                && ValidateBagContentsConsumed(logic, c).ActiveActions.Count == 0;
         }
 
         private bool BeginBagOpening(BagOpenRequest request, byte actor, bool alreadyEntered)
@@ -283,7 +288,7 @@ namespace WinterMP.Core.Sync
                 {
                     try
                     {
-                        PublishBagSpill(session, opening.Capture);
+                        PublishBagSpill(session, opening);
                         var receipt = _bagOpenLedger.Complete(opening.Request, opening.Applied);
                         _bagOpening = null;
                         if (receipt != null) SendBagReceipt(session, receipt);
@@ -313,10 +318,32 @@ namespace WinterMP.Core.Sync
             else ProcessBagReplicas(session);
         }
 
-        private void PublishBagSpill(SessionManager session, PendingSpawn capture)
+        private void PublishBagSpill(SessionManager session, BagOpening opening)
         {
+            var capture = opening.Capture;
             for (int i = capture.Captured.Count - 1; i >= 0; i--)
-                if (capture.Captured[i] == null || FindPackageUse(capture.Captured[i]) != null) capture.Captured.RemoveAt(i);
+            {
+                var body = capture.Captured[i];
+                if (_bagSpillBodies.TryGetValue(body, out var factory) && factory.Replacement != null)
+                {
+                    if (factory.Replacement.Failed)
+                    {
+                        // The native output stays on the host with its save identity.
+                        // An invalid part binding must not block every other bag.
+                        opening.Applied = false;
+                        SyncEventLog.Record("bag-part-unavailable", factory.Fsm.FsmName);
+                        capture.Captured.RemoveAt(i);
+                        continue;
+                    }
+                    if (!TryBagReplacementState(body, factory.Replacement, out var part))
+                        throw new InvalidOperationException("Native bag part is not ready to publish.");
+                    // Native parts retain Data/ID across fitting and removal. A generic
+                    // spill manifest would give this same body a second identity.
+                    if (part != null) session.SendWorldMessage(part, Channel.ReliableOrdered);
+                    capture.Captured.RemoveAt(i);
+                }
+                else if (body == null || FindPackageUse(body) != null) capture.Captured.RemoveAt(i);
+            }
             // A large shopping trip can exceed a single packet's 32-entry limit.
             while (capture.Captured.Count > 0)
             {
@@ -334,6 +361,11 @@ namespace WinterMP.Core.Sync
         private bool BagSpillNativeIdle(BagOpening opening)
         {
             if (!opening.Entered || !BagContentsIdle(opening.Bag)) return false;
+            var c = SyncCatalog.ShoppingBags!;
+            var contents = opening.Bag.Factory.Contents;
+            if (contents.ActiveStateName == c["contentsConsumedState"]
+                && (opening.Bag.Use == null || contents.FsmVariables.FindFsmGameObject(c["currentBagVariable"])?.Value != opening.Bag.Use.gameObject
+                    || opening.Bag.Use.FsmVariables.FindFsmBool(c["consumedVariable"])?.Value != true)) return false;
             foreach (var factory in _bagSpillFactories.Values)
             {
                 foreach (var request in factory.Requests) if (request.Opening == opening) return false;

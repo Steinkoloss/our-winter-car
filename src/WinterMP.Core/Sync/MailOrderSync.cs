@@ -325,8 +325,7 @@ namespace WinterMP.Core.Sync
 
         private void Scan(bool force = false)
         {
-            if (!force && Time.unscaledTime < _nextScanAt) return;
-            _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
+            if (!ScenePath.TryBeginDiscovery(ref _nextScanAt, ScanIntervalSeconds, force)) return;
 
             var fsms = ScenePath.ScanFsms();
             foreach (var obj in fsms)

@@ -1,152 +1,133 @@
 using System;
 using System.Reflection;
+using HarmonyLib;
+using HutongGames.PlayMaker;
 using UnityEngine;
+using WinterMP.Core.Session;
 
 namespace WinterMP.Core.Sync
 {
-    /// <summary>
-    /// Reads/writes the save's permadeath flag (<c>UniqueTagPlayerPermaDeath</c>, set at
-    /// character creation). Guests mirror the host's value for the session (PLAN.md §4.4).
-    /// </summary>
+    /// <summary>Reads the host's native setting; guests use session state without writing personal saves.</summary>
     internal static class PermadeathSettings
     {
-        private const string Es2Tag = "UniqueTagPlayerPermaDeath";
+        private const string Variable = "PlayerPermaDeath";
+        private static bool _attempted, _ready;
+        private static FieldInfo? _loadValue, _loadTag, _saveValue, _saveTag;
 
-        private static Type? _es2Type;
-        private static MethodInfo? _exists;
-        private static MethodInfo? _loadBool;
-        private static MethodInfo? _saveBool;
-        private static bool _resolved;
+        internal static bool Initialize()
+        {
+            if (_attempted) return _ready;
+            _attempted = true;
+            try
+            {
+                var assembly = Assembly.Load("Assembly-CSharp");
+                var load = assembly.GetType("HutongGames.PlayMaker.Actions.LoadBool", true);
+                var save = assembly.GetType("HutongGames.PlayMaker.Actions.SaveBool", true);
+                _loadValue = Field(load, "loadValue", typeof(FsmBool));
+                _loadTag = Field(load, "uniqueTag", typeof(FsmString));
+                _saveValue = Field(save, "saveValue", typeof(FsmBool));
+                _saveTag = Field(save, "uniqueTag", typeof(FsmString));
+                var harmony = new Harmony("com.ourwintercar.wintermp.death-settings");
+                harmony.Patch(load.GetMethod("OnEnter", Type.EmptyTypes),
+                    prefix: new HarmonyMethod(typeof(PermadeathSettings), nameof(BeforeLoad)),
+                    postfix: new HarmonyMethod(typeof(PermadeathSettings), nameof(AfterLoad)));
+                harmony.Patch(save.GetMethod("OnEnter", Type.EmptyTypes),
+                    postfix: new HarmonyMethod(typeof(PermadeathSettings), nameof(AfterSave)));
+                _ready = true;
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError("PermadeathSettings: native binding unavailable: " + e);
+            }
+            return _ready;
+        }
+
+        private static FieldInfo Field(Type type, string name, Type expected)
+        {
+            var field = type.GetField(name);
+            if (field == null || field.FieldType != expected)
+                throw new InvalidOperationException("Native death setting field changed: " + type.Name + "." + name);
+            return field;
+        }
 
         public static bool TryRead(out bool enabled)
         {
             enabled = false;
-            if (!EnsureEs2()) return false;
-
             try
             {
-                if (_exists != null)
+                var globals = FsmVariables.GlobalVariables;
+                var live = globals.FindFsmBool(Variable);
+                if (Application.loadedLevelName == "GAME" && live != null)
                 {
-                    var exists = _exists.Invoke(null, new object[] { Es2Tag });
-                    if (exists is bool b && !b) return true;
-                }
-
-                if (_loadBool != null)
-                {
-                    var value = _loadBool.Invoke(null, new object[] { Es2Tag });
-                    if (value is bool flag)
-                    {
-                        enabled = flag;
-                        return true;
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                WinterMPPlugin.Log.LogWarning("PermadeathSettings: ES2 read failed: " + e.Message);
-            }
-
-            return false;
-        }
-
-        public static bool TryWrite(bool enabled)
-        {
-            if (!EnsureEs2()) return false;
-
-            try
-            {
-                if (_saveBool != null)
-                {
-                    _saveBool.Invoke(null, new object[] { enabled, Es2Tag });
-                    WinterMPPlugin.Log.LogInfo(
-                        "PermadeathSettings: wrote " + (enabled ? "ON" : "OFF") + " to save tag.");
+                    enabled = live.Value;
                     return true;
                 }
+                // Native Continue uses SavePlayerData + ?tag=PlayerPermaDeath.
+                // A missing save is a new-character flow, not proof of normal death.
+                string file = globals.FindFsmString("SavePlayerData")?.Value ?? "savefile.txt";
+                string path = file + "?tag=" + Variable;
+                if (!ES2.Exists(path)) return false;
+                enabled = ES2.Load<bool>(path);
+                return true;
             }
             catch (Exception e)
             {
-                WinterMPPlugin.Log.LogWarning("PermadeathSettings: ES2 write failed: " + e.Message);
+                WinterMPPlugin.Log.LogWarning("PermadeathSettings: native read failed: " + e.Message);
+                return false;
             }
-
-            return false;
         }
 
-        /// <summary>Fire Steam achievement bookkeeping events so local UI matches the save flag.</summary>
-        public static void SyncAchievementFsm(bool enabled)
+        internal static void ApplyGuest(bool enabled)
         {
+            var value = FsmVariables.GlobalVariables.FindFsmBool(Variable);
+            if (value == null || value.Value == enabled) return;
+            value.Value = enabled;
+            WinterMPPlugin.Log.LogInfo("PermadeathSettings: applied host " + (enabled ? "PERMADEATH" : "normal death") + " to the running guest.");
+        }
+
+        private static FsmBool? Target(FsmStateAction action, FieldInfo? valueField, FieldInfo? tagField)
+        {
+            var value = valueField?.GetValue(action) as FsmBool;
+            if (value == null || value.Name != Variable) return null;
+            var tag = tagField?.GetValue(action) as FsmString;
+            return tag != null && tag.Value == Variable
+                && ReferenceEquals(value, FsmVariables.GlobalVariables.FindFsmBool(Variable)) ? value : null;
+        }
+
+        private static bool BeforeLoad(FsmStateAction __instance)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || session.IsHost || session.State != SessionState.Connected) return true;
             try
             {
-                var fsms = Resources.FindObjectsOfTypeAll(typeof(PlayMakerFSM));
-                foreach (var obj in fsms)
-                {
-                    var fsm = obj as PlayMakerFSM;
-                    if (fsm == null) continue;
-                    if (fsm.FsmName != "Achi") continue;
-
-                    string path;
-                    try
-                    {
-                        path = ScenePath.Of(fsm.transform);
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-
-                    if (path.IndexOf("Systems/Steam", StringComparison.OrdinalIgnoreCase) < 0
-                        && path.IndexOf("/Steam", StringComparison.OrdinalIgnoreCase) < 0)
-                        continue;
-
-                    fsm.SendEvent(enabled ? "_DEATHON" : "_DEATHOFF");
-                    return;
-                }
+                var target = Target(__instance, _loadValue, _loadTag);
+                if (target == null) return true;
+                // Override before Finish can advance native startup/achievement/death
+                // readers. A per-frame correction would leave a wrong-branch window.
+                target.Value = session.PermanentDeathEnabled;
+                __instance.Finish();
+                return false;
             }
-            catch
+            catch (Exception e)
             {
-                // PlayMaker not ready.
+                WinterMPPlugin.Log.LogError("PermadeathSettings: guest load override failed: " + e);
+                return true;
             }
         }
 
-        private static bool EnsureEs2()
+        private static void AfterLoad(FsmStateAction __instance) => ObserveHost(__instance, _loadValue, _loadTag);
+        private static void AfterSave(FsmStateAction __instance) => ObserveHost(__instance, _saveValue, _saveTag);
+
+        private static void ObserveHost(FsmStateAction action, FieldInfo? valueField, FieldInfo? tagField)
         {
-            if (_resolved) return _es2Type != null;
-            _resolved = true;
-
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost) return;
+            try
             {
-                if (assembly.GetName().Name != "ES2") continue;
-                _es2Type = assembly.GetType("ES2");
-                break;
+                var value = Target(action, valueField, tagField);
+                if (value != null) session.SetPermanentDeathEnabled(value.Value);
             }
-
-            if (_es2Type == null) return false;
-
-            _exists = _es2Type.GetMethod(
-                "Exists",
-                BindingFlags.Public | BindingFlags.Static,
-                null,
-                new[] { typeof(string) },
-                null);
-
-            MethodInfo? loadGeneric = _es2Type.GetMethod(
-                "Load",
-                BindingFlags.Public | BindingFlags.Static,
-                null,
-                new[] { typeof(string) },
-                null);
-            if (loadGeneric != null && loadGeneric.IsGenericMethodDefinition)
-                _loadBool = loadGeneric.MakeGenericMethod(typeof(bool));
-
-            MethodInfo? saveGeneric = _es2Type.GetMethod(
-                "Save",
-                BindingFlags.Public | BindingFlags.Static,
-                null,
-                new[] { typeof(bool), typeof(string) },
-                null);
-            if (saveGeneric != null && saveGeneric.IsGenericMethodDefinition)
-                _saveBool = saveGeneric.MakeGenericMethod(typeof(bool));
-
-            return _loadBool != null && _saveBool != null;
+            catch (Exception e) { WinterMPPlugin.Log.LogWarning("PermadeathSettings: host observation failed: " + e.Message); }
         }
     }
 }

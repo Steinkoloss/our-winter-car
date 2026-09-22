@@ -97,7 +97,7 @@ namespace WinterMP.Net.Tests
         {
             var state = new VehicleDamage
             {
-                VehicleId = 1234, OwnerPlayerId = 2, Sequence = ushort.MaxValue,
+                VehicleId = 1234, OwnerPlayerId = VehicleDamageReplica.HostPlayerId, Sequence = ushort.MaxValue,
                 KnownPartsMask = VehicleDamage.ConcretePartsMask,
                 DamageMask = broken ? VehicleDamage.Block : 0,
             };

@@ -34,14 +34,20 @@ namespace WinterMP.Core.Sync
         {
             var c = SyncCatalog.ReplacementParts;
             if (c == null || _replacementFactories.Count == c.Factories.Count) return;
+            var names = new HashSet<string>();
+            foreach (var rule in c.Factories)
+                if (!_replacementFactories.ContainsKey(rule.Identity.FactoryId)) names.Add(rule.Fsm);
             foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
-                if (fsm == null || fsm.FsmName != c["factoryFsm"] || !fsm.Fsm.Initialized) continue;
-                string path = ScenePath.Of(fsm.transform);
+                if (fsm == null || !fsm.Fsm.Initialized) continue;
+                string fsmName = fsm.FsmName;
+                if (!names.Contains(fsmName)) continue;
+                string? path = null;
                 foreach (var rule in c.Factories)
                 {
-                    if (rule.Path != path || _replacementFactories.ContainsKey(rule.Identity.FactoryId)) continue;
+                    if (rule.Fsm != fsmName || _replacementFactories.ContainsKey(rule.Identity.FactoryId)
+                        || rule.Path != (path ?? (path = ScenePath.Of(fsm.transform)))) continue;
                     var factory = new ReplacementFactory { Rule = rule, Fsm = fsm };
                     _replacementFactories.Add(rule.Identity.FactoryId, factory);
                     try
@@ -73,20 +79,27 @@ namespace WinterMP.Core.Sync
 
         private static FsmState ValidateReplacementOutput(ReplacementFactory factory, ReplacementPartsData c, bool fresh)
         {
+            bool direct = factory.Rule.BagOutput || factory.Rule.SpawnPointVariable != null;
             var types = new List<string>();
+            var disabled = new List<int>();
             if (fresh) types.Add("IntAdd");
             types.Add("CreateObject");
-            if (fresh) types.Add("SetFsmFloat");
-            foreach (var reference in factory.Rule.References) types.Add("SetFsmGameObject");
+            if (fresh && !direct) types.Add("SetFsmFloat");
+            foreach (var reference in factory.Rule.References)
+            {
+                if (!reference.Enabled) disabled.Add(types.Count);
+                types.Add("SetFsmGameObject");
+            }
+            if (fresh && direct) types.Add("SetVelocity");
             if (fresh) { types.Add("ConvertIntToString"); types.Add("BuildStringFast"); }
             types.Add("SetName");
-            var state = PackageStateActions(factory.Fsm, c[fresh ? "createState" : "loadCreateState"], types.ToArray());
+            var state = PackageActionLayout(factory.Fsm, c[fresh ? "createState" : "loadCreateState"], types.ToArray(), disabled);
             var create = state.Actions[fresh ? 1 : 0];
             if (PackageField<FsmGameObject>(create, "gameObject")?.Name != c["prefabVariable"]
                 || PackageField<FsmGameObject>(create, "storeObject")?.Name != c["outputVariable"]
                 || PackageField<FsmString>(state.Actions[state.Actions.Length - 1], "name")?.Name != c["idVariable"])
                 throw new InvalidOperationException("Replacement output identity changed.");
-            int index = fresh ? 3 : 1;
+            int index = fresh ? (direct ? 2 : 3) : 1;
             foreach (var reference in factory.Rule.References)
             {
                 var action = state.Actions[index++];
@@ -95,8 +108,21 @@ namespace WinterMP.Core.Sync
                     || PackageField<FsmString>(action, "variableName")?.Value != reference.Target
                     || PackageField<FsmGameObject>(action, "setValue")?.Name != reference.Source
                     || factory.Fsm.FsmVariables.FindFsmGameObject(reference.Source) == null
-                    || factory.TemplateData.FsmVariables.FindFsmGameObject(reference.Target) == null)
+                    || reference.Enabled && factory.TemplateData.FsmVariables.FindFsmGameObject(reference.Target) == null)
                     throw new InvalidOperationException("Replacement reference changed.");
+            }
+            if (fresh && direct)
+            {
+                string? spawnPoint = factory.Rule.SpawnPointVariable ?? SyncCatalog.ShoppingBags?["spillSpawnPointVariable"];
+                var velocity = state.Actions[index];
+                if (spawnPoint == null || PackageField<FsmGameObject>(create, "spawnPoint")?.Name != spawnPoint
+                    || PackageField<FsmGameObject>(create, "spawnPoint")?.UseVariable != true
+                    || (factory.Rule.SpawnPointVariable != null && factory.Fsm.FsmVariables.FindFsmGameObject(spawnPoint) == null)
+                    || !FitTargetVariable(PackageField<FsmOwnerDefault>(velocity, "gameObject"), c["outputVariable"]))
+                    throw new InvalidOperationException("Replacement direct spawn target changed.");
+                foreach (var action in state.Actions) RequireFitOneShot(action);
+                if (!HasReplacementTransition(state, "FINISHED", c["factoryIdleState"]) || state.Transitions.Length != 1)
+                    throw new InvalidOperationException("Replacement direct output completion changed.");
             }
             return state;
         }
@@ -110,7 +136,13 @@ namespace WinterMP.Core.Sync
                 throw new InvalidOperationException("Replacement variables changed.");
             foreach (string name in factory.Rule.Scalars)
                 if (vars.FindFsmFloat(name) == null) throw new InvalidOperationException("Missing replacement scalar: " + name);
-            var init = PackageStateActions(data, c["itemInitState"], factory.Rule.InitActions);
+            if (factory.Rule.CamProfileVariable != null
+                && !PartCamshaftPolicy.ValidProfile(vars.FindFsmString(factory.Rule.CamProfileVariable)?.Value))
+                throw new InvalidOperationException("Missing or invalid replacement cam profile.");
+            // Prefab Data has not received Unity Awake. Decode its FSM as package
+            // templates do; native state entry belongs to the spawned instance.
+            if (!data.Fsm.Initialized) data.Fsm.Init(data);
+            var init = PackageActionLayout(data, c["itemInitState"], factory.Rule.InitActions, factory.Rule.DisabledInitActions);
             var status = PackageStateActions(data, c["itemStatusState"], factory.Rule.StatusActions);
             foreach (var action in init.Actions)
                 if (Array.IndexOf(new[] { "GetChild", "RandomFloat", "GetOwner", "GetName", "BuildStringFast", "Exists" }, action.GetType().Name) < 0)

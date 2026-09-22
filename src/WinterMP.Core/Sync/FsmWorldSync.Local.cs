@@ -327,13 +327,16 @@ namespace WinterMP.Core.Sync
 
         private void OnControlStateEntered(uint netId, string stateName)
         {
-            if (_bridge.ApplyingRemote) return;
-
             if (!_controls.TryGetValue(netId, out var control)) return;
-            control.LastSyncedState = stateName;
+            control.Payment?.Enter(SessionManager.Instance?.IsHost != true);
+            if (_firewoodBuyers.TryGetValue(netId, out var buyer)) buyer.CollectedLocally();
+            if (_bridge.ApplyingRemote) return;
+            if (control.Payment == null) control.LastSyncedState = stateName;
 
             var session = SessionManager.Instance;
             if (session == null || session.PlayerCount == 0) return;
+
+            if (_vehicles.OnLocalParkingBrake(control.Fsm)) return;
 
             if (control.ScalarFloat != null)
             {

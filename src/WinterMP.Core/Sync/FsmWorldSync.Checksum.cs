@@ -37,6 +37,7 @@ namespace WinterMP.Core.Sync
                 if (state != null) crc = WinterMP.Net.Sync.BoltStatePolicy.MixChecksum(crc, state);
             }
 
+            foreach (var valve in BuildValveStates()) crc = ValveAdjustmentPolicy.MixChecksum(crc, valve);
             return crc;
         }
 
@@ -47,6 +48,7 @@ namespace WinterMP.Core.Sync
             foreach (uint id in ids)
             {
                 if (!entries.TryGetValue(id, out var entry)) continue;
+                if (entry is SyncedControl brake && VehicleWorldSync.IsParkingBrakeControl(brake.Fsm)) continue;
                 if (entry is SyncedControl control && control.ScalarFloat != null)
                 {
                     float rotation = control.ScalarFloat.Value;
@@ -79,7 +81,7 @@ namespace WinterMP.Core.Sync
                 return ignition.LastSyncedState ?? TryReadActiveSyncedState(ignition.Fsm, ignition.SyncedStates);
             if (_controls.TryGetValue(netId, out var control))
             {
-                if (control.ScalarFloat != null) return null;
+                if (control.ScalarFloat != null || VehicleWorldSync.IsParkingBrakeControl(control.Fsm)) return null;
                 return control.LastSyncedState ?? TryReadActiveSyncedState(control.Fsm, control.SyncedStates);
             }
             if (_starters.TryGetValue(netId, out var starter))

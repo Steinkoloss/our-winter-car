@@ -20,6 +20,8 @@ namespace WinterMP.Core.Session
         public byte MoveState;
         public ushort LastTransformSequence;
         public float LastTransformTime;
+        public bool HasSweat;
+        public float Sweat;
         public ushort LastNeedsSequence;
         public bool HasNeedsReport;
 

@@ -16,6 +16,12 @@ namespace WinterMP.Net.Sync
         private readonly Dictionary<T, string> _paths = new Dictionary<T, string>();
         private readonly Dictionary<T, string> _segments = new Dictionary<T, string>();
 
+        private struct SiblingGroup
+        {
+            internal T First;
+            internal int Count;
+        }
+
         public ScenePathCache(Func<T, T?> parent, Func<T, string> name,
             Func<T, int> childCount, Func<T, int, T> child)
         {
@@ -89,23 +95,23 @@ namespace WinterMP.Net.Sync
             // Enumerate siblings once for the whole group, rather than once per
             // child, ancestor, catalog rule and FSM sharing the same transform.
             int count = _childCount(parent);
-            var totals = new Dictionary<string, int>(StringComparer.Ordinal);
-            var first = new Dictionary<string, T>(StringComparer.Ordinal);
+            var groups = new Dictionary<string, SiblingGroup>(StringComparer.Ordinal);
             for (int i = 0; i < count; i++)
             {
                 var child = _child(parent, i);
                 string name = _name(child);
-                if (!totals.TryGetValue(name, out int ordinal))
+                if (!groups.TryGetValue(name, out var group))
                 {
-                    first[name] = child;
+                    group.First = child;
                     _segments[child] = name;
                 }
                 else
                 {
-                    if (ordinal == 1) _segments[first[name]] = name + "[0]";
-                    _segments[child] = name + "[" + ordinal + "]";
+                    if (group.Count == 1) _segments[group.First] = name + "[0]";
+                    _segments[child] = name + "[" + group.Count + "]";
                 }
-                totals[name] = ordinal + 1;
+                group.Count++;
+                groups[name] = group;
             }
         }
     }

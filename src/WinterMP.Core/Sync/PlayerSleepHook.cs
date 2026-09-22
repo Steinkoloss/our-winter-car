@@ -98,6 +98,8 @@ namespace WinterMP.Core.Sync
 
             if (!hookedAny) return;
 
+            FsmHook.OnStateEnter(fsm, "State 3", () => SleepConsentManager.Instance?.OnHostSleepCancelled(fsm));
+
             _hooked.Add(fsm);
             WinterMPPlugin.Log.LogInfo(
                 "SleepConsent: hooked Activate sleep FSM at " + path + ".");

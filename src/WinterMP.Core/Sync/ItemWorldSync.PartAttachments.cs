@@ -167,7 +167,10 @@ namespace WinterMP.Core.Sync
                 {
                     obj.transform.localPosition = state.LocalPosition.ToUnity();
                     obj.transform.localRotation = state.LocalRotation.ToUnity();
+                    ApplyPartHandScrewPose(binding);
+                    ApplyPartDistributorTimingPose(binding);
                 }
+                ApplyPartBeltVisual(binding, state, parent);
                 // Native discovery only registers bolts after their first fitting.
                 // Registering a loose copy's inactive bolts would add guest-only IDs.
                 if (!loose && !binding.BoltsPrepared)
@@ -177,6 +180,9 @@ namespace WinterMP.Core.Sync
                 }
                 SetReplacementBoltGroups(binding, !loose);
                 _bridge.SetReplacementBolts(binding.Data, !loose, attachmentChanged);
+                binding.AppliedRevision = state.Revision;
+                binding.HasAppliedState = true;
+                UpdateReplicaToolScrew(binding);
                 SyncEventLog.Record("replacement-attachment", state.NativeId + (loose ? " loose" : " fitted " + state.ParentId.ToString("X8")));
                 return true;
             }
@@ -185,6 +191,9 @@ namespace WinterMP.Core.Sync
 
         private void HideReplacement(ReplacementBinding binding, uint id)
         {
+            binding.AppliedRevision = 0;
+            binding.HasAppliedState = false;
+            DestroyPartBeltView(binding);
             RemoveNativeItemMotion(id);
             binding.Data.transform.SetParent(null, true);
             binding.Data.gameObject.SetActive(false);

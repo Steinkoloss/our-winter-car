@@ -271,11 +271,9 @@ namespace WinterMP.Net.Messages
         public const byte FlagHazard = 16;
 
         /// <summary>
-        /// Sequence value marking a join/resync snapshot. Receivers apply it without
-        /// the live-stream dedup, so a fresh guest (whose LastVehicleStateSequence is
-        /// still 0) does not discard the Sequence-0 snapshot and miss a parked car's
-        /// engine/electrics state. The live stream never emits this value as a real
-        /// pose (at worst one un-deduped packet after a full ushort wrap, ~4.5 h).
+        /// Host-only join/resync sentinel. It never changes a sender's live sequence
+        /// baseline and cannot replace a local or guest-owned simulator. Live counters
+        /// skip this value; normal sequence zero remains valid after wrap or admission.
         /// </summary>
         public const ushort SnapshotSequence = ushort.MaxValue;
 
@@ -293,6 +291,27 @@ namespace WinterMP.Net.Messages
         /// <summary>Selected gear + 1 (0 = reverse, 1 = neutral, 2.. = forward); appended v63.</summary>
         public byte Gear;
 
+        /// <summary>Audited native drivetrain torque for host heating; appended v168.</summary>
+        public bool TorqueAvailable;
+        public float EngineTorque;
+        /// <summary>Actual movement magnitude for cooling, separate from wheel speed; appended v169.</summary>
+        public bool MovementSpeedAvailable;
+        public ushort MovementSpeedTenthsKmh;
+        /// <summary>Signed native differential angular speed, distinct from road speed; appended v202.</summary>
+        public bool DifferentialSpeedAvailable;
+        public float DifferentialSpeed;
+        /// <summary>Exact signed native coolant for simulator handoff; appended v213.</summary>
+        public bool HandoffTemperatureAvailable;
+        public float HandoffTemperature;
+        public bool ValidHandoffTemperature => !float.IsNaN(HandoffTemperature) && !float.IsInfinity(HandoffTemperature)
+            && HandoffTemperature >= -100 && HandoffTemperature <= 300
+            && (HandoffTemperatureAvailable || HandoffTemperature == 0);
+        public bool ValidDifferentialSpeed => !float.IsNaN(DifferentialSpeed) && !float.IsInfinity(DifferentialSpeed)
+            && (DifferentialSpeedAvailable || DifferentialSpeed == 0);
+        public bool ValidMovementSpeed => MovementSpeedAvailable || MovementSpeedTenthsKmh == 0;
+        public bool ValidTorque => !float.IsNaN(EngineTorque) && !float.IsInfinity(EngineTorque)
+            && (TorqueAvailable || EngineTorque == 0);
+
         public bool EngineOn => (Flags & FlagEngineOn) != 0;
         public bool AccOn => (Flags & FlagAccOn) != 0;
         public bool BlinkerLeft => (Flags & FlagBlinkerLeft) != 0;
@@ -303,6 +322,10 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
+            if (!ValidTorque) throw new ProtocolException("Invalid vehicle torque.");
+            if (!ValidMovementSpeed) throw new ProtocolException("Invalid vehicle movement speed.");
+            if (!ValidDifferentialSpeed) throw new ProtocolException("Invalid vehicle differential speed.");
+            if (!ValidHandoffTemperature) throw new ProtocolException("Invalid vehicle handoff temperature.");
             writer.WriteUInt32(VehicleId);
             writer.WriteByte(OwnerPlayerId);
             writer.WriteUInt16(Sequence);
@@ -312,6 +335,14 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(FuelLevel);
             writer.WriteByte(CoolantTemp);
             writer.WriteByte(Gear);
+            writer.WriteByte(TorqueAvailable ? (byte)1 : (byte)0);
+            writer.WriteSingle(EngineTorque);
+            writer.WriteByte(MovementSpeedAvailable ? (byte)1 : (byte)0);
+            writer.WriteUInt16(MovementSpeedTenthsKmh);
+            writer.WriteByte(DifferentialSpeedAvailable ? (byte)1 : (byte)0);
+            writer.WriteSingle(DifferentialSpeed);
+            writer.WriteByte(HandoffTemperatureAvailable ? (byte)1 : (byte)0);
+            writer.WriteSingle(HandoffTemperature);
         }
 
         public void Read(NetReader reader)
@@ -325,12 +356,32 @@ namespace WinterMP.Net.Messages
             FuelLevel = reader.ReadByte();
             CoolantTemp = reader.ReadByte();
             Gear = reader.ReadByte();
+            byte torqueAvailable = reader.ReadByte();
+            if (torqueAvailable > 1) throw new ProtocolException("Invalid vehicle torque availability.");
+            TorqueAvailable = torqueAvailable == 1;
+            EngineTorque = reader.ReadSingle();
+            byte speedAvailable = reader.ReadByte();
+            if (speedAvailable > 1) throw new ProtocolException("Invalid movement speed availability.");
+            MovementSpeedAvailable = speedAvailable == 1;
+            MovementSpeedTenthsKmh = reader.ReadUInt16();
+            byte differentialAvailable = reader.ReadByte();
+            if (differentialAvailable > 1) throw new ProtocolException("Invalid differential speed availability.");
+            DifferentialSpeedAvailable = differentialAvailable == 1;
+            DifferentialSpeed = reader.ReadSingle();
+            byte temperatureAvailable = reader.ReadByte();
+            if (temperatureAvailable > 1) throw new ProtocolException("Invalid handoff temperature availability.");
+            HandoffTemperatureAvailable = temperatureAvailable == 1;
+            HandoffTemperature = reader.ReadSingle();
+            if (!ValidTorque) throw new ProtocolException("Invalid vehicle torque.");
+            if (!ValidMovementSpeed) throw new ProtocolException("Invalid vehicle movement speed.");
+            if (!ValidDifferentialSpeed) throw new ProtocolException("Invalid vehicle differential speed.");
+            if (!ValidHandoffTemperature) throw new ProtocolException("Invalid vehicle handoff temperature.");
         }
     }
 
     /// <summary>
-    /// Window frost, interior fogging, and heater knob settings, streamed at ~2 Hz
-    /// by whoever is near or driving the vehicle. Receivers write the values into
+    /// Window condensation, exterior ice, and heater settings, streamed at ~2 Hz
+    /// by the established vehicle owner (host fallback when unowned). Receivers write into
     /// the car's GlassFrosting / Freezing / HeaterUnit FSMs (and dashboard knob
     /// variables for the visible dial positions).
     /// </summary>
@@ -338,8 +389,10 @@ namespace WinterMP.Net.Messages
     {
         public const byte FlagWindowHeater = 1;
         public const byte FlagGlassDefrosting = 2;
-        /// <summary>Someone is in the cabin (drives interior sweat/fog sim).</summary>
+        /// <summary>Shared cabin occupancy; never writes native local entry or grants driving authority.</summary>
         public const byte FlagPlayerIn = 4;
+        /// <summary>v190: CabinTemp has a finite native source; absent values must not supply heat.</summary>
+        public const byte FlagCabinTemperature = 8;
 
         /// <summary>Sequence marking a join/resync snapshot; receivers apply it without dedup. See VehicleState.SnapshotSequence.</summary>
         public const ushort SnapshotSequence = ushort.MaxValue;
@@ -356,14 +409,52 @@ namespace WinterMP.Net.Messages
         public byte HeaterTemp;
         public byte HeaterBlower;
         public byte HeaterDirection;
-        /// <summary>Interior window fog / condensation, 0 = clear, 255 = fully fogged.</summary>
+        /// <summary>Retired v187: local capture sends 0; receivers ignore this byte.
+        /// Native condensation uses Frost as _Color alpha, not white RGB tint or SweatRate.</summary>
         public byte Fog;
         /// <summary>Cabin air temperature, 0-255 maps to -40 to +40 °C.</summary>
         public byte CabinTemp;
-        /// <summary>Exterior window ice (Freezing.CutoffWindshield), 0 = clear, 255 = fully iced.
-        /// Wire v28: split out from <see cref="Frost"/> so parked cars stop force-frosting the
-        /// interior on observers.</summary>
+        public bool HasCabinTemperature => (Flags & FlagCabinTemperature) != 0;
+
+        public static bool TryQuantizeCabinTemperature(float celsius, out byte value)
+        {
+            value = 128;
+            if (float.IsNaN(celsius) || float.IsInfinity(celsius)) return false;
+            float unit = System.Math.Max(0f, System.Math.Min(1f, (celsius + 40f) / 80f));
+            value = (byte)System.Math.Round(unit * 255f);
+            return true;
+        }
+
+        public static float DequantizeCabinTemperature(byte value) => -40f + value / 255f * 80f;
+        /// <summary>Exterior windshield cutoff, 0 = iced, 255 = clear. Independent of interior Frost.</summary>
         public byte Ice;
+        // v184 keeps the original windshield byte and appends the other panes plus availability.
+        public byte IceSideLeft, IceSideRight, IceDoorLeft, IceDoorRight, IceRear;
+        public byte IceMask;
+        /// <summary>Exact normalized parking lever setting from the established simulator; appended v221.</summary>
+        public bool ParkingBrakeAvailable;
+        public float ParkingBrake;
+        public bool ValidParkingBrake => !float.IsNaN(ParkingBrake) && !float.IsInfinity(ParkingBrake)
+            && ParkingBrake >= 0 && ParkingBrake <= 1 && (ParkingBrakeAvailable || ParkingBrake == 0);
+        public const byte Windshield = 1, SideLeft = 2, SideRight = 4, DoorLeft = 8, DoorRight = 16, Rear = 32;
+        public const byte AllWindows = 63;
+        public bool ValidIce => (IceMask & ~AllWindows) == 0
+            && ((IceMask & Windshield) != 0 || Ice == 0)
+            && ((IceMask & SideLeft) != 0 || IceSideLeft == 0)
+            && ((IceMask & SideRight) != 0 || IceSideRight == 0)
+            && ((IceMask & DoorLeft) != 0 || IceDoorLeft == 0)
+            && ((IceMask & DoorRight) != 0 || IceDoorRight == 0)
+            && ((IceMask & Rear) != 0 || IceRear == 0);
+
+        public static bool TryQuantizeIce(float cutoff, out byte value)
+        {
+            value = 0;
+            if (float.IsNaN(cutoff) || float.IsInfinity(cutoff)) return false;
+            value = (byte)System.Math.Round(System.Math.Max(0f, System.Math.Min(1f, cutoff)) * 255f);
+            return true;
+        }
+
+        public static float DequantizeIce(byte value) => value / 255f;
 
         public bool WindowHeaterOn => (Flags & FlagWindowHeater) != 0;
         public bool GlassDefrosting => (Flags & FlagGlassDefrosting) != 0;
@@ -373,6 +464,8 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
+            if (!ValidIce) throw new ProtocolException("Invalid vehicle window ice.");
+            if (!ValidParkingBrake) throw new ProtocolException("Invalid vehicle parking brake.");
             writer.WriteUInt32(VehicleId);
             writer.WriteByte(OwnerPlayerId);
             writer.WriteUInt16(Sequence);
@@ -384,6 +477,10 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(Fog);
             writer.WriteByte(CabinTemp);
             writer.WriteByte(Ice);
+            writer.WriteByte(IceSideLeft); writer.WriteByte(IceSideRight);
+            writer.WriteByte(IceDoorLeft); writer.WriteByte(IceDoorRight);
+            writer.WriteByte(IceRear); writer.WriteByte(IceMask);
+            writer.WriteByte(ParkingBrakeAvailable ? (byte)1 : (byte)0); writer.WriteSingle(ParkingBrake);
         }
 
         public void Read(NetReader reader)
@@ -399,6 +496,14 @@ namespace WinterMP.Net.Messages
             Fog = reader.ReadByte();
             CabinTemp = reader.ReadByte();
             Ice = reader.ReadByte();
+            IceSideLeft = reader.ReadByte(); IceSideRight = reader.ReadByte();
+            IceDoorLeft = reader.ReadByte(); IceDoorRight = reader.ReadByte();
+            IceRear = reader.ReadByte(); IceMask = reader.ReadByte();
+            byte parkingAvailable = reader.ReadByte();
+            if (parkingAvailable > 1) throw new ProtocolException("Invalid parking brake availability.");
+            ParkingBrakeAvailable = parkingAvailable == 1; ParkingBrake = reader.ReadSingle();
+            if (!ValidIce) throw new ProtocolException("Invalid vehicle window ice.");
+            if (!ValidParkingBrake) throw new ProtocolException("Invalid vehicle parking brake.");
         }
     }
 

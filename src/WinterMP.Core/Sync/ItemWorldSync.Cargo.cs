@@ -583,6 +583,7 @@ namespace WinterMP.Core.Sync
         private bool IsPlayerHeldItem(SyncedItem item)
         {
             if (item.Body == null) return false;
+            if (_atf.ContainsKey(item.Id) && IsAtfHeldLocally(item.Id)) return true;
 
             _bridge.FindLocalPlayer();
             return _bridge.LocalPlayer != null && item.Body.transform.IsChildOf(_bridge.LocalPlayer);

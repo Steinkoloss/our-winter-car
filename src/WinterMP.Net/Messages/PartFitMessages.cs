@@ -1,6 +1,10 @@
 namespace WinterMP.Net.Messages
 {
-    public enum PartFitOperation : byte { Install = 0, Remove = 1, RotateIncrease = 2, RotateDecrease = 3 }
+    public enum PartFitOperation : byte
+    {
+        Install = 0, Remove = 1, RotateIncrease = 2, RotateDecrease = 3, HandTighten = 4, HandLoosen = 5,
+        ToolTighten = 6, ToolLoosen = 7,
+    }
 
     public enum PartFitStatus : byte
     {

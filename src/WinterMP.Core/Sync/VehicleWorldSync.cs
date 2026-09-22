@@ -32,8 +32,6 @@ namespace WinterMP.Core.Sync
         /// <summary>Cabin/glass temp can read well below zero on a cold parked car — clamping
         /// it to [0, max] like the heater-knob settings would floor every unheated car at 0°C
         /// on observers (same divergence class as the pre-v28 frost/ice merge bug).</summary>
-        private const float CabinTempMinC = -40f;
-        private const float CabinTempMaxC = 40f;
         private const float CoolantTempMaxC = 120f;
         private const float ClimateProbeIntervalSeconds = 3f;
         /// <summary>Keep pushing frost/defrost visuals after the last climate packet.</summary>
@@ -68,7 +66,7 @@ namespace WinterMP.Core.Sync
                 if (item.RemoteOwner != WorldSyncIds.NoOwner)
                     RollRemoteWheels(item);
 
-                if (now >= item.RemoteClimateUntil) continue;
+                if (now >= item.RemoteClimateUntil || !CanPresentRemoteClimate(item)) continue;
                 UpdateRemoteClimatePresentation(item, now);
             }
         }
@@ -88,6 +86,15 @@ namespace WinterMP.Core.Sync
 
         internal IEnumerable<IMessage> BuildVehicleStateMessages(SyncedItem item, byte ownerPlayerId)
         {
+            var wheelHealth = BuildVehicleWheelHealthState(item);
+            if (wheelHealth != null) yield return wheelHealth;
+
+            var drivetrainWear = BuildVehicleDrivetrainWearState(item);
+            if (drivetrainWear != null) yield return drivetrainWear;
+
+            var coolant = BuildVehicleCoolantState(item);
+            if (coolant != null) yield return coolant;
+
             var state = TryBuildVehicleStateMessage(item, ownerPlayerId);
             if (state != null) yield return state;
 
@@ -105,8 +112,8 @@ namespace WinterMP.Core.Sync
             if (condition != null) yield return condition;
         }
 
-        // Joins and targeted repairs need the same complete state, including healthy
-        // parts: a zero damage mask must correct breakage inherited from a guest's save.
+        // Joins and targeted repairs include healthy parts so the accepted guest
+        // view clears old failures without consulting local saved engine data.
         internal IEnumerable<IMessage> BuildJoinVehicleSnapshots()
         {
             foreach (var message in BuildVehicleResyncMessages())
@@ -128,11 +135,10 @@ namespace WinterMP.Core.Sync
             if (ReadBlinkerRight(item)) flags |= VehicleState.FlagBlinkerRight;
             if (ReadHazardOn(item)) flags |= VehicleState.FlagHazard;
 
-            // Read fitted parts on both roles: a bare Live|Applied union retains
-            // stale failures after repair. The damage reader reconciles that fallback
-            // against current Wear without advancing sequences or send baselines.
+            // Damage follows host authority; condition compares available native
+            // values without advancing sequences or publication baselines.
             var damage = TryReadDamageState(item, WorldSyncIds.NoOwner);
-            var condition = TryReadConditionState(item);
+            var condition = TryReadConditionForChecksum(item);
             // RPM, climate and continuous part wear change between samples and caused
             // perpetual false resyncs. Their existing streams carry those values.
             return VehicleChecksum.Fold(crc, item.Id, flags, ReadFuelLevelByte(item),
@@ -142,6 +148,17 @@ namespace WinterMP.Core.Sync
         private VehicleState? TryBuildVehicleStateMessage(SyncedItem item, byte ownerPlayerId)
         {
             if (!item.IsVehicle || item.Body == null) return null;
+
+            if (!item.LocallyOwned && item.RemoteOwner != WorldSyncIds.NoOwner)
+            {
+                var accepted = item.AcceptedVehicleState;
+                if (accepted == null || accepted.OwnerPlayerId != item.RemoteOwner
+                    || Time.unscaledTime >= item.RemoteEngineUntil) return null;
+                var snapshot = VehicleStateStreamPolicy.Copy(accepted);
+                snapshot.OwnerPlayerId = ownerPlayerId;
+                snapshot.Sequence = VehicleState.SnapshotSequence;
+                return snapshot;
+            }
 
             EnsureVehicleSystemsProbe(item);
             if (!item.SystemsReady) return null;
@@ -158,20 +175,24 @@ namespace WinterMP.Core.Sync
             if (ReadBlinkerRight(item)) flags |= VehicleState.FlagBlinkerRight;
             if (ReadHazardOn(item)) flags |= VehicleState.FlagHazard;
 
-            return new VehicleState
+            var state = new VehicleState
             {
                 VehicleId = item.Id,
                 OwnerPlayerId = ownerPlayerId,
-                // Snapshot/resync path (the live stream sets its own Sequence). Without
-                // this the message defaults to Sequence 0 and the receiver's dedup drops
-                // it against a fresh guest's LastVehicleStateSequence (also 0).
+                // Snapshots do not advance any driver's live sequence baseline.
                 Sequence = VehicleState.SnapshotSequence,
                 Flags = flags,
                 Rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue),
                 SpeedTenthsKmh = (ushort)Mathf.Clamp(speedKmh * 10f, 0f, ushort.MaxValue),
                 FuelLevel = ReadFuelLevelByte(item),
                 CoolantTemp = ReadCoolantTempByte(item),
+                Gear = ReadGearByte(item),
             };
+            CaptureHandoffTemperature(item, state);
+            CaptureHeatTelemetry(item, state);
+            CaptureSpeedTelemetry(item, state);
+            CaptureDifferentialSpeedTelemetry(item, state);
+            return state;
         }
     }
 }

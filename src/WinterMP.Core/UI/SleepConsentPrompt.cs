@@ -38,6 +38,8 @@ namespace WinterMP.Core.UI
                 _request = null;
         }
 
+        internal void DismissAll() { _request = null; }
+
         public bool IsBlockingInput => _request != null;
 
         private void OnGUI()

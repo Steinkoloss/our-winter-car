@@ -26,6 +26,7 @@ namespace WinterMP.Core.Sync
         internal NativePartIdentity PartIdentities { get; } = new NativePartIdentity();
 
         public void BindItems(ItemWorldSync items) => _items = items;
+        public bool CylinderHeadReady(PlayMakerFSM data) => _items.CylinderHeadReady(data);
         public bool IsReplacementPart(PlayMakerFSM data) => _items.IsReplacementPart(data);
         private FsmWorldSync _fsms = null!;
         public void BindFsms(FsmWorldSync fsms) => _fsms = fsms;

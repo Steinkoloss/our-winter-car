@@ -66,7 +66,7 @@ namespace WinterMP.Core.Session
 
             try
             {
-                HandleMessage(peer, message);
+                HandleMessage(peer, message, channel);
             }
             catch (Exception e)
             {
@@ -77,10 +77,13 @@ namespace WinterMP.Core.Session
 
         // ---------------------------------------------------------------- message handling
 
-        private void HandleMessage(PeerId peer, IMessage message)
+        private void HandleMessage(PeerId peer, IMessage message, Channel channel)
         {
             switch (message)
             {
+                case SessionSettings settings when !IsHost:
+                    SetPermanentDeathEnabled((settings.Flags & SessionFlags.PermadeathEnabled) != 0);
+                    break;
                 case HandshakeRequest request when IsHost:
                     HandleHandshakeRequest(peer, request);
                     break;
@@ -226,8 +229,8 @@ namespace WinterMP.Core.Session
                     if (TryGetPlayerId(peer, out byte respawnerId))
                     {
                         respawn.PlayerId = respawnerId;
-                        Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn);
-                        Broadcast(respawn, Channel.ReliableOrdered, except: peer);
+                        if (Sync.DeathSyncManager.Instance?.OnRemoteRespawn(respawn) == true)
+                            Broadcast(respawn, Channel.ReliableOrdered, except: peer);
                     }
                     break;
 
@@ -289,6 +292,43 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteBoltState(boltState);
                     break;
 
+                case FirewoodLoadState woodLoad when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnFirewoodLoad(woodLoad);
+                    break;
+                case FirewoodUnloadIntent unload when IsHost:
+                    if (IsPeerPlayer(peer, unload.PlayerId)) Sync.WorldSyncManager.Instance?.OnFirewoodUnload(unload);
+                    break;
+                case FirewoodBuyerState buyerState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnFirewoodBuyer(buyerState);
+                    break;
+                case MooseCorpseState corpse when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnMooseCorpse(corpse);
+                    break;
+                case MooseChopIntent chop when IsHost:
+                    if (IsPeerPlayer(peer, chop.PlayerId)) Sync.WorldSyncManager.Instance?.OnMooseChop(chop);
+                    break;
+                case MooseMeatState meatState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnMeatState(meatState);
+                    break;
+                case AtfBottleState atfBottle when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnAtfBottleState(atfBottle);
+                    break;
+                case AtfFillerState atfFiller when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnAtfFillerState(atfFiller);
+                    break;
+                case AtfRefillIntent atfIntent when IsHost:
+                    if (IsPeerPlayer(peer, atfIntent.PlayerId)) Sync.WorldSyncManager.Instance?.OnAtfIntent(atfIntent);
+                    break;
+                case MilkConditionState milkState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnMilkCondition(milkState);
+                    break;
+                case CylinderHeadState headState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnCylinderHeadState(headState);
+                    break;
+                case ValveAdjustmentState valveState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnRemoteValveState(valveState);
+                    break;
+
                 case PartState partState when IsHost:
                     if (TryGetPlayerId(peer, out byte partPlayerId))
                         Sync.WorldSyncManager.Instance?.OnHostGuestPartState(partState, partPlayerId);
@@ -313,20 +353,26 @@ namespace WinterMP.Core.Session
                     break;
 
                 case ItemTransform itemTransform when IsHost:
+                {
                     if (!IsPeerPlayer(peer, itemTransform.OwnerPlayerId))
                     {
                         WinterMPPlugin.Log.LogWarning(
                             $"Dropped ItemTransform claiming player {itemTransform.OwnerPlayerId} from {peer}.");
                         break;
                     }
-                    if (Sync.WorldSyncManager.Instance?.OnHostGuestItemTransform(itemTransform, itemTransform.OwnerPlayerId) == true)
+                    var itemWorld = Sync.WorldSyncManager.Instance;
+                    if (itemWorld != null && itemWorld.OnHostGuestItemTransform(itemTransform, itemTransform.OwnerPlayerId, out var releaseConfirmation))
+                    {
                         Broadcast(itemTransform,
                             ItemTransformPolicy.SelectSendChannel(itemTransform.IsFinal, itemTransform.IsVehicle),
                             except: peer);
+                        if (releaseConfirmation != null) SendTo(peer, releaseConfirmation, Channel.ReliableOrdered);
+                    }
                     else
                         WinterMPPlugin.Log.LogWarning(
                             $"Dropped unauthorized ItemTransform {itemTransform.ItemId:X8} from player {itemTransform.OwnerPlayerId}.");
                     break;
+                }
 
                 case ItemTransform itemTransform:
                     Sync.WorldSyncManager.Instance?.OnRemoteItemTransform(itemTransform);
@@ -354,7 +400,7 @@ namespace WinterMP.Core.Session
                         break;
                     }
                     if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleState(vehicleState, vehicleState.OwnerPlayerId) == true)
-                        Broadcast(vehicleState, Channel.UnreliableSequenced, except: peer);
+                        Broadcast(vehicleState, channel, except: peer);
                     else
                         WinterMPPlugin.Log.LogWarning($"Dropped unauthorized VehicleState {vehicleState.VehicleId:X8}.");
                     break;
@@ -364,16 +410,7 @@ namespace WinterMP.Core.Session
                     break;
 
                 case VehicleDamage vehicleDamage when IsHost:
-                    if (!IsPeerPlayer(peer, vehicleDamage.OwnerPlayerId))
-                    {
-                        WinterMPPlugin.Log.LogWarning(
-                            $"Dropped VehicleDamage claiming player {vehicleDamage.OwnerPlayerId} from {peer}.");
-                        break;
-                    }
-                    if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleDamage(vehicleDamage, vehicleDamage.OwnerPlayerId) == true)
-                        Broadcast(vehicleDamage, Channel.ReliableOrdered, except: peer);
-                    else
-                        WinterMPPlugin.Log.LogWarning($"Dropped unauthorized VehicleDamage {vehicleDamage.VehicleId:X8}.");
+                    WinterMPPlugin.Log.LogWarning($"Dropped guest VehicleDamage {vehicleDamage.VehicleId:X8}; engine damage belongs to the host.");
                     break;
 
                 case VehicleDamage vehicleDamage:
@@ -397,6 +434,10 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteVehicleCondition(vehicleCondition);
                     break;
 
+                case VehicleConditionReleaseAck conditionAck when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVehicleConditionReleaseAck(conditionAck);
+                    break;
+
                 case VehicleClimate vehicleClimate when IsHost:
                     if (!IsPeerPlayer(peer, vehicleClimate.OwnerPlayerId))
                     {
@@ -405,7 +446,7 @@ namespace WinterMP.Core.Session
                         break;
                     }
                     if (Sync.WorldSyncManager.Instance?.OnHostGuestVehicleClimate(vehicleClimate, vehicleClimate.OwnerPlayerId) == true)
-                        Broadcast(vehicleClimate, Channel.UnreliableSequenced, except: peer);
+                        Broadcast(vehicleClimate, channel, except: peer);
                     else
                         WinterMPPlugin.Log.LogWarning($"Dropped unauthorized VehicleClimate {vehicleClimate.VehicleId:X8}.");
                     break;
@@ -509,6 +550,12 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteVenttiPropertyState(propertyState);
                     break;
 
+                case UtilityPaymentIntent utilityPayment when IsHost:
+                    if (IsPeerPlayer(peer, utilityPayment.PlayerId)) Sync.WorldSyncManager.Instance?.OnUtilityPayment(utilityPayment);
+                    break;
+                case UtilityPaymentResult utilityReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnUtilityPaymentResult(utilityReceipt);
+                    break;
                 case UtilityBillState utilityBillState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteUtilityBillState(utilityBillState);
                     break;
@@ -529,6 +576,28 @@ namespace WinterMP.Core.Session
                 case BagOpenReceipt bagReceipt when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnBagOpenReceipt(bagReceipt);
                     break;
+                case MotorOilFillerState filler when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnMotorOilFillerState(filler); break;
+                case MotorOilRefillIntent oilIntent when IsHost:
+                    if(IsPeerPlayer(peer,oilIntent.PlayerId))Sync.WorldSyncManager.Instance?.OnMotorOilRefillIntent(oilIntent); break;
+                case MotorOilBottleState motorOil when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnMotorOilState(motorOil); break;
+                case AdvertJobState adJob when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnAdvertJob(adJob); break;
+                case AdvertSheetState adSheet when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnAdvertSheet(adSheet); break;
+                case AdvertPhoneIntent phoneIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte phoneActor)) Sync.WorldSyncManager.Instance?.OnAdvertPhoneIntent(phoneIntent, phoneActor); break;
+                case AdvertPhoneResult phoneResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnAdvertPhoneResult(phoneResult); break;
+                case AdvertIntent adIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte advertActor)) Sync.WorldSyncManager.Instance?.OnAdvertIntent(adIntent, advertActor); break;
+                case BulbState bulbState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnBulbState(bulbState); break;
+                case SupplyItemState supplyState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnSupplyState(supplyState);
+                    break;
+
                 case PackageState packageState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnPackageState(packageState);
                     break;
@@ -553,6 +622,57 @@ namespace WinterMP.Core.Session
 
                 case ReplacementPartState replacementState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnReplacementPartState(replacementState);
+                    break;
+                case WiringState wiringState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnWiringState(wiringState);
+                    break;
+                case WiringInstallRequest wireRequest when IsHost:
+                    if (TryGetPlayerId(peer, out byte wireActor) && wireActor == wireRequest.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostWireInstall(wireRequest, wireActor);
+                    break;
+                case WiringInstallReceipt wireReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnWireInstallReceipt(wireReceipt);
+                    break;
+                case VehicleCoolantState coolantState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVehicleCoolantState(coolantState);
+                    break;
+                case HeaterState heaterState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnHeaterState(heaterState);
+                    break;
+                case GearboxState gearboxState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnGearboxState(gearboxState);
+                    break;
+                case VehicleDrivetrainWearState drivetrainWear when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVehicleDrivetrainWearState(drivetrainWear);
+                    break;
+                case VehicleWheelHealthState wheelHealth when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVehicleWheelHealthState(wheelHealth);
+                    break;
+                case EngineBlockState engineBlockState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnEngineBlockState(engineBlockState);
+                    break;
+                case BatteryState batteryState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnBatteryState(batteryState);
+                    break;
+                case WheelPunctureRequest puncture when IsHost:
+                    if (TryGetPlayerId(peer, out byte punctureActor) && punctureActor == puncture.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostWheelPuncture(puncture, punctureActor);
+                    break;
+                case GearboxWearRequest gearboxWear when IsHost:
+                    if (TryGetPlayerId(peer, out byte gearboxActor) && gearboxActor == gearboxWear.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostGearboxWear(gearboxWear, gearboxActor);
+                    break;
+                case GearboxOilUseRequest oilUse when IsHost:
+                    if (TryGetPlayerId(peer, out byte oilActor) && oilActor == oilUse.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostGearboxOilUse(oilUse, oilActor);
+                    break;
+                case StarterWearRequest starterWear when IsHost:
+                    if (TryGetPlayerId(peer, out byte wearActor) && wearActor == starterWear.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostStarterWear(starterWear, wearActor);
+                    break;
+                case StarterDrawRequest starterDraw when IsHost:
+                    if (TryGetPlayerId(peer, out byte starterActor) && starterActor == starterDraw.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHostStarterDraw(starterDraw, starterActor);
                     break;
                 case LottoTicketState ticketState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnLottoTicketState(ticketState);
@@ -683,10 +803,80 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnHostFleetariOrderIntent(fleetariOrderIntent);
                     break;
 
+                case FleaListingState fleaListings when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnFleaListingState(fleaListings);
+                    break;
+                case FleaListingResult fleaListingReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnFleaListingResult(fleaListingReceipt);
+                    break;
+                case FleaListingIntent fleaListingIntent when IsHost:
+                    if (IsPeerPlayer(peer, fleaListingIntent.PlayerId))
+                        Sync.WorldSyncManager.Instance?.OnFleaListingIntent(fleaListingIntent);
+                    break;
+                case FleaSaleResult fleaReceipt when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnFleaSaleResult(fleaReceipt);
+                    break;
+
                 case FleaSaleState fleaSaleState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteFleaSaleState(fleaSaleState);
                     break;
 
+                case TrainState trainState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnTrainState(trainState); break;
+                case CoffeeState coffeeState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnCoffeeState(coffeeState); break;
+                case CoffeeDrinkResult coffeeDrink when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnCoffeeDrink(coffeeDrink); break;
+                case CoffeeIntent coffeeIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte coffeeActor)) Sync.WorldSyncManager.Instance?.OnCoffeeIntent(coffeeIntent, coffeeActor);
+                    break;
+                case SausageState sausageState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnSausageState(sausageState); break;
+                case SausageOpenIntent sausageOpen when IsHost:
+                    if (TryGetPlayerId(peer, out byte sausageActor)) Sync.WorldSyncManager.Instance?.OnSausageOpen(sausageOpen, sausageActor);
+                    break;
+                case TractorTrailerState trailerState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnTractorTrailerState(trailerState); break;
+                case TractorTrailerIntent trailerIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte trailerActor)) Sync.WorldSyncManager.Instance?.OnTractorTrailerIntent(trailerIntent, trailerActor);
+                    break;
+                case TractorTrailerMotion trailerMotion:
+                    if (!IsHost) Sync.WorldSyncManager.Instance?.OnTractorTrailerMotion(trailerMotion, 0);
+                    else if (TryGetPlayerId(peer, out byte trailerOwner)) Sync.WorldSyncManager.Instance?.OnTractorTrailerMotion(trailerMotion, trailerOwner);
+                    break;
+                case HouseholdFuseState householdFuses when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnHouseholdFuseState(householdFuses); break;
+                case HouseholdFuseIntent fuseIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte fuseActor) && fuseActor == fuseIntent.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnHouseholdFuseIntent(fuseIntent, fuseActor);
+                    break;
+                case HouseholdFuseResult fuseResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnHouseholdFuseResult(fuseResult); break;
+                case TaxiFareState taxiFare when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnTaxiFareState(taxiFare);
+                    break;
+                case TaxiFareIntent fareIntent when IsHost:
+                    if (TryGetPlayerId(peer, out var fareActor))
+                        Sync.WorldSyncManager.Instance?.OnTaxiFareIntent(fareIntent, fareActor);
+                    break;
+                case TaxiMeterState taxiMeter when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnTaxiMeterState(taxiMeter);
+                    break;
+                case TaxiMeterIntent meterIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte meterActor) && meterActor == meterIntent.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnTaxiMeterIntent(meterIntent, meterActor);
+                    break;
+                case TaxiServiceState taxiService when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnTaxiServiceState(taxiService);
+                    break;
+                case TaxiCallIntent taxiCall when IsHost:
+                    if (TryGetPlayerId(peer, out byte taxiActor) && taxiActor == taxiCall.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnTaxiCallIntent(taxiCall, taxiActor);
+                    break;
+                case TaxiPaydayReadIntent paydayRead when IsHost:
+                    if (TryGetPlayerId(peer, out byte paydayActor) && paydayActor == paydayRead.PlayerId)
+                        Sync.WorldSyncManager.Instance?.OnTaxiPaydayReadIntent(paydayRead, paydayActor);
+                    break;
                 case TaxiJobState taxiJobState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnRemoteTaxiJobState(taxiJobState);
                     break;
@@ -699,6 +889,9 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnRemoteHockeyBettingState(hockeyBettingState);
                     break;
 
+                case StoveKnobIntent stoveKnob when IsHost:
+                    if (IsPeerPlayer(peer, stoveKnob.PlayerId)) Sync.WorldSyncManager.Instance?.OnHostStoveKnob(stoveKnob);
+                    break;
                 case ApplianceFireReport applianceFireReport when IsHost:
                     if (!IsPeerPlayer(peer, applianceFireReport.PlayerId))
                     {

@@ -29,6 +29,7 @@ namespace WinterMP.Core.Sync
             RefreshReplacementFactories();
             ScanNativeParts();
             ProcessReplacementOutputs(session);
+            IsolatePartBeltSources(session);
             IsolateGuestParts(session);
         }
 
@@ -36,6 +37,7 @@ namespace WinterMP.Core.Sync
         {
             var c = SyncCatalog.ReplacementParts;
             if (session.IsHost || !GuestSaveGuard.ProtectWorld || c == null) return;
+            bool damagePrepared = false;
             foreach (var pair in new List<KeyValuePair<uint, PlayMakerFSM>>(_nativeParts))
             {
                 var data = pair.Value;
@@ -48,7 +50,15 @@ namespace WinterMP.Core.Sync
                     if (factory.Failed || !factory.Suppressor.Active || !factory.Rule.Identity.TryId(nativeId, out uint id) || id != pair.Key) continue;
                     try
                     {
-                        // All 30 catalogued templates are leaves. Preserve an
+                        // Moving saved parts needs durable write containment. A
+                        // dormant engine or pending host input can remain paused.
+                        if (!damagePrepared)
+                        {
+                            if (_vehicles == null || !_vehicles.PrepareGuestDamageIsolationNow()
+                                || !_vehicles.PrepareGuestEngineProtectionForIsolation()) break;
+                            damagePrepared = true;
+                        }
+                        // Catalogued replacement templates are leaves. Preserve an
                         // unexpected nested assembly instead of hiding unrelated parts.
                         foreach (var child in data.GetComponentsInChildren<PlayMakerFSM>(true))
                             if (child != data && child.FsmName == c["itemFsm"])
@@ -92,9 +102,13 @@ namespace WinterMP.Core.Sync
                 || mount.FsmVariables.FindFsmGameObject(c["mountPartVariable"])?.Value != data.gameObject
                 || mount.FsmVariables.FindFsmBool(c["mountInstalledVariable"])?.Value != true)
                 return false;
+            // A fitted belt's wear loop lives beside the saved part. Protect it
+            // before moving that part, even when cosmetic binding is unavailable.
+            if (factory.Rule.BeltVisual != null && GetPartBeltSource(mount, factory.Rule.BeltVisual, true) == null)
+                return false;
             if (_isolatedGuestMounts.ContainsKey(mount)) return true;
             _bridge.ForgetNativePartBindings(mount, descendants: false);
-            ValidatePartFitMount(mount, c, factory.Rule.SlotCount != 0);
+            ValidatePartFitMount(mount, c, factory.Rule.SlotCount != 0, factory.Rule.FitPrerequisite);
             var suppressor = new FsmSuppressor();
             if (!suppressor.Suppress(mount)) throw new InvalidOperationException("Cannot pause native mount.");
             _isolatedGuestMounts.Add(mount, suppressor);
@@ -144,24 +158,29 @@ namespace WinterMP.Core.Sync
             return false;
         }
 
-        private void RestoreIsolatedGuestParts()
+        private bool RestoreIsolatedGuestParts()
         {
             bool applying = _bridge.ApplyingRemote;
+            bool restored = true;
             try
             {
                 _bridge.ApplyingRemote = true;
                 foreach (var pair in _isolatedGuestParts)
                 {
                     try { pair.Value.Restore(); }
-                    catch (Exception e) { WinterMPPlugin.Log.LogWarning("WorldSync: guest part restore: " + e.Message); }
+                    catch (Exception e) { restored = false; WinterMPPlugin.Log.LogWarning("WorldSync: guest part restore: " + e.Message); }
                     _bridge.PartIdentities.UnmarkIsolated(pair.Key);
                 }
                 foreach (var mount in _isolatedGuestMounts.Values) mount.Restore();
                 _isolatedGuestParts.Clear(); _isolatedGuestMounts.Clear();
                 if (_guestPartStorage != null && _guestPartStorage.transform.childCount == 0) UnityEngine.Object.Destroy(_guestPartStorage);
                 else if (_guestPartStorage != null)
+                {
+                    restored = false;
                     WinterMPPlugin.Log.LogWarning("WorldSync: saved guest parts retained inactive because their original hierarchy could not be restored; restart to reload the local save.");
+                }
                 _guestPartStorage = null;
+                return restored;
             }
             finally { _bridge.ApplyingRemote = applying; }
         }

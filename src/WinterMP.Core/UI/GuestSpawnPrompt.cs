@@ -52,13 +52,14 @@ namespace WinterMP.Core.UI
             var needsSync = PlayerSyncManager.Instance?.NeedsSync;
             if (needsSync == null) return;
 
-            needsSync.ApplySnapshot(new Session.GuestProfileStore.NeedsSnapshot
+            needsSync.ApplySnapshot(new WinterMP.Net.Sync.GuestProfile.NeedsSnapshot
             {
                 Hunger = offer.Hunger,
                 Fatigue = offer.Fatigue,
                 Thirst = offer.Thirst,
                 Urine = offer.Urine,
                 BodyTemp = offer.BodyTemp,
+                HasBodyTemp = offer.HasSavedBodyTemp,
                 Stress = offer.Stress,
                 Drunk = offer.Drunk,
                 Dirtiness = offer.Dirtiness,
@@ -71,6 +72,8 @@ namespace WinterMP.Core.UI
 
         public bool IsBlockingInput =>
             _offer != null && _offer.HasLastPosition;
+
+        internal void Reset() => _offer = null;
 
         private void OnGUI()
         {
@@ -120,6 +123,8 @@ namespace WinterMP.Core.UI
             if (relocator == null) return;
 
             relocator.ApplyImmediate(_offer.HostPosition, _offer.HostRotation);
+            ApplySavedNeeds(_offer);
+            PlayerSyncManager.Instance?.ChooseGuestSpawn();
             WinterMPPlugin.Log.LogInfo("PlayerSync: guest chose spawn with host.");
             _offer = null;
         }
@@ -132,6 +137,7 @@ namespace WinterMP.Core.UI
 
             relocator.ApplyImmediate(_offer.LastPosition, _offer.LastRotation);
             ApplySavedNeeds(_offer);
+            PlayerSyncManager.Instance?.ChooseGuestSpawn();
             WinterMPPlugin.Log.LogInfo("PlayerSync: guest chose last saved position.");
             _offer = null;
         }

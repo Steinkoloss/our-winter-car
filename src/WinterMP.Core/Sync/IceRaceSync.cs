@@ -182,8 +182,7 @@ namespace WinterMP.Core.Sync
 
         private void Scan()
         {
-            if (Time.unscaledTime < _nextScanAt) return;
-            _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
+            if (!ScenePath.TryBeginDiscovery(ref _nextScanAt, ScanIntervalSeconds)) return;
             try
             {
                 var fsms = ScenePath.ScanFsms();
@@ -191,8 +190,10 @@ namespace WinterMP.Core.Sync
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null) continue;
+                    string fsmName = fsm.FsmName;
+                    if (fsmName != "Data" && fsmName != "Checkpoint") continue;
                     string path = ScenePath.Of(fsm.transform);
-                    if (path == CorrisRacePath && fsm.FsmName == "Data" && _corrisRace == null)
+                    if (path == CorrisRacePath && fsmName == "Data" && _corrisRace == null)
                     {
                         _corrisRace = fsm;
                         _time = fsm.FsmVariables.FindFsmFloat("Time");
@@ -200,13 +201,13 @@ namespace WinterMP.Core.Sync
                         _checkpoint2 = fsm.FsmVariables.FindFsmBool("Checkpoint2");
                         _laps = fsm.FsmVariables.FindFsmInt("Laps");
                     }
-                    else if (path == TrackPrefix + "StartFinishTime" && fsm.FsmName == "Checkpoint")
+                    else if (path == TrackPrefix + "StartFinishTime" && fsmName == "Checkpoint")
                         _timeStart = fsm.transform;
-                    else if (path == TrackPrefix + "StartFinishLaps" && fsm.FsmName == "Checkpoint")
+                    else if (path == TrackPrefix + "StartFinishLaps" && fsmName == "Checkpoint")
                         _lapStart = fsm.transform;
-                    else if (path == TrackPrefix + "Checkpoint1" && fsm.FsmName == "Checkpoint")
+                    else if (path == TrackPrefix + "Checkpoint1" && fsmName == "Checkpoint")
                         _checkpoint1Marker = fsm.transform;
-                    else if (path == TrackPrefix + "Checkpoint2" && fsm.FsmName == "Checkpoint")
+                    else if (path == TrackPrefix + "Checkpoint2" && fsmName == "Checkpoint")
                         _checkpoint2Marker = fsm.transform;
                 }
             }

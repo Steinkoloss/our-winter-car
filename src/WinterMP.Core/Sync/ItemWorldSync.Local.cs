@@ -56,7 +56,7 @@ namespace WinterMP.Core.Sync
                     && ItemTransformPolicy.IsRemoteStreamLive(
                         item.LastRemoteAt, now, item.RemoteIsDriver, item.RemoteVehicleStream);
 
-                if (item.IsVehicle)
+                if (item.IsVehicle && !operating)
                     VehicleWorldSync.UpdateRemoteEngineAudio(item, now);
 
                 if (operating && !item.LocallyOwned
@@ -106,6 +106,7 @@ namespace WinterMP.Core.Sync
                         && now - item.LastRemoteAt < GetRemoteHoldSeconds(item) + RemoteReleaseGraceSeconds)
                         continue;
 
+                    if (!MoveRemoteBody(item, body.transform.position, body.transform.rotation, resumePhysics: true)) continue;
                     body.isKinematic = item.OriginalKinematic;
                     item.RemoteOwner = WorldSyncIds.NoOwner;
                     item.RemoteIsDriver = false;
@@ -122,9 +123,7 @@ namespace WinterMP.Core.Sync
                 {
                     if (item.IsVehicle)
                     {
-                        // Driver status tracks seat occupancy (IsLocalPlayerDriving is
-                        // anchored on the game's own PlayerInVar + seat hierarchy, so it
-                        // is stable during a real drive). Release it the moment the player
+                        // Driver status tracks the native seat hierarchy. Release it the moment the player
                         // leaves the seat — NOT only once the car is parked. The old
                         // "clear only when !moving" tied seat-release to motion, so a car
                         // coasting after the driver got out kept streaming FlagDriver and
@@ -147,7 +146,8 @@ namespace WinterMP.Core.Sync
                         bool atRest = body.IsSleeping()
                             || body.velocity.sqrMagnitude < RestVelocitySqr;
 
-                        if (item.LocalDriveActive || moving || !atRest)
+                        if (item.LocalDriveActive || item.HostTrailerAttached || moving || !atRest
+                            || VehicleWorldSync.KeepVehicleIgnitionOwnership(item))
                         {
                             if (now >= item.NextSendAt)
                             {
@@ -159,9 +159,15 @@ namespace WinterMP.Core.Sync
                         }
                         else if (!ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
                         {
+                            // Same reliable channel as the final pose: observers must
+                            // receive ignition OFF before they relinquish its sender.
+                            _vehicles?.SendFinalVehicleState(session, item);
+                            _vehicles?.SendFinalVehicleClimate(session, item);
+                            _vehicles?.SendFinalVehicleCondition(session, item);
                             SendItem(session, item, body, true);
                             item.LocallyOwned = false;
                             item.LocalDriveActive = false;
+                            _vehicles?.CompleteLocalConditionRelease(item);
                         }
                         else if (now >= item.NextSendAt)
                         {
@@ -188,7 +194,7 @@ namespace WinterMP.Core.Sync
                         item.NextSendAt = now + (moving ? 1f / item.SendRateHz : HeldItemKeepaliveSeconds);
                     }
                 }
-                else if ((moving || held) && CanClaim(item, body.transform.position, now)
+                else if ((moving || held || item.HostTrailerAttached) && CanClaim(item, body.transform.position, now)
                          && !ConnectionQuality.Instance.ShouldPauseOwnershipTransfers)
                 {
                     ClaimItem(session, item, body, now);
@@ -218,6 +224,10 @@ namespace WinterMP.Core.Sync
 
         private bool CanClaim(SyncedItem item, Vector3 position, float now)
         {
+            // A parked coupled tractor must remain under the same simulation as
+            // its trailer, even after the host walks away. Remote drivers still
+            // take over through the normal vehicle ownership gate.
+            if (item.HostTrailerAttached && SessionManager.Instance?.IsHost == true) return true;
             _bridge.FindLocalPlayer();
             if (_bridge.LocalPlayer == null) return false;
 
@@ -255,11 +265,16 @@ namespace WinterMP.Core.Sync
             float now = Time.unscaledTime;
             if (!CanClaim(item, item.Body.transform.position, now)) return false;
             ClaimItem(session, item, item.Body, now);
-            return true;
+            return item.LocallyOwned;
         }
 
         private void ClaimItem(SessionManager session, SyncedItem item, Rigidbody body, float now)
         {
+            if ((item.RemoteOwner != WorldSyncIds.NoOwner || (body.isKinematic && item.KinematicSaved))
+                && !MoveRemoteBody(item, body.transform.position, body.transform.rotation, resumePhysics: true)) return;
+            var engine = WinterMP.Net.VehicleStateStreamPolicy.CaptureEngineClaim(item.AcceptedVehicleState,
+                item.Id, item.RemoteOwner, item.IsVehicle && IsLocalPlayerDriving(item), item.LocallyOwned, now, item.RemoteEngineUntil);
+            VehicleWorldSync.OnLocalConditionClaim(session, item);
             ReleaseRemoteCargo(item, body, now, seedVelocity: false);
 
             // Taking over from a remote stream: restore physics before simulating.
@@ -280,16 +295,6 @@ namespace WinterMP.Core.Sync
 
             item.RemoteEngineUntil = -999f;
 
-            // Preserve unknown parts across handoff; live fitted-part reads supersede
-            // this fallback as soon as their Data FSMs bind.
-            if (item.IsVehicle)
-            {
-                item.LiveDamageMask |= item.AppliedDamageMask;
-                item.LastSentDamage = null;
-                item.PendingDamage = null;
-                item.NextDamageTickAt = 0f;
-            }
-
             item.LocallyOwned = true;
             item.LastMovedAt = now;
             // Driver status only when actually seated — a proximity claim (pushing
@@ -297,6 +302,7 @@ namespace WinterMP.Core.Sync
             // or it blocks the real driver's seat on the other machine.
             if (item.IsVehicle)
                 item.LocalDriveActive = IsLocalPlayerDriving(item);
+            _vehicles?.RestoreClaimedEngine(item, engine);
             SendItem(session, item, body, false);
             item.NextSendAt = now + 1f / item.SendRateHz;
 
@@ -334,6 +340,7 @@ namespace WinterMP.Core.Sync
                 message.Velocity = body.velocity.ToNet();
             }
 
+            if (final && isVehicle) VehicleWorldSync.BeginConditionRelease(session, item, message);
             session.SendWorldMessage(message, ItemTransformPolicy.SelectSendChannel(final, isVehicle));
 
             if (final && isVehicle)

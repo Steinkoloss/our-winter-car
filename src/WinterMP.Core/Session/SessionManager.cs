@@ -54,8 +54,14 @@ namespace WinterMP.Core.Session
         private readonly Dictionary<PeerId, float> _nextResyncRequestAt = new Dictionary<PeerId, float>();
         private readonly Dictionary<PeerId, float> _nextObjectStateRequestAt = new Dictionary<PeerId, float>();
         private bool _failedSessionCleanupPending;
+        private readonly JoinAttempt _joinAttempt = new JoinAttempt();
 
         private readonly PassengerSeatLedger _passengerSeats = new PassengerSeatLedger();
+        private readonly DeathSessionPolicy _deathSession = new DeathSessionPolicy();
+        internal bool PermadeathWipeActive => _deathSession.Wiped;
+        internal bool CanAcceptRespawn => _deathSession.CanRespawn(PermanentDeathEnabled);
+        internal bool TryBeginPermadeathWipe() => _deathSession.TryWipe(PermanentDeathEnabled);
+        internal bool CanJoinRun => _deathSession.CanJoin;
 
         /// <summary>Stable player ids + disconnect tracking for mid-session guest rejoin (PLAN.md §4.5).</summary>
         private sealed class GuestSlot
@@ -75,7 +81,12 @@ namespace WinterMP.Core.Session
 
         public void SetPermanentDeathEnabled(bool enabled)
         {
+            bool changed = PermanentDeathEnabled != enabled;
             PermanentDeathEnabled = enabled;
+            if (IsHost && changed && State == SessionState.Hosting)
+                BroadcastProfileMessage(new SessionSettings { Flags = enabled ? SessionFlags.PermadeathEnabled : (byte)0 });
+            if (!IsHost && State == SessionState.Connected)
+                Sync.PermadeathSettings.ApplyGuest(enabled);
         }
 
         public event Action<RemotePlayer>? PlayerJoined;
@@ -97,7 +108,7 @@ namespace WinterMP.Core.Session
         public bool ShowJoinBrowseUI =>
             _joinBrowseActive
             && !IsHost
-            && State == SessionState.Idle;
+            && (State == SessionState.Idle || (State == SessionState.Failed && !_failedSessionCleanupPending));
 
         /// <summary>Steam host on the main menu with no guests — load/resume is blocked.</summary>
         public bool ShouldBlockHostMainMenuLoad =>
@@ -120,6 +131,12 @@ namespace WinterMP.Core.Session
         {
             _bypassHostPlayerGate = bypass;
         }
+
+        internal bool HasPassengerInVehicle(uint vehicleId) => IsHost && State == SessionState.Hosting
+            && _passengerSeats.HasOccupant(vehicleId);
+
+        internal bool IsPassengerInVehicle(byte playerId, uint vehicleId) => IsHost && State == SessionState.Hosting
+            && _passengerSeats.IsOccupant(playerId, vehicleId);
 
         /// <summary>Host tracks seat occupancy so join snapshots can replay it immediately.</summary>
         public void RecordPassengerState(PassengerState state)
@@ -164,6 +181,8 @@ namespace WinterMP.Core.Session
         /// <summary>Clears state tied to a transport without replacing the current user-facing session state.</summary>
         private void ResetSessionRuntimeState()
         {
+            Sync.PlayerSyncManager.Instance?.ResetGuestSpawn();
+            _joinAttempt.Clear();
             _hostPeer = null;
             _playersByPeer.Clear();
             _pendingPings.Clear();
@@ -171,6 +190,8 @@ namespace WinterMP.Core.Session
             _nextResyncRequestAt.Clear();
             _nextObjectStateRequestAt.Clear();
             _passengerSeats.Clear();
+            _deathSession.Reset();
+            Sync.DeathSyncManager.Instance?.ResetSession();
             _guestSlotsBySteam.Clear();
             _nextPlayerId = 1;
             LocalPlayerId = 0;
@@ -196,8 +217,10 @@ namespace WinterMP.Core.Session
             if (!_failedSessionCleanupPending) return;
 
             _failedSessionCleanupPending = false;
+            bool returnToBrowser = !IsHost && _joinBrowseActive;
             DisposeSessionTransport();
             ResetSessionRuntimeState();
+            _joinBrowseActive = returnToBrowser;
 
             if (_pendingMode != LaunchMode.None)
                 SetState(SessionState.Idle, PendingLaunchStatus(_pendingMode));
@@ -279,6 +302,7 @@ namespace WinterMP.Core.Session
 
             _transport?.Update();
             _devClient?.Update();
+            CheckJoinTimeout(Time.unscaledTime);
             FlushFailedSessionCleanup();
 
             ConnectionQuality.Instance.TickWindow(Time.unscaledTime);
@@ -308,8 +332,19 @@ namespace WinterMP.Core.Session
             if (State != SessionState.Failed || _failedAt < 0f) return;
             if (Time.unscaledTime - _failedAt < FailedRecoverySeconds) return;
 
-            SetState(SessionState.Idle, "Idle — join via Steam or press F10 to host");
+            SetState(SessionState.Idle, _joinBrowseActive ? "Choose a friend to try again." : "Idle — join via Steam or press F10 to host");
             AddChatLine("* Session reset — try joining again.");
+        }
+
+        private void CheckJoinTimeout(double now)
+        {
+            if (State != SessionState.Connecting || !_joinAttempt.HasTimedOut(now)) return;
+            string reason = _joinAttempt.Stage == JoinAttemptStage.AwaitingHandshake
+                ? "The host did not finish connecting. Check that you both have the same mod package, then try joining again."
+                : "Could not reach the host. Ask your friend to check their hosted session, then try joining again.";
+            FailSession(reason);
+            AddChatLine("* " + reason);
+            WinterMPPlugin.Log.LogWarning("Join timed out: " + reason);
         }
 
         private void OnDestroy()
@@ -352,6 +387,7 @@ namespace WinterMP.Core.Session
                     }
 
                     _hostPeer = peer;
+                    _joinAttempt.TransportConnected(Time.unscaledTime);
                     SyncCatalog.EnsureLoaded();
 
                     // We just reached the host: introduce ourselves.
@@ -521,6 +557,7 @@ namespace WinterMP.Core.Session
 
         public void SetPlayerDead(byte playerId, bool dead)
         {
+            if (dead) RetirePassengerSeat(playerId);
             foreach (var player in _playersByPeer.Values)
             {
                 if (player.PlayerId != playerId) continue;
@@ -531,6 +568,7 @@ namespace WinterMP.Core.Session
 
         public void ApplyPlayerRespawnPose(byte playerId, Vector3 position, Quaternion rotation)
         {
+            RetirePassengerSeat(playerId);
             foreach (var player in _playersByPeer.Values)
             {
                 if (player.PlayerId != playerId) continue;
@@ -540,6 +578,19 @@ namespace WinterMP.Core.Session
                 player.LastTransformTime = Time.unscaledTime;
                 return;
             }
+        }
+
+        internal void RetirePassengerSeat(byte playerId)
+        {
+            if (IsHost) _passengerSeats.RetirePlayer(playerId);
+            Sync.PassengerController.Instance?.RetirePlayerSeat(playerId);
+        }
+
+        internal void RetirePassengersForGroupDeath()
+        {
+            foreach (var player in _playersByPeer.Values) player.IsDead = true;
+            if (IsHost) _passengerSeats.RetireAll();
+            Sync.PassengerController.Instance?.RetireAllSeats();
         }
 
         public void SendChat(string text)
@@ -624,6 +675,11 @@ namespace WinterMP.Core.Session
 
         private void SetState(SessionState state, string status)
         {
+            if (state == SessionState.Connecting)
+            {
+                if (State != SessionState.Connecting) _joinAttempt.Begin(Time.unscaledTime);
+            }
+            else _joinAttempt.Clear();
             State = state;
             StatusText = status;
             _failedAt = state == SessionState.Failed ? Time.unscaledTime : -1f;

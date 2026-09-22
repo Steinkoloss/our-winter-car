@@ -92,6 +92,23 @@ namespace WinterMP.Net.Tests
         }
 
         [Fact]
+        public void GuestDriverMayTakeTheEmptySeatFromAParkedRemoteSimulator()
+        {
+            Assert.True(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, false, 1, 2, true, false, true));
+            Assert.True(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, false, 2, 1, true, false, true));
+            Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, true, 1, 2, true, false, true));
+            Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, false, 1, 2, false, false, true));
+            Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, false, 1, 2, true, true, true));
+            Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, false, 1, 2, true, false, false));
+            Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, true, false, 1, 2, true, false, true));
+            Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(false, false, false, 1, 2, true, false, true));
+            foreach (byte owner in new byte[] { 0, 2, 255 })
+                Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, false, owner, 2, true, false, true));
+            foreach (byte claimant in new byte[] { 0, 1, 255 })
+                Assert.False(ItemTransformPolicy.CanGuestDriverTakeOverRemote(true, false, false, 1, claimant, true, false, true));
+        }
+
+        [Fact]
         public void IsStaleSequence_WrapAware()
         {
             Assert.True(ItemTransformPolicy.IsStaleSequence(10, 10));

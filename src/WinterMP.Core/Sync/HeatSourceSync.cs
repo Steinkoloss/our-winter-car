@@ -15,7 +15,7 @@ namespace WinterMP.Core.Sync
     /// output and sauna temperature are host-authoritative and broadcast; guests write
     /// the received values back onto their local FSMs so each client's own
     /// position-derived body-temp calc warms consistently ("thaw at the same sauna").
-    /// Lighting, feeding wood, grilling and löyly are anyone-triggers intents: the guest
+    /// Lighting, feeding wood and löyly are anyone-triggers intents: the guest
     /// asks, the host fires the real game FSM event on its authoritative instance, and
     /// the resulting state broadcast carries the progression back to everyone.
     ///
@@ -66,7 +66,6 @@ namespace WinterMP.Core.Sync
             // Guest-side anyone-triggers hooks (installed once per FSM), debounced.
             public bool HookedSetFire;
             public bool HookedStove;
-            public bool HookedSausage;
             public bool HookedWood;
             public float NextIntentAt;
             public ushort OutIntentSequence;
@@ -362,7 +361,7 @@ namespace WinterMP.Core.Sync
             InstallGuestHooks(source);
         }
 
-        // On a guest, the player lighting/feeding/grilling/löyly'ing a source fires that
+        // On a guest, the player lighting/feeding/löyly'ing a source fires that
         // source's own FSM state locally; we relay it to the host as an anyone-triggers
         // intent so the authoritative (save-owning) world advances and re-broadcasts.
         private void InstallGuestHooks(Source source)
@@ -372,7 +371,6 @@ namespace WinterMP.Core.Sync
 
             InstallHookOnce(ref source.HookedSetFire, source.SetFire, "Start fire 2", source, HeatSourceIntent.ActionLight);
             InstallHookOnce(ref source.HookedStove, source.StoveTrigger, "Steam", source, HeatSourceIntent.ActionSaunaThrow);
-            InstallHookOnce(ref source.HookedSausage, source.SausageTrigger, "State 4", source, HeatSourceIntent.ActionGrill);
             InstallHookOnce(ref source.HookedWood, source.WoodTrigger, "State 1", source, HeatSourceIntent.ActionFeedWood);
         }
 
@@ -454,10 +452,6 @@ namespace WinterMP.Core.Sync
                 case HeatSourceIntent.ActionFeedWood:
                     fsm = source.WoodTrigger;
                     eventName = "WOOD";
-                    return true;
-                case HeatSourceIntent.ActionGrill:
-                    fsm = source.SausageTrigger;
-                    eventName = "SAUSAGE";
                     return true;
                 case HeatSourceIntent.ActionSaunaThrow:
                     fsm = source.StoveTrigger;

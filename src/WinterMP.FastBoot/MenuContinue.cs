@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using BepInEx.Logging;
+using HutongGames.PlayMaker;
 using UnityEngine;
 
 namespace WinterMP.FastBoot
@@ -14,7 +16,7 @@ namespace WinterMP.FastBoot
         private GameObject? _button;
         private PlayMakerFSM? _fsm;
         private bool _finished;
-        private bool _clicked;
+        private float _readyAt = -1f;
 
         public float StepDelaySeconds { get; set; }
 
@@ -27,7 +29,7 @@ namespace WinterMP.FastBoot
             _button = null;
             _fsm = null;
             _finished = false;
-            _clicked = false;
+            _readyAt = -1f;
             ClickedAt = -1f;
         }
 
@@ -37,37 +39,59 @@ namespace WinterMP.FastBoot
 
             if (!ResolveContinueFsm()) return false;
             if (_button == null) return false;
-            if (!_button.activeSelf && !SessionGate.HostWaitBypassed) return false;
-            if (_fsm == null) return false;
+            if (!_button.activeInHierarchy || _fsm == null || !_fsm.enabled
+                || !_fsm.Fsm.Initialized || !_fsm.Fsm.Started) return false;
 
-            if (!_clicked)
+            if (_readyAt < 0f)
             {
-                if (logTimings)
-                    log.LogInfo("FastBoot: auto-loading save (Continue).");
-
-                _fsm.SendEvent("OVER");
-                ClickedAt = Time.unscaledTime;
-                _clicked = true;
-
-                if (StepDelaySeconds <= 0f)
-                {
-                    _fsm.SendEvent("DOWN");
-                    _finished = true;
-                    if (logTimings)
-                        log.LogInfo("FastBoot: Continue clicked — waiting for GAME load.");
-                    return true;
-                }
-
-                return true;
+                _readyAt = Time.unscaledTime;
+                if (logTimings) log.LogInfo("FastBoot: preparing Continue.");
             }
+            if (Time.unscaledTime - _readyAt < StepDelaySeconds || !TryClick(_fsm)) return false;
 
-            if (Time.unscaledTime - ClickedAt < StepDelaySeconds) return false;
-
-            _fsm.SendEvent("DOWN");
+            ClickedAt = Time.unscaledTime;
             _finished = true;
             if (logTimings)
                 log.LogInfo("FastBoot: Continue clicked — waiting for GAME load.");
             return true;
+        }
+
+        private static bool TryClick(PlayMakerFSM fsm)
+        {
+            var before = fsm.Fsm.ActiveState;
+            if (before == null) return false;
+            var hover = HasTransition(before, "DOWN") ? before : NextState(fsm, before, "OVER");
+            if (hover == null || !hover.IsInitialized || !HasTransition(hover, "DOWN")) return false;
+            var paused = new List<FsmStateAction>();
+            try
+            {
+                // MousePickEvent checks the physical pointer during OnEnter and can
+                // immediately send OFF, cancelling our OVER before DOWN is delivered.
+                // Pause only that input poll for this synchronous synthetic click.
+                foreach (var action in hover.Actions)
+                    if (action.Enabled && action.GetType().FullName == "HutongGames.PlayMaker.Actions.MousePickEvent"
+                        && action.GetType().Assembly.GetName().Name == "Assembly-CSharp")
+                    { paused.Add(action); action.Enabled = false; }
+                if (!ReferenceEquals(before, hover)) fsm.SendEvent("OVER");
+                if (!ReferenceEquals(fsm.Fsm.ActiveState, hover)) return false;
+                fsm.SendEvent("DOWN");
+                return !ReferenceEquals(fsm.Fsm.ActiveState, hover);
+            }
+            finally { foreach (var action in paused) action.Enabled = true; }
+        }
+
+        private static bool HasTransition(FsmState state, string name)
+        {
+            foreach (var edge in state.Transitions) if (edge.EventName == name) return true;
+            return false;
+        }
+
+        private static FsmState? NextState(PlayMakerFSM fsm, FsmState state, string name)
+        {
+            foreach (var edge in state.Transitions)
+                if (edge.EventName == name)
+                    foreach (var next in fsm.Fsm.States) if (next.Name == edge.ToState) return next;
+            return null;
         }
 
         private bool ResolveContinueFsm()

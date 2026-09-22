@@ -110,21 +110,29 @@ find_game_dir() {
 
 find_proton() {
     local steam_root="$1"
-    local proton_dir proton_bin
+    local proton_dir proton_bin proton_version
+    if [[ -n "${WINTERMP_PROTON:-}" ]]; then
+        [[ -x "$WINTERMP_PROTON" ]] || { echo "Configured Proton is not executable: $WINTERMP_PROTON" >&2; return 1; }
+        echo "$WINTERMP_PROTON"
+        return 0
+    fi
 
     # Build the candidate list with a quoted glob + nullglob array (NOT `ls` parsing), so Proton
     # folder names that contain spaces ("Proton - 9.0") survive instead of word-splitting into tokens.
     local had_nullglob=0
     shopt -q nullglob && had_nullglob=1
     shopt -s nullglob
-    local numbered=("$steam_root/steamapps/common/Proton - "[0-9]*)
+    local numbered=("$steam_root/steamapps/common/Proton "[0-9]* "$steam_root/steamapps/common/Proton - "[0-9]*)
     [[ $had_nullglob -eq 1 ]] || shopt -u nullglob
 
     if ((${#numbered[@]} > 1)); then
-        local sorted
-        IFS=$'\n' sorted=($(printf '%s\n' "${numbered[@]}" | sort -V))
-        unset IFS
-        numbered=("${sorted[@]}")
+        mapfile -t numbered < <(
+            for proton_dir in "${numbered[@]}"; do
+                proton_version="${proton_dir##*/}"
+                proton_version="${proton_version#Proton }"
+                printf '%s\t%s\n' "${proton_version#- }" "$proton_dir"
+            done | sort -t $'\t' -k1,1Vr | cut -f2-
+        )
     fi
 
     local candidates=("$steam_root/steamapps/common/Proton - Experimental" "${numbered[@]}")
@@ -149,10 +157,11 @@ run_mwc() {
     local steam_root proton compat
     steam_root="$(find_steam_root)" || return 1
     proton="$(find_proton "$steam_root")" || return 1
-    compat="$steam_root/steamapps/compatdata/${WINTERMP_APP_ID}"
+    compat="${WINTERMP_COMPAT_DATA_PATH:-$steam_root/steamapps/compatdata/${WINTERMP_APP_ID}}"
 
     export STEAM_COMPAT_DATA_PATH="$compat"
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="$steam_root"
+    export STEAM_COMPAT_INSTALL_PATH="$game_dir"
     export SteamAppId="$WINTERMP_APP_ID"
     export SteamGameId="$WINTERMP_APP_ID"
 
@@ -160,10 +169,20 @@ run_mwc() {
     # Proton sets WINEDLLPATH to its own wine/lib which makes Wine treat winhttp
     # as a builtin (loaded before the app-dir native DLL). Force native-first so
     # the game directory's doorstop proxy is picked up.
-    export WINEDLLOVERRIDES="winhttp=n,b${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+    export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}winhttp=n,b"
 
     (
         cd "$game_dir" || exit 1
+        if [[ -n "${WINTERMP_VIRTUAL_DESKTOP_SIZE:-}" ]]; then
+            [[ "$WINTERMP_VIRTUAL_DESKTOP_SIZE" =~ ^[1-9][0-9]{2,3}x[1-9][0-9]{2,3}$ ]] || {
+                echo "Invalid virtual desktop size." >&2; exit 1;
+            }
+            # Unity 5 disables active cameras when Xwayland reports no monitors.
+            # Explorer supplies a display inside a per-role window in this prefix.
+            local windows_exe="Z:${PWD//\//\\}\\mywintercar.exe"
+            WINTERMP_LOG_ROLE="$role" exec "$proton" run explorer.exe \
+                "/desktop=WinterMP-$role,$WINTERMP_VIRTUAL_DESKTOP_SIZE" "$windows_exe" "$@"
+        fi
         WINTERMP_LOG_ROLE="$role" exec "$proton" run ./mywintercar.exe "$@"
     )
 }

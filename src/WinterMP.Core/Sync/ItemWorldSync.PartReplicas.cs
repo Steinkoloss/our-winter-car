@@ -31,6 +31,16 @@ namespace WinterMP.Core.Sync
             public bool BoltsPrepared;
             public PartHandRotation? HandRotation;
             public bool HandRotationFailed;
+            public PartHandScrew? HandScrew;
+            public PartToolScrew? ToolScrew;
+            public bool ToolScrewFailed;
+            public bool HandScrewFailed;
+            public PartDistributorTiming? DistributorTiming;
+            public bool DistributorTimingFailed;
+            public uint AppliedRevision;
+            public bool HasAppliedState;
+            public PartBeltView? BeltView;
+            public bool BeltVisualFailed;
             public Vector3 LooseScale;
             public string LooseTag = string.Empty;
             public readonly List<ReplacementCollider> Colliders = new List<ReplacementCollider>();
@@ -100,7 +110,15 @@ namespace WinterMP.Core.Sync
                     state.Scalars[i] = value;
                 }
                 if (state.AssemblyId < 0) throw new InvalidOperationException("Invalid replacement assembly ID.");
+                if (!binding.Factory.Rule.Identity.ValidInertia(state)) throw new InvalidOperationException("Invalid replacement flywheel inertia.");
+                if (binding.Factory.Rule.CamProfileVariable != null)
+                {
+                    state.CamProfile = vars.FindFsmString(binding.Factory.Rule.CamProfileVariable)?.Value ?? string.Empty;
+                    if (!PartCamshaftPolicy.ValidProfile(state.CamProfile)) throw new InvalidOperationException("Invalid replacement cam profile.");
+                }
                 CaptureReplacementAttachment(binding, state);
+                CaptureAlternatorDamage(binding, state);
+                CapturePartBeltVisual(binding, state);
                 state.RemovalAllowed = PublishRemovalAllowed(binding, state);
                 var body = binding.Body;
                 state.Revision = binding.Publication.Observe(state,
@@ -133,13 +151,22 @@ namespace WinterMP.Core.Sync
                             _bridge.ObserveReplacementTightness(id, state.Scalars[rule.Identity.TightnessIndex]);
                     _replacementTightnessRevisions[id] = state.Revision;
                 }
-                _pendingReplacements.Add(id);
+                if (!TryApplyReplacementBeltPresentation(id, state)) _pendingReplacements.Add(id);
             }
         }
 
         private void ProcessReplacementParts(SessionManager session)
         {
+            ProcessCylinderHead(session);
+            ProcessWiring(session);
+            ProcessBattery(session);
+            ProcessHeater(session);
+            ProcessEngineBlock(session);
+            ProcessGearbox(session);
             ProcessReplacementOutputs(session);
+            ProcessPartToolScrews(session);
+            IsolatePartBeltSources(session);
+            UpdatePartBeltViews(session);
             ProcessReplacementGarbage();
             if (Time.unscaledTime < _nextReplacementPoll) return;
             _nextReplacementPoll = Time.unscaledTime + .2f;
@@ -153,7 +180,7 @@ namespace WinterMP.Core.Sync
                     var binding = _replacementParts[id];
                     if (!binding.Publication.NeedsBroadcast) continue;
                     session.SendWorldMessage(state, Channel.ReliableOrdered);
-                    binding.Publication.MarkBroadcast(state.Revision);
+                    binding.Publication.MarkBroadcast(state.Revision, state.PresentationRevision);
                 }
                 return;
             }
@@ -215,10 +242,12 @@ namespace WinterMP.Core.Sync
                     if (!fsm.Fsm.Initialized) fsm.Fsm.Init(fsm);
                 }
                 var binding = new ReplacementBinding { Factory = factory, Data = data, NativeId = state.NativeId, Replica = true };
-                foreach (var reference in factory.Rule.References)
-                    data.FsmVariables.FindFsmGameObject(reference.Target).Value = factory.Fsm.FsmVariables.FindFsmGameObject(reference.Source).Value;
+                CopyReplacementReferences(factory, data);
                 ValidatePartFitEntry(binding);
                 ValidatePartRemoval(binding);
+                GetPartHandScrew(binding);
+                GetPartToolScrew(binding);
+                GetPartDistributorTiming(binding);
                 var init = FsmHook.FindState(data, c["itemInitState"])!;
                 var initActions = (FsmStateAction[])init.Actions.Clone();
                 // Native identity builders run, but Exists/Load never consult a guest save.
@@ -279,11 +308,19 @@ namespace WinterMP.Core.Sync
             }
             catch
             {
+                if (_replacementParts.TryGetValue(id, out var failed)) DestroyPartBeltView(failed);
                 var data = FindReplacementData(clone, c); data.enabled = false; _bridge.PartIdentities.Forget(data);
                 _bridge.ForgetReplacementBolts(data);
                 RemoveTrackedItem(id, clone.GetComponent<Rigidbody>()); _replacementParts.Remove(id); _nativeParts.Remove(id);
                 clone.SetActive(false); UnityEngine.Object.Destroy(clone); throw;
             }
+        }
+
+        private static void CopyReplacementReferences(ReplacementFactory factory, PlayMakerFSM data)
+        {
+            foreach (var reference in factory.Rule.References)
+                if (reference.Enabled)
+                    data.FsmVariables.FindFsmGameObject(reference.Target).Value = factory.Fsm.FsmVariables.FindFsmGameObject(reference.Source).Value;
         }
 
         private void ApplyReplacementScalars(ReplacementBinding binding, ReplacementPartState state)
@@ -292,11 +329,14 @@ namespace WinterMP.Core.Sync
             for (int i = 0; i < state.Scalars.Length; i++)
                 binding.Data.FsmVariables.FindFsmFloat(binding.Factory.Rule.Scalars[i]).Value = i == binding.Factory.Rule.Identity.TightnessIndex
                     ? _bridge.ReplacementTightness(id, state.Scalars[i]) : state.Scalars[i];
+            if (binding.Factory.Rule.CamProfileVariable != null)
+                binding.Data.FsmVariables.FindFsmString(binding.Factory.Rule.CamProfileVariable).Value = state.CamProfile;
         }
 
         private void RetireHiddenReplacement(uint id)
         {
             _bridge.RetireReplacementPartViews(id);
+            if (_replacementParts.TryGetValue(id, out var retired)) DestroyPartBeltView(retired);
             if (_items.ContainsKey(id) || !_replacementParts.TryGetValue(id, out var binding)
                 || !binding.Replica || binding.Data == null || binding.Body == null) return;
             TryRetireReplacement(binding.Body);
@@ -317,6 +357,7 @@ namespace WinterMP.Core.Sync
                 if (binding.Data == null || binding.Body != body) continue;
                 if (binding.Replica)
                 {
+                    DestroyPartBeltView(binding);
                     binding.Data.enabled = false; body.gameObject.SetActive(false);
                     _bridge.ForgetReplacementBolts(binding.Data);
                     _bridge.PartIdentities.Forget(binding.Data);
@@ -350,7 +391,9 @@ namespace WinterMP.Core.Sync
         private void ClearReplacementParts()
         {
             ClearPartFitting();
+            ClearPartToolScrews();
             ProcessReplacementGarbage();
+            foreach (var binding in _replacementParts.Values) DestroyPartBeltView(binding);
             // Owned replicas may be nested; detach before any deferred Destroy call.
             foreach (var binding in _replacementParts.Values)
                 if (binding.Replica && binding.Data != null) binding.Data.transform.SetParent(null, true);
@@ -371,7 +414,11 @@ namespace WinterMP.Core.Sync
             {
                 foreach (var hook in factory.Hooks) RemoveReplacementHook(hook.Key, hook.Value);
             }
-            RestoreIsolatedGuestParts();
+            ClearCylinderHead();
+            bool originalsRestored = RestoreIsolatedGuestParts();
+            _guestEngineInputOriginalsReady &= originalsRestored;
+            RestoreGuestEngineInputs();
+            RestorePartBeltSources();
             foreach (var factory in _replacementFactories.Values) factory.Suppressor.Restore();
             _replacementParts.Clear(); _replacementFactories.Clear(); _replacementOutputs.Clear(); _unreadyNativeParts.Clear();
             _pendingReplacements.Clear(); _replacementReplica?.Clear(); _replacementReplica = null; _replacementGarbage.Clear();

@@ -35,20 +35,21 @@ namespace WinterMP.Net.Tests
             wire[19] = 11; Assert.Throws<ProtocolException>(() => PacketCodec.Decode(wire));
             foreach (var message in new IMessage[] { request, receipt })
             {
-                wire = PacketCodec.Encode(message); wire[wire.Length - 2] = 4;
+                wire = PacketCodec.Encode(message); wire[wire.Length - 2] = 8;
                 Assert.Throws<ProtocolException>(() => PacketCodec.Decode(wire));
             }
-            request.Operation = (PartFitOperation)4; receipt.Operation = (PartFitOperation)4;
+            request.Operation = (PartFitOperation)8; receipt.Operation = (PartFitOperation)8;
             Assert.Throws<ProtocolException>(() => PacketCodec.Encode(request));
             Assert.Throws<ProtocolException>(() => PacketCodec.Encode(receipt));
             var state = Fitted(); wire = PacketCodec.Encode(state);
-            Assert.Equal(1, wire[wire.Length - 1]);
+            Assert.Equal(1, wire[wire.Length - 9]);
             Assert.True(Assert.IsType<ReplacementPartState>(PacketCodec.Decode(wire)).RemovalAllowed);
             state.RemovalAllowed = false;
             var blocked = PacketCodec.Encode(state);
-            Assert.Equal(wire.Take(wire.Length - 1), blocked.Take(blocked.Length - 1));
+            Assert.Equal(wire.Take(wire.Length - 9), blocked.Take(blocked.Length - 9));
+            Assert.Equal(0, blocked[blocked.Length - 9]);
             Assert.Equal(0, blocked[blocked.Length - 1]);
-            wire[wire.Length - 1] = 2; Assert.Throws<ProtocolException>(() => PacketCodec.Decode(wire));
+            wire[wire.Length - 9] = 2; Assert.Throws<ProtocolException>(() => PacketCodec.Decode(wire));
         }
 
         [Theory]
@@ -91,15 +92,16 @@ namespace WinterMP.Net.Tests
             var removal = Request(); var install = PartFitLedger.Copy(removal); install.Operation = PartFitOperation.Install;
             Assert.Equal(PartFitStatus.Unavailable, PartRemovalPolicy.Check(install, Fitted(), 1, true, true, true));
             Assert.Equal(PartFitStatus.Unavailable, PartFitLedger.Check(removal, Fitted(), true, true, true, true, true, false));
-            foreach (var operation in new[] { PartFitOperation.RotateIncrease, PartFitOperation.RotateDecrease })
+            foreach (var operation in new[] { PartFitOperation.RotateIncrease, PartFitOperation.RotateDecrease,
+                PartFitOperation.HandTighten, PartFitOperation.HandLoosen })
             {
                 removal.Operation = operation;
                 Assert.Equal(PartFitStatus.Unavailable, PartRemovalPolicy.Check(removal, Fitted(), 1, true, true, true));
                 Assert.Equal(PartFitStatus.Unavailable, PartFitLedger.Check(removal, Fitted(), true, true, true, true, true, false));
             }
-            removal.Operation = (PartFitOperation)4;
+            removal.Operation = (PartFitOperation)8;
             Assert.Null(new PartFitLedger().Begin(removal, 1, PartFitStatus.Pending));
-            Assert.False(new PartFitClient(1).TryBegin(1, 5, 10, (PartFitOperation)4));
+            Assert.False(new PartFitClient(1).TryBegin(1, 5, 10, (PartFitOperation)8));
         }
 
         [Fact]
@@ -157,7 +159,7 @@ namespace WinterMP.Net.Tests
         public void AvailabilityChangesAdvanceRevisionAndEqualRevisionCannotToggleIt()
         {
             var state = Fitted(); var publication = new ReplacementPartPublication(); var replica = Replica();
-            state.Revision = publication.Observe(state); publication.MarkBroadcast(state.Revision);
+            state.Revision = publication.Observe(state); publication.MarkBroadcast(state.Revision, state.PresentationRevision);
             Assert.True(replica.Receive(state, out uint id));
             state.RemovalAllowed = false;
             Assert.False(replica.Receive(state, out _));

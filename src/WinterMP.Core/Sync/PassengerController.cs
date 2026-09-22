@@ -7,8 +7,8 @@ using WinterMP.Net.Messages;
 namespace WinterMP.Core.Sync
 {
     /// <summary>
-    /// Passenger seats for the SORBET and the CORRIS (the project car): front
-    /// passenger seat plus two rear bench spots, so a full car carries 4 players.
+    /// Three passenger seats for the Sorbet/Corris; two for the taxi, with its
+    /// rear-right seat reserved for the native fare customer.
     ///
     /// The game has no passenger mechanic for these cars, so this is hand-rolled
     /// (the proven MSC-multiplayer approach): crouch on a free seat cushion and
@@ -22,7 +22,7 @@ namespace WinterMP.Core.Sync
     /// remote passengers' avatars are pinned into the cabin, and simultaneous
     /// entry races are resolved by lowest player id (the loser is re-ejected).
     /// </summary>
-    public sealed class PassengerController : MonoBehaviour
+    public sealed partial class PassengerController : MonoBehaviour
     {
         /// <summary>
         /// Horizontal reach of the "sit down" prompt, measured on the car's floor
@@ -78,6 +78,30 @@ namespace WinterMP.Core.Sync
         public bool IsLocalSeatedInVehicle(uint vehicleId) =>
             _seated && _seatedVehicleId == vehicleId;
 
+        internal bool TryGetLocalPassengerVehicle(out uint vehicleId)
+        {
+            vehicleId = _seatedVehicleId;
+            return !_disabled && _seated && vehicleId != 0 && _seatedIndex >= 0 && _seatedIndex < 3;
+        }
+
+        internal bool HasRemotePassengerInVehicle(uint vehicleId)
+        {
+            var session = SessionManager.Instance;
+            if (_disabled || vehicleId == 0 || session == null || session.State != SessionState.Connected || session.IsHost) return false;
+            foreach (var player in session.Players)
+                if (_remoteSeats.TryGetValue(player.PlayerId, out var seat)
+                    && seat.VehicleId == vehicleId && seat.Seat < 3) return true;
+            return false;
+        }
+
+        // Caller selects a present player from the connected session roster.
+        internal bool IsRemotePassengerInVehicle(byte playerId, uint vehicleId)
+        {
+            var session = SessionManager.Instance;
+            return !_disabled && vehicleId != 0 && session != null && !session.IsHost && session.State == SessionState.Connected
+                && _remoteSeats.TryGetValue(playerId, out var seat) && seat.VehicleId == vehicleId && seat.Seat < 3;
+        }
+
         private struct SeatRef
         {
             public uint VehicleId;
@@ -91,15 +115,25 @@ namespace WinterMP.Core.Sync
             public Transform? DriveTrigger;
             public Vector3[] SeatLocal = new Vector3[3];
             public GameObject?[] RemoteAnchors = new GameObject?[3];
+            public byte AvailableSeats = WinterMP.Net.Sync.PassengerSeatPolicy.AllSeats;
+            public Transform? UnavailableWhileActive;
         }
 
         private readonly Dictionary<uint, VehicleSeats> _vehicles = new Dictionary<uint, VehicleSeats>();
         private readonly Dictionary<byte, SeatRef> _remoteSeats = new Dictionary<byte, SeatRef>();
         private readonly Dictionary<byte, ushort> _remoteSeatSequences = new Dictionary<byte, ushort>();
 
-        /// <summary>A player (re)joined — its seat-claim counter restarted; drop the stale latch.</summary>
-        public void ForgetPlayer(byte playerId) => _remoteSeatSequences.Remove(playerId);
+        /// <summary>A reused player slot must not inherit its old seat or claim counter.</summary>
+        public void ForgetPlayer(byte playerId)
+        {
+            _remoteSeatSequences.Remove(playerId);
+            if (!_remoteSeats.TryGetValue(playerId, out var seat)) return;
+            _remoteSeats.Remove(playerId);
+            DestroyAnchor(seat);
+        }
         private readonly List<WorldSyncManager.VehicleInfo> _vehicleScratch = new List<WorldSyncManager.VehicleInfo>();
+        private readonly HashSet<uint> _liveVehicleIds = new HashSet<uint>();
+        private readonly List<uint> _retiredVehicleIds = new List<uint>();
         private readonly List<byte> _purgeScratch = new List<byte>();
 
         private Transform? _player;
@@ -113,6 +147,7 @@ namespace WinterMP.Core.Sync
         private uint _seatedVehicleId;
         private int _seatedIndex;
         private Transform? _originalParent;
+        private Transform? _seatedParent;
         private bool _controllerWasEnabled;
         private float _nextKeyAt;
         private float _nextRebroadcastAt;
@@ -187,6 +222,12 @@ namespace WinterMP.Core.Sync
 
                 if (_player == null) return;
 
+                if (DeathSyncManager.Instance != null && DeathSyncManager.Instance.IsLocalDead)
+                {
+                    if (_seated) ForceExit("local death");
+                    return;
+                }
+
                 if (_seated)
                     UpdateSeated(session!);
                 else
@@ -210,7 +251,12 @@ namespace WinterMP.Core.Sync
                 // Re-pin every frame: player FSMs (and the game's own gravity code)
                 // keep writing to the transform.
                 if (!_seated || _player == null) return;
-                if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null) return;
+                var session = SessionManager.Instance;
+                if (session == null || (session.State != SessionState.Hosting && session.State != SessionState.Connected)
+                    || DeathSyncManager.Instance != null && DeathSyncManager.Instance.IsLocalDead)
+                { ForceExit("player/session no longer active"); return; }
+                if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || !SeatAvailable(vehicle, _seatedIndex))
+                { ForceExit("seat no longer available"); return; }
 
                 var seat = vehicle.SeatLocal[_seatedIndex];
                 _player.position = vehicle.Body.transform.TransformPoint(LocalSeatedOffset(seat));
@@ -277,7 +323,7 @@ namespace WinterMP.Core.Sync
 
         private void UpdateSeated(SessionManager session)
         {
-            if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || vehicle.Body == null)
+            if (!_vehicles.TryGetValue(_seatedVehicleId, out var vehicle) || !SeatAvailable(vehicle, _seatedIndex))
             {
                 ForceExit("vehicle gone");
                 return;
@@ -328,7 +374,7 @@ namespace WinterMP.Core.Sync
                 var playerLocal = root.InverseTransformPoint(_player.position);
                 for (int seat = 0; seat < 3; seat++)
                 {
-                    if (IsSeatOccupied(vehicle.VehicleId, (byte)seat)) continue;
+                    if (!SeatAvailable(vehicle, seat) || IsSeatOccupied(vehicle.VehicleId, (byte)seat)) continue;
 
                     var seatLocal = vehicle.SeatLocal[seat];
                     if (Mathf.Abs(playerLocal.y - seatLocal.y) > EnterVerticalTolerance) continue;
@@ -363,13 +409,18 @@ namespace WinterMP.Core.Sync
 
         private void Enter(SessionManager session, VehicleSeats vehicle, int seat)
         {
+            if (_disabled || _seated || _player == null || !SeatAvailable(vehicle, seat)
+                || IsSeatOccupied(vehicle.VehicleId, (byte)seat)
+                || (session.State != SessionState.Hosting && session.State != SessionState.Connected)
+                || DeathSyncManager.Instance != null && DeathSyncManager.Instance.IsLocalDead) return;
             _originalParent = _player!.parent;
             _playerController = _player.GetComponent<CharacterController>();
             _controllerWasEnabled = _playerController != null && _playerController.enabled;
             if (_playerController != null)
                 _playerController.enabled = false;
 
-            _player.parent = vehicle.Body.transform;
+            _seatedParent = vehicle.Body.transform;
+            _player.parent = _seatedParent;
 
             _seated = true;
             _seatedVehicleId = vehicle.VehicleId;
@@ -388,28 +439,52 @@ namespace WinterMP.Core.Sync
             // Just hand control back in place — don't teleport the player out to the side of
             // the car. Reparenting preserves world position, so re-enabling the controller
             // simply lets them walk out from the seat, like the game's own get-out.
-            if (_player != null)
-                _player.parent = _originalParent;
-
-            LevelPlayer();
-            RestoreController();
-            _seated = false;
+            ReleaseLocalSeat();
             SendSeatState(session, 0, PassengerState.SeatNone);
             WinterMPPlugin.Log.LogInfo("Passenger: got out.");
         }
 
         private void ForceExit(string reason)
         {
-            if (_player != null)
-                _player.parent = _originalParent;
-            LevelPlayer();
-            RestoreController();
-            _seated = false;
+            ReleaseLocalSeat();
 
             var session = SessionManager.Instance;
             if (session != null)
                 SendSeatState(session, 0, PassengerState.SeatNone);
             WinterMPPlugin.Log.LogInfo($"Passenger: force exit ({reason}).");
+        }
+
+        private void ReleaseLocalSeat()
+        {
+            if (!_seated) return;
+            _seated = false;
+            // Native death/respawn may already have moved PLAYER. Only undo our
+            // own parenting; never pull a revived player out of their new parent.
+            if (_player != null && _seatedParent != null && _player.parent == _seatedParent)
+            {
+                _player.parent = _originalParent;
+                LevelPlayer();
+            }
+            RestoreController();
+            _seatedVehicleId = 0; _seatedIndex = -1; _hint = null;
+            _originalParent = null; _seatedParent = null; _playerController = null; _controllerWasEnabled = false;
+        }
+
+        internal void RetirePlayerSeat(byte playerId)
+        {
+            try
+            {
+                if (SessionManager.Instance?.LocalPlayerId == playerId) ReleaseLocalSeat();
+                if (_remoteSeats.TryGetValue(playerId, out var seat)) DestroyAnchor(seat);
+                _remoteSeats.Remove(playerId);
+            }
+            catch (System.Exception error) { DisablePassengerSync(error); }
+        }
+
+        internal void RetireAllSeats()
+        {
+            try { ReleaseLocalSeat(); ClearRemoteSeatOccupancy(); }
+            catch (System.Exception error) { DisablePassengerSync(error); }
         }
 
         private void RestoreController()
@@ -462,13 +537,13 @@ namespace WinterMP.Core.Sync
             if (!message.IsSeated)
                 return message.VehicleId == 0;
 
+            if (_disabled || player.IsDead) return false;
             if (message.SeatIndex >= 3) return false;
-            if (!_vehicles.TryGetValue(message.VehicleId, out var vehicle) || vehicle.Body == null)
-            {
-                ScanVehicles(force: true);
-                if (!_vehicles.TryGetValue(message.VehicleId, out vehicle) || vehicle.Body == null)
-                    return false;
-            }
+            // Validation must use the currently registered body, even if an old
+            // object with the same network id is still alive between scans.
+            ScanVehicles(force: true);
+            if (!_vehicles.TryGetValue(message.VehicleId, out var vehicle) || !SeatAvailable(vehicle, message.SeatIndex))
+                return false;
 
             // Once the host accepted this exact seat, occupancy is the proof. Comparing
             // a delayed world-space pose with a moving car every keepalive ejects riders.
@@ -510,6 +585,10 @@ namespace WinterMP.Core.Sync
                 if (difference == 0 || difference > short.MaxValue) return;
             }
             _remoteSeatSequences[message.PlayerId] = message.Sequence;
+
+            foreach (var player in session.Players)
+                if (player.PlayerId == message.PlayerId && player.IsDead)
+                { RetirePlayerSeat(message.PlayerId); return; }
 
             if (message.IsSeated)
             {
@@ -566,11 +645,7 @@ namespace WinterMP.Core.Sync
 
         private void ApplyHostSeatCorrection()
         {
-            if (_player != null)
-                _player.parent = _originalParent;
-            LevelPlayer();
-            RestoreController();
-            _seated = false;
+            ReleaseLocalSeat();
             WinterMPPlugin.Log.LogWarning("Passenger: host rejected the seat claim; returned to on-foot state.");
         }
 
@@ -650,11 +725,16 @@ namespace WinterMP.Core.Sync
 
         private void ClearRemoteSeats()
         {
+            ClearRemoteSeatOccupancy();
+            _remoteSeatSequences.Clear();
+        }
+
+        private void ClearRemoteSeatOccupancy()
+        {
             if (_remoteSeats.Count == 0) return;
             foreach (var seatRef in _remoteSeats.Values)
                 DestroyAnchor(seatRef);
             _remoteSeats.Clear();
-            _remoteSeatSequences.Clear();
         }
 
         // ------------------------------------------------------------------ seat discovery
@@ -668,24 +748,50 @@ namespace WinterMP.Core.Sync
             if (world == null) return;
 
             world.CollectVehicles(_vehicleScratch);
+            _liveVehicleIds.Clear();
+            foreach (var info in _vehicleScratch)
+                if (info.Body != null) _liveVehicleIds.Add(info.Id);
+            _retiredVehicleIds.Clear();
+            foreach (var pair in _vehicles)
+                if (!_liveVehicleIds.Contains(pair.Key)) _retiredVehicleIds.Add(pair.Key);
+            foreach (uint id in _retiredVehicleIds) RemoveCachedVehicle(id);
+
             foreach (var info in _vehicleScratch)
             {
-                if (_vehicles.ContainsKey(info.Id) || info.Body == null) continue;
+                if (info.Body == null) continue;
+                if (_vehicles.TryGetValue(info.Id, out var existing))
+                {
+                    if (existing.Body == info.Body) continue;
+                    RemoveCachedVehicle(info.Id);
+                }
 
                 string name = info.Body.name;
-                if (!name.StartsWith("SORBET", System.StringComparison.Ordinal)
+                bool taxi = IsTaxi(info.Body);
+                if (!taxi && !name.StartsWith("SORBET", System.StringComparison.Ordinal)
                     && !name.StartsWith("CORRIS", System.StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                var seats = ResolveSeats(info.Id, info.Body);
+                var seats = taxi ? ResolveTaxiSeats(info.Id, info.Body) : ResolveSeats(info.Id, info.Body);
                 if (seats != null)
                 {
                     _vehicles[info.Id] = seats;
-                    WinterMPPlugin.Log.LogInfo($"Passenger: 3 seats registered on '{name}'.");
+                    WinterMPPlugin.Log.LogInfo($"Passenger: {(taxi ? 2 : 3)} seats registered on '{name}'.");
                 }
             }
+        }
+
+        private void RemoveCachedVehicle(uint vehicleId)
+        {
+            if (!_vehicles.TryGetValue(vehicleId, out var vehicle)) return;
+            if (_seated && _seatedVehicleId == vehicleId) ForceExit("vehicle replaced or removed");
+            for (byte seat = 0; seat < vehicle.RemoteAnchors.Length; seat++)
+                DestroyAnchor(new SeatRef { VehicleId = vehicleId, Seat = seat });
+            _vehicles.Remove(vehicleId);
+            // Keep accepted remote occupancy and sequence history. Anchors can
+            // rebind to the same logical vehicle; only host seat results retire it.
+            Diagnostics.SyncEventLog.Record("passenger-vehicle-refresh", vehicleId.ToString("X8"));
         }
 
         // Body placement (remote avatar + exit spot): rest on the cushion.
@@ -777,6 +883,7 @@ namespace WinterMP.Core.Sync
             _player = null;
             _playerController = null;
             _originalParent = null;
+            _seatedParent = null;
             _vehicles.Clear();
             _remoteSeats.Clear();
             _remoteSeatSequences.Clear();

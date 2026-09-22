@@ -58,7 +58,7 @@ namespace WinterMP.Core.Sync
         {
             Locate();
 
-            if (_classifieds != null)
+            if (_classifieds != null && Catalog.SyncCatalog.Adverts == null)
             {
                 yield return new WorldProgressState
                 {
@@ -134,6 +134,7 @@ namespace WinterMP.Core.Sync
 
         private bool ApplyClassifieds(WorldProgressState message)
         {
+            if (Catalog.SyncCatalog.Adverts != null) return true;
             if (_classifieds == null) return false;
             WriteInt(_classifieds, "JobStage", message.Phase);
             WriteInt(_classifieds, "Delivered", message.Primary);

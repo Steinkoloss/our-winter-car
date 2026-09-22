@@ -64,7 +64,7 @@ namespace WinterMP.Core.Sync
                 if (mount.FsmName != c["itemFsm"] || !PartFitMountReady(mount)) continue;
                 try
                 {
-                    ValidatePartFitMount(mount, c);
+                    ValidatePartFitMount(mount, c, prerequisite: part.Factory.Rule.FitPrerequisite);
                     part.FitMount = mount;
                     return mount;
                 }
@@ -73,7 +73,8 @@ namespace WinterMP.Core.Sync
             return null;
         }
 
-        private static void ValidatePartFitMount(PlayMakerFSM mount, ReplacementPartsData c, bool slots = false)
+        private static void ValidatePartFitMount(PlayMakerFSM mount, ReplacementPartsData c, bool slots = false,
+            PartFitPrerequisiteData? prerequisite = null)
         {
             RequireFit(mount.FsmVariables.FindFsmGameObject(c["mountPartVariable"]) != null
                 && mount.FsmVariables.FindFsmGameObject(c["mountPointVariable"]) != null
@@ -81,7 +82,7 @@ namespace WinterMP.Core.Sync
             var idle = PackageStateActions(mount, c["fitMountIdleState"], "GetOwner", "SetBoolValue");
             RequireFit(PackageField<FsmGameObject>(idle.Actions[0], "storeGameObject")?.Name == c["mountPointVariable"]);
             RequireFitTransition(mount, c["fitMountIdleState"], c["fitMountCheckEvent"], c["fitAllowState"]);
-            RequireFitTransition(mount, c["fitAllowState"], c["fitConfirmEvent"], c["fitFarState"]);
+            RequireFitTransition(mount, c["fitAllowState"], c["fitConfirmEvent"], prerequisite?.State ?? c["fitFarState"]);
             RequireFitTransition(mount, c["fitAllowState"], "FINISHED", c["fitMountIdleState"]);
             RequireFitTransition(mount, null, c["fitCancelEvent"], c["fitMountIdleState"]);
             var allow = FsmHook.FindState(mount, c["fitAllowState"])!;
@@ -93,6 +94,7 @@ namespace WinterMP.Core.Sync
                     || name == "BoolAnyTrue" || name == "BoolAllTrue"));
                 RequireFitOneShot(action);
             }
+            if (prerequisite != null) ValidatePartFitPrerequisite(mount, c, prerequisite);
             if (slots) { ValidatePartSlotMount(mount, c); return; }
             ValidatePartFitDistance(mount, c["fitFarState"], c, false);
             ValidatePartFitDistance(mount, c["fitNearState"], c, true);
@@ -111,6 +113,34 @@ namespace WinterMP.Core.Sync
                 && PackageField<FsmString>(send, "sendEvent")?.Value == c["fitInstallEvent"]
                 && PackageField<FsmFloat>(send, "delay")?.Value == 0);
             foreach (var action in install.Actions) RequireFitOneShot(action);
+        }
+
+        private static void ValidatePartFitPrerequisite(PlayMakerFSM mount, ReplacementPartsData c,
+            PartFitPrerequisiteData prerequisite)
+        {
+            var state = PackageStateActions(mount, prerequisite.State, "GetFsmFloat", "FloatCompare");
+            var read = state.Actions[0]; var compare = state.Actions[1];
+            RequireFit(FitTargetVariable(PackageField<FsmOwnerDefault>(read, "gameObject"), prerequisite.Reference)
+                && mount.FsmVariables.FindFsmGameObject(prerequisite.Reference) != null
+                && PackageField<FsmString>(read, "fsmName")?.Value == c["itemFsm"]
+                && PackageField<FsmString>(read, "fsmName")?.UseVariable == false
+                && PackageField<FsmString>(read, "variableName")?.Value == prerequisite.Scalar
+                && PackageField<FsmString>(read, "variableName")?.UseVariable == false
+                && PackageField<FsmFloat>(read, "storeValue")?.Name == prerequisite.Result
+                && PackageField<FsmFloat>(read, "storeValue")?.UseVariable == true
+                && PackageField<FsmFloat>(compare, "float1")?.Name == prerequisite.Result
+                && PackageField<FsmFloat>(compare, "float1")?.UseVariable == true
+                && PackageField<FsmFloat>(compare, "float2")?.Value == prerequisite.MinimumExclusive
+                && PackageField<FsmFloat>(compare, "float2")?.UseVariable == false
+                && PackageField<FsmFloat>(compare, "tolerance")?.Value == 0
+                && PackageField<FsmFloat>(compare, "tolerance")?.UseVariable == false
+                && PackageField<FsmEvent>(compare, "lessThan")?.Name == "FINISHED"
+                && PackageField<FsmEvent>(compare, "equal")?.Name == "FINISHED"
+                && PackageField<FsmEvent>(compare, "greaterThan")?.Name == c["fitConfirmEvent"]);
+            RequireFit(state.Transitions.Length == 2);
+            RequireFitTransition(mount, prerequisite.State, "FINISHED", c["fitMountIdleState"]);
+            RequireFitTransition(mount, prerequisite.State, c["fitConfirmEvent"], c["fitFarState"]);
+            foreach (var action in state.Actions) { RequireFit(action.Enabled); RequireFitOneShot(action); }
         }
 
         private static void ValidatePartFitDistance(PlayMakerFSM mount, string name, ReplacementPartsData c, bool near)

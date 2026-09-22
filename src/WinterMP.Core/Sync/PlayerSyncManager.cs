@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
+using WinterMP.Net;
 using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.Sync
@@ -40,10 +41,14 @@ namespace WinterMP.Core.Sync
         private readonly GuestSpawnRelocator _guestRelocator = new GuestSpawnRelocator();
         private readonly PlayerNeedsSync _needsSync = new PlayerNeedsSync();
         private readonly PlayerSleepHook _sleepHook = new PlayerSleepHook();
+        private readonly GuestResumePolicy _guestResume = new GuestResumePolicy();
+        private GuestSpawn? _pendingSpawnOffer;
 
         internal GuestSpawnRelocator GuestRelocator => _guestRelocator;
         internal PlayerNeedsSync NeedsSync => _needsSync;
         internal bool IsLocalDead => DeathSyncManager.Instance != null && DeathSyncManager.Instance.IsLocalDead;
+        internal bool IsLocalSpawnReady => _pendingSpawnOffer == null && !_guestRelocator.HasPending
+            && _guestResume.CanPublish(Application.loadedLevelName == "GAME");
 
         private void Awake()
         {
@@ -58,13 +63,27 @@ namespace WinterMP.Core.Sync
         public void OnGuestSpawn(GuestSpawn message)
         {
             var session = SessionManager.Instance;
-            if (session == null || session.IsHost) return;
+            if (session == null || session.IsHost || Application.loadedLevelName != "GAME") return;
+            WatchLevelChanges();
+            if (!_guestResume.ReceiveOffer(message.HasLastPosition)) return;
+            _pendingSpawnOffer = message;
+        }
 
-            var prompt = UI.GuestSpawnPrompt.Instance;
-            if (prompt != null)
-                prompt.ShowOffer(message);
-            else if (!message.HasLastPosition)
-                _guestRelocator.ApplyImmediate(message.HostPosition, message.HostRotation);
+        internal void ChooseGuestSpawn() => _guestResume.Choose();
+
+        internal void BeforeWorldSave()
+        {
+            var session = SessionManager.Instance;
+            if (session != null && !session.IsHost) _guestResume.LeaveWorld();
+        }
+
+        internal void ResetGuestSpawn()
+        {
+            _guestResume.Reset();
+            _pendingSpawnOffer = null;
+            _guestRelocator.Reset();
+            UI.GuestSpawnPrompt.Instance?.Reset();
+            _needsSync.Reset();
         }
 
         private void Update()
@@ -95,8 +114,30 @@ namespace WinterMP.Core.Sync
             }
 
             WatchLevelChanges();
+            bool inGame = Application.loadedLevelName == "GAME";
+            if (!inGame) return;
+            if (_pendingSpawnOffer != null && GameObject.Find(PlayerObjectName) != null)
+            {
+                var prompt = UI.GuestSpawnPrompt.Instance;
+                if (prompt != null)
+                {
+                    prompt.ShowOffer(_pendingSpawnOffer);
+                    _pendingSpawnOffer = null;
+                }
+            }
             if (_guestRelocator.HasPending)
                 _guestRelocator.TryApply();
+
+            if (_pendingSpawnOffer == null && !_guestRelocator.HasPending)
+                _guestResume.CompleteRelocation();
+
+            // Loading globals and the menu's PLAYER mannequin belong to the guest's
+            // personal save. Neither may replace the host's returning profile.
+            if (!session.IsHost && !_guestResume.CanPublish(inGame))
+            {
+                UpdateAvatars(session);
+                return;
+            }
 
             try { _needsSync.Locate(); _needsSync.UpdateGuest(session); }
             catch (Exception e) { WinterMPPlugin.Log.LogWarning($"PlayerNeedsSync: {e.Message}"); }
@@ -122,6 +163,7 @@ namespace WinterMP.Core.Sync
 
             if (level == _lastLevel) return;
             _lastLevel = level;
+            if (level != "GAME") ResetGuestSpawn();
 
             // Scene swap destroyed both the game's player object and our avatars.
             _localPlayer = null;
@@ -162,6 +204,7 @@ namespace WinterMP.Core.Sync
 
             var position = PlayerPoseReader.ReadFeetPosition(_localPlayer, _localController);
             var rotation = PlayerPoseReader.ReadLookRotation(_localPlayer);
+            bool hasSweat = VehicleWorldSync.TryReadLocalSweat(out float sweat);
             session.SendPlayerTransform(new PlayerTransform
             {
                 PlayerId = session.LocalPlayerId,
@@ -169,6 +212,8 @@ namespace WinterMP.Core.Sync
                 Position = position.ToNet(),
                 Rotation = rotation.ToNet(),
                 MoveState = ReadLocalMoveState(),
+                HasSweat = hasSweat,
+                Sweat = sweat,
             });
         }
 

@@ -54,11 +54,7 @@ namespace WinterMP.Core.Sync
             // root turned out to be the mover instead, this self-limits: a still transform
             // sends one final and the guest AI is restored.
             new ScriptedMoverDef("JOBS/Farm/Farmer/Walker", "Logic"),
-            // Taxi customer (R2.8): host-authoritative rider. With its Logic live only on
-            // the host, the fare Cost accrues there off the guest's (vehicle-synced) taxi,
-            // the enter/exit decisions are single-sourced, and the fare press passes the
-            // host's PayMoney proximity gate. Same static-root/moving-child shape again.
-            new ScriptedMoverDef("JOBS/TAXIJOB/Customer1/TaxiWalker", "Logic"),
+            // TaxiServiceBinding owns the taxi customer, including activation and seat parenting.
         };
         private readonly Dictionary<uint, ScriptedMover> _movers = new Dictionary<uint, ScriptedMover>();
 

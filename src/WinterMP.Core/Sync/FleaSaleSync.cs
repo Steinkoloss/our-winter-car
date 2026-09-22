@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using HutongGames.PlayMaker;
 using UnityEngine;
@@ -5,296 +6,171 @@ using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
-    /// <summary>
-    /// Shared flea-market sale table as host-owned world state (COVERAGE-ROADMAP 3.1). The
-    /// <c>SaleTable :: Sell</c> FSM rolls a day-timed random sale per-client, so items sell
-    /// on different days and the proceeds (→ shared wallet) diverge. The <b>host</b> owns the
-    /// table: it runs the sale RNG and broadcasts the accumulated <c>MoneyTotal</c> + rent;
-    /// guests suppress their local Sell FSM and apply the host's numbers. Renting the table
-    /// is relayed as an intent so the shared wallet moves once; collecting the money
-    /// envelope needs no intent — the MoneyFlea button is a catalogued control, so the
-    /// press rides the generic host-validated <c>FsmStateEnter</c> path.
-    /// Per-item placement/pricing stays local (dynamic picked-object refs; see PLAN §4.4).
-    /// </summary>
-    internal sealed class FleaSaleSync
+    /// <summary>Host-owned table finances and supported shared listings.</summary>
+    internal sealed partial class FleaSaleSync
     {
-        private const string TablePath = "FleaMarket/SaleTable";
-        private const string RentButtonPath = "FleaMarket/LOD/OpenHours/BuyTableRent";
-        private const float ProbeIntervalSeconds = 5f;
-        private const float HostTickSeconds = 2f;
-        private const float KeepAliveSeconds = 20f;
-        private const float IntentCooldownSeconds = 0.5f;
-        private const float IntentPlayerPoseMaxAgeSeconds = 2f;
-        private const float IntentPlayerMaxDistance = 8f;
+        private readonly List<FsmSuppressor> _failures = new List<FsmSuppressor>();
+        private readonly FleaSaleLedger _ledger = new FleaSaleLedger();
+        private FleaSaleBinding? _binding;
+        private FleaSaleState? _received, _published;
+        private FleaSaleIntent? _pending;
+        private bool _failed;
+        private float _probeAt, _tickAt, _keepAliveAt, _retryAt;
+        private ushort _sequence;
 
-        private Transform? _anchor;
-        private PlayMakerFSM? _logic;   // SaleTable :: Logic
-        private PlayMakerFSM? _sell;    // SaleTable :: Sell (RNG — suppressed on guests)
-        private PlayMakerFSM? _rentButton; // BuyTableRent :: Buy (the actual "rent a week" control)
-        private FsmFloat? _moneyTotal;
-        private FsmInt? _rentDays;
-        private bool _loggedFound;
-        private readonly FsmSuppressor _sellSuppressor = new FsmSuppressor();
-        private bool _rentHookState;
-
-        private bool _built;
-        private float _nextProbeAt;
-        private float _nextHostTickAt;
-        private float _nextKeepAliveAt;
-        private float _nextIntentAt;
-        private ushort _outIntentSequence;
-        private readonly Dictionary<byte, ushort> _lastIntentSequences = new Dictionary<byte, ushort>();
-
-        /// <summary>Host: a player (re)joined — its intent counter restarted; drop the stale latch.</summary>
-        public void ForgetPlayer(byte playerId) => _lastIntentSequences.Remove(playerId);
-
-        private bool _hasLast;
-        private int _lastMoney;
-        private ushort _lastRent;
-        private byte _lastFlags;
-
-        private bool Ready => _logic != null && _moneyTotal != null;
-
+        public void ForgetPlayer(byte player) { _ledger.ForgetPlayer(player); _listingReceipts.ForgetPlayer(player); }
         public void Clear()
         {
-            // Restore before dropping _sell, or the FSM stays dead for the rest of the
-            // process — a player who guests once could never sell at the flea market again,
-            // not even back in singleplayer.
-            _sellSuppressor.Restore();
-
-            _anchor = null;
-            _logic = _sell = _rentButton = null;
-            _moneyTotal = null;
-            _rentDays = null;
-            _loggedFound = false;
-            _rentHookState = false;
-            _built = false;
-            _nextProbeAt = _nextHostTickAt = _nextKeepAliveAt = _nextIntentAt = 0f;
-            _outIntentSequence = 0;
-            _lastIntentSequences.Clear();
-            _hasLast = false;
+            foreach (var pause in _failures) pause.Restore();
+            _failures.Clear();
+            ClearListings();
+            try { _binding?.Restore(); }
+            catch (Exception e) { WinterMPPlugin.Log.LogError("Flea cleanup failed: " + e); }
+            _binding = null; _received = _published = null; _pending = null;
+            _failed = false; _probeAt = _tickAt = _keepAliveAt = _retryAt = 0; _sequence = 0; _ledger.Clear();
         }
-
         public void Update(SessionManager session)
         {
-            if (session.PlayerCount == 0) return;
-            EnsureBuilt();
-
-            if (Time.unscaledTime >= _nextProbeAt)
-            {
-                _nextProbeAt = Time.unscaledTime + ProbeIntervalSeconds;
-                Locate();
-            }
-
-            if (session.IsHost)
-            {
-                if (Time.unscaledTime < _nextHostTickAt) return;
-                _nextHostTickAt = Time.unscaledTime + HostTickSeconds;
-                bool keepAlive = Time.unscaledTime >= _nextKeepAliveAt;
-                if (keepAlive) _nextKeepAliveAt = Time.unscaledTime + KeepAliveSeconds;
-                HostBroadcastIfChanged(session, keepAlive);
-            }
-            else
-            {
-                SuppressLocalSaleRng();
-            }
-        }
-
-        public FleaSaleState? BuildSnapshot()
-        {
-            EnsureBuilt();
-            Locate();
-            if (!Ready) return null;
-            return BuildState();
-        }
-
-        // ---- Guest apply -----------------------------------------------------
-
-        public void Apply(FleaSaleState message)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || session.IsHost) return;
-            EnsureBuilt();
-            Locate();
-            if (!Ready) return;
-
             try
             {
-                if (_moneyTotal != null) _moneyTotal.Value = message.MoneyTotal;
-                if (_rentDays != null) _rentDays.Value = message.RentDays;
+                if (!Locate(session)) return;
+                UpdateListings(session);
+                if (session.IsHost && Time.unscaledTime >= _tickAt)
+                {
+                    _tickAt = Time.unscaledTime + .5f;
+                    Publish(session, Time.unscaledTime >= _keepAliveAt);
+                }
+                if (!session.IsHost && _received != null) _binding!.Apply(_received);
+                if (_pending == null || Time.unscaledTime < _retryAt) return;
+                _retryAt = Time.unscaledTime + 1;
+                if (session.IsHost) TryAcceptIntent(_pending);
+                else session.SendWorldMessage(_pending, Channel.ReliableOrdered);
             }
-            catch (System.Exception e)
-            {
-                WinterMPPlugin.Log.LogDebug("FleaSaleSync: apply failed: " + e.Message);
-            }
+            catch (Exception e) { Fail(e); }
         }
-
-        // ---- Host intent -----------------------------------------------------
-
-        public bool TryAcceptIntent(FleaSaleIntent intent)
+        private bool Locate(SessionManager session)
+        {
+            if (_failed) return false;
+            if (_binding != null) return true;
+            if (Time.unscaledTime < _probeAt) return false;
+            _probeAt = Time.unscaledTime + 2;
+            _binding = FleaSaleBinding.Bind(!session.IsHost, Queue);
+            if (_binding != null) _binding.InstallListings(OfferListing, SubmitListing, SellListing, Fail);
+            if (_binding != null) WinterMPPlugin.Log.LogInfo("Flea paid checkout and proceeds bound (host=" + session.IsHost + ").");
+            return _binding != null;
+        }
+        public FleaSaleState? BuildSnapshot()
+        {
+            try
+            {
+                var session = SessionManager.Instance;
+                return session != null && session.IsHost && Locate(session) ? _ledger.Observe(_binding!.Capture()) : null;
+            }
+            catch (Exception e) { Fail(e); return null; }
+        }
+        public void Apply(FleaSaleState state)
         {
             var session = SessionManager.Instance;
-            if (session == null || !session.IsHost) return false;
-            EnsureBuilt();
-            Locate();
-            // Only the rent press is intent-relayed. Envelope collection (ActionCollect)
-            // has no emitter — the MoneyFlea button is a catalogued control riding the
-            // generic FsmStateEnter path — so anything else here is invalid.
-            if (intent.Action != FleaSaleIntent.ActionRent
-                || _logic == null || _anchor == null || !IsGuestNear(session, intent.PlayerId, _anchor.position))
-            {
-                WinterMPPlugin.Log.LogWarning($"FleaSaleSync: dropped invalid/distant intent action {intent.Action} from player {intent.PlayerId}.");
-                return false;
-            }
-            if (_lastIntentSequences.TryGetValue(intent.PlayerId, out ushort previous))
-            {
-                ushort difference = (ushort)(intent.Sequence - previous);
-                if (difference == 0 || difference > short.MaxValue) return false;
-            }
-            _lastIntentSequences[intent.PlayerId] = intent.Sequence;
-
-            try { _logic.SendEvent("RENT"); }
-            catch (System.Exception e) { WinterMPPlugin.Log.LogDebug("FleaSaleSync: event failed: " + e.Message); }
-            SyncEventLog.Record("flea-intent", $"action {intent.Action} player {intent.PlayerId}");
-            _nextHostTickAt = 0f;
-            return true;
+            if (session == null || session.IsHost || !FleaSalePolicy.CanApply(_received, state)) return;
+            _received = FleaSalePolicy.Copy(state);
+            try { if (Locate(session)) _binding!.Apply(state); }
+            catch (Exception e) { Fail(e); }
         }
-
-        // ---- Host broadcast --------------------------------------------------
-
-        private void HostBroadcastIfChanged(SessionManager session, bool keepAlive)
+        private void Queue(byte action)
         {
-            Locate();
-            if (!Ready) return;
-
-            var state = BuildState();
-            if (state == null) return;
-
-            bool changed = !_hasLast || _lastMoney != Mathf.RoundToInt(state.MoneyTotal)
-                || _lastRent != state.RentDays || _lastFlags != state.Flags;
-            if (!changed && !keepAlive) return;
-
-            _hasLast = true;
-            _lastMoney = Mathf.RoundToInt(state.MoneyTotal);
-            _lastRent = state.RentDays;
-            _lastFlags = state.Flags;
+            try
+            {
+                var session = SessionManager.Instance;
+                if (session == null || _binding == null || _failed || _pending != null) return;
+                var quote = session.IsHost ? _ledger.Observe(_binding.Capture()) : _received;
+                int weeks = action == FleaSaleIntent.PayRent ? _binding.Weeks : 0;
+                if (quote == null || (action == FleaSaleIntent.PayRent && (!_binding.RentOnly || weeks < 1 || weeks > 52)))
+                {
+                    _binding.Finish(action, false);
+                    session.AddSystemChat(quote == null ? "* Waiting for the host's flea table. Try again shortly."
+                        : "* Shared flea checkout currently supports 1–52 rental weeks in an otherwise empty basket.");
+                    return;
+                }
+                _pending = new FleaSaleIntent { PlayerId = session.LocalPlayerId, Action = action,
+                    Sequence = ++_sequence, Revision = quote.Revision, Weeks = (ushort)weeks };
+                _retryAt = 0;
+            }
+            catch (Exception e) { Fail(e); }
+        }
+        public bool TryAcceptIntent(FleaSaleIntent request)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || !session.IsHost || !FleaSalePolicy.Valid(request)) return false;
+            try
+            {
+                if (!Locate(session)) return false;
+                var b = _binding!;
+                _ledger.Observe(b.Capture());
+                if (!_ledger.TryReceipt(request, out var result))
+                {
+                    bool rent = request.Action == FleaSaleIntent.PayRent;
+                    var target = rent ? b.CashPosition : b.EnvelopePosition;
+                    bool near = GamblingSync.TryPlayerPosition(session, request.PlayerId, out var position)
+                        && (position - target).sqrMagnitude <= 16f;
+                    result = _ledger.Apply(request, b.Wallet, near, rent ? b.RentAvailable : b.CollectAvailable,
+                        out float cash, out var next);
+                    if (result.Result == FleaSaleResult.Accepted) b.Commit(request, cash, next!);
+                    SyncEventLog.Record("flea-payment", "player " + request.PlayerId + " seq " + request.Sequence
+                        + " action " + request.Action + " revision " + request.Revision + " result " + result.Result);
+                }
+                Publish(session, true);
+                var wallet = WorldSyncManager.Instance?.BuildWalletState();
+                if (wallet != null) session.SendWorldMessage(wallet, Channel.ReliableOrdered);
+                session.SendWorldMessage(result, Channel.ReliableOrdered);
+                if (request.PlayerId == session.LocalPlayerId) OnResult(result);
+                return result.Result == FleaSaleResult.Accepted;
+            }
+            catch (Exception e) { Fail(e); return false; }
+        }
+        public void OnResult(FleaSaleResult result)
+        {
+            var session = SessionManager.Instance;
+            if (session == null || result.PlayerId != session.LocalPlayerId || _pending == null
+                || _pending.Sequence != result.Sequence || _pending.Action != result.Action) return;
+            _pending = null;
+            try
+            {
+                _binding?.Finish(result.Action, result.Result == FleaSaleResult.Accepted, result.Result == FleaSaleResult.Funds);
+                if (result.Result != FleaSaleResult.Accepted)
+                    session.AddSystemChat(result.Result == FleaSaleResult.Changed ? "* The flea table changed. Review it and try again."
+                        : result.Result == FleaSaleResult.Funds ? "* Not enough cash for this rental."
+                        : "* Flea transaction declined. Return to the checkout or available sales envelope to try again.");
+            }
+            catch (Exception e) { Fail(e); }
+        }
+        private void Publish(SessionManager session, bool force)
+        {
+            var state = _ledger.Observe(_binding!.Capture());
+            if (!force && _published != null && state.Revision == _published.Revision) return;
+            _published = state; _keepAliveAt = Time.unscaledTime + 20;
             session.SendWorldMessage(state, Channel.ReliableOrdered);
         }
-
-        private FleaSaleState? BuildState()
+        private void Fail(Exception e)
         {
-            if (!Ready) return null;
-            byte flags = 0;
-            int rent = _rentDays != null ? _rentDays.Value : 0;
-            if (rent > 0) flags |= FleaSaleState.FlagRented;
-            return new FleaSaleState
+            if (_failed) return;
+            _failed = true; _pending = null;
+            foreach (var obj in ScenePath.ScanFsms())
             {
-                Sequence = ++_outIntentSequence,
-                MoneyTotal = _moneyTotal!.Value,
-                RentDays = (ushort)Mathf.Clamp(rent, 0, ushort.MaxValue),
-                Flags = flags,
-            };
-        }
-
-        // On a guest, keep the table's own random-sale FSM from resolving sales locally —
-        // only the host may sell and credit the shared wallet.
-        private void SuppressLocalSaleRng()
-        {
-            if (_sellSuppressor.Active || _sell == null) return;
-            _sellSuppressor.Suppress(_sell);
-        }
-
-        // ---- Discovery -------------------------------------------------------
-
-        private void EnsureBuilt()
-        {
-            if (_built) return;
-            _built = true;
-        }
-
-        private void Locate()
-        {
-            if (Ready && _sell != null && _rentButton != null) return;
-
-            GameObject? go;
-            try { go = GameObject.Find(TablePath); }
-            catch { return; }
-            if (go == null) return;
-
-            _anchor = go.transform;
-            foreach (var fsm in go.GetComponents<PlayMakerFSM>())
-            {
+                var fsm = obj as PlayMakerFSM;
                 if (fsm == null) continue;
-                if (_logic == null && fsm.FsmName == "Logic") _logic = fsm;
-                if (_sell == null && fsm.FsmName == "Sell") _sell = fsm;
+                string path = ScenePath.Of(fsm.transform);
+                if (FleaSaleBinding.OwnsCheckout(path, fsm.FsmName)
+                    || FleaSaleBinding.OwnsEnvelope(path, fsm.FsmName)
+                    || path == "FleaMarket/SaleTable")
+                {
+                    var pause = new FsmSuppressor(); pause.Suppress(fsm); _failures.Add(pause);
+                }
             }
-            if (_logic != null && _moneyTotal == null)
-            {
-                _moneyTotal = _logic.FsmVariables.FindFsmFloat("MoneyTotal");
-                _rentDays = _logic.FsmVariables.FindFsmInt("RentDays");
-            }
-            if (_rentButton == null)
-            {
-                GameObject? rentGo;
-                try { rentGo = GameObject.Find(RentButtonPath); }
-                catch { rentGo = null; }
-                if (rentGo != null)
-                    foreach (var fsm in rentGo.GetComponents<PlayMakerFSM>())
-                        if (fsm != null && fsm.FsmName == "Buy") { _rentButton = fsm; break; }
-            }
-
-            if (!_loggedFound && Ready)
-            {
-                _loggedFound = true;
-                WinterMPPlugin.Log.LogInfo("FleaSaleSync: located flea sale table.");
-            }
-
-            var session = SessionManager.Instance;
-            if (session != null && !session.IsHost) InstallGuestHooks();
-        }
-
-        // Guest: relay the rent-table press to the host.
-        private void InstallGuestHooks()
-        {
-            if (_rentHookState || _rentButton == null) return;
-            // A rent press adds a week via BuyTableRent :: Buy "Add"; relay it so the host charges
-            // the shared wallet + advances RentDays. (The old hook was SaleTable::Logic "Set array
-            // ID", which fires when any item is PLACED on the table — spurious rent, and the real
-            // rent press never relayed.)
-            if (FsmHook.OnStateEnter(_rentButton, "Add", () => EmitIntent(FleaSaleIntent.ActionRent)))
-                _rentHookState = true;
-        }
-
-        private void EmitIntent(byte action)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || session.IsHost || session.PlayerCount == 0) return;
-            if (Time.unscaledTime < _nextIntentAt) return;
-            _nextIntentAt = Time.unscaledTime + IntentCooldownSeconds;
-
-            session.SendWorldMessage(new FleaSaleIntent
-            {
-                Action = action,
-                PlayerId = session.LocalPlayerId,
-                Sequence = ++_outIntentSequence,
-            }, Channel.ReliableOrdered);
-        }
-
-        private static bool IsGuestNear(SessionManager session, byte playerId, Vector3 targetPosition)
-        {
-            float now = Time.unscaledTime;
-            foreach (var player in session.Players)
-            {
-                if (player.PlayerId != playerId) continue;
-                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > IntentPlayerPoseMaxAgeSeconds)
-                    return false;
-                return (player.Position - targetPosition).sqrMagnitude
-                    <= IntentPlayerMaxDistance * IntentPlayerMaxDistance;
-            }
-            return false;
+            WinterMPPlugin.Log.LogError("Flea transactions disabled: " + e);
         }
     }
 }

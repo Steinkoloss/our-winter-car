@@ -36,21 +36,27 @@ namespace WinterMP.Core.Sync
         {
             var c = SyncCatalog.PartsPackages;
             if (c == null || _packageFactories.Count == c.Factories.Count) return;
+            var names = new HashSet<string>();
+            foreach (var rule in c.Factories) names.Add(rule.Fsm);
             foreach (var obj in ScenePath.ScanFsms())
             {
                 var fsm = obj as PlayMakerFSM;
-                if (fsm == null || !fsm.Fsm.Initialized || ScenePath.Of(fsm.transform) != c["factoryPath"]) continue;
+                if (fsm == null || !fsm.Fsm.Initialized) continue;
+                string fsmName = fsm.FsmName;
+                if (!names.Contains(fsmName)) continue;
+                string? path = null;
                 foreach (var rule in c.Factories)
                 {
-                    if (fsm.FsmName != rule.Fsm) continue;
-                    uint id = FactoryItemIdentity.FactoryId(c["factoryPath"], rule.Fsm);
+                    if (fsmName != rule.Fsm || (path ?? (path = ScenePath.Of(fsm.transform))) != rule.Path) continue;
+                    uint id = FactoryItemIdentity.FactoryId(rule.Path, rule.Fsm);
                     if (_packageFactories.ContainsKey(id)) break;
                     var factory = new PackageFactory { Rule = rule, Id = id, Fsm = fsm };
                     _packageFactories.Add(id, factory);
                     try
                     {
                         var prefab = fsm.FsmVariables.FindFsmGameObject(c["prefabVariable"]);
-                        var contents = fsm.FsmVariables.FindFsmGameObject(c["spawnerVariable"]);
+                        var contents = rule.ContentsSpawnPointVariable == null ? fsm.FsmVariables.FindFsmGameObject(c["spawnerVariable"])
+                            : PackageField<FsmGameObject>(PackageStateActions(fsm, c["loadCreateState"], "CreateObject", "SetFsmGameObject", "SetName").Actions[1], "setValue");
                         if (prefab == null || prefab.Value == null || prefab.Value.name != rule.Prefix
                             || contents == null || contents.Value == null || ScenePath.Of(contents.Value.transform) != rule.ContentsPath
                             || fsm.FsmVariables.FindFsmGameObject(c["outputVariable"]) == null
@@ -73,6 +79,8 @@ namespace WinterMP.Core.Sync
                             || PackageField<FsmGameObject>(load.Actions[0], "storeObject")?.Name != c["outputVariable"]
                             || PackageField<FsmString>(load.Actions[2], "name")?.Name != c["idVariable"])
                             throw new InvalidOperationException("Saved package output changed.");
+                        ValidatePackageContentsTarget(factory, c, state.Actions[5]);
+                        ValidatePackageContentsTarget(factory, c, load.Actions[1]);
                         factory.CreateState = state;
                         factory.Hook = new FsmHookAction(() => CapturePackageOutput(factory));
                         var actions = new FsmStateAction[state.Actions.Length + 1];
@@ -93,12 +101,19 @@ namespace WinterMP.Core.Sync
 
         private static FsmState PackageStateActions(PlayMakerFSM fsm, string name, params string[] types)
         {
+            return PackageActionLayout(fsm, name, types, null);
+        }
+
+        private static FsmState PackageActionLayout(PlayMakerFSM fsm, string name, string[] types, ICollection<int>? disabled)
+        {
             var state = FsmHook.FindState(fsm, name);
-            if (state == null || state.Actions.Length != types.Length)
+            if (state == null || !state.IsInitialized || state.Actions.Length != types.Length)
                 throw new InvalidOperationException("Package state changed: " + name);
             for (int i = 0; i < types.Length; i++)
-                if (!state.Actions[i].Enabled || state.Actions[i].GetType().Name != types[i])
-                    throw new InvalidOperationException("Package actions changed: " + name);
+                if (state.Actions[i].Enabled != (disabled == null || !disabled.Contains(i))
+                    || state.Actions[i].GetType().Name != types[i])
+                    throw new InvalidOperationException("Package action changed: " + name + "#" + i
+                        + " (" + state.Actions[i].GetType().Name + ", enabled=" + state.Actions[i].Enabled + ").");
             return state;
         }
 
@@ -114,15 +129,43 @@ namespace WinterMP.Core.Sync
                 || use.FsmVariables.FindFsmString(c["itemIdVariable"]) == null
                 || use.FsmVariables.FindFsmGameObject(c["contentsVariable"]) == null
                 || use.FsmVariables.FindFsmGameObject(c["ownerVariable"]) == null
-                || use.FsmVariables.FindFsmInt(c["capacityVariable"]) == null
+                || (!factory.Rule.FixedCapacity && use.FsmVariables.FindFsmInt(c["capacityVariable"]) == null)
                 || use.FsmVariables.FindFsmInt(c["quantityVariable"])?.Value != factory.Rule.Capacity)
                 throw new InvalidOperationException("Package quantity/initialization changed.");
             ValidatePackageGarbage(use);
-            ValidatePackageOpening(use, c);
+            ValidatePackageOpening(use, c, factory.Rule);
+            if (factory.Rule.FixedCapacity)
+            {
+                var load = factory.Rule.LoadClampIndex == 1
+                    ? PackageStateActions(use, "Load", "LoadInt", "IntClamp", "LoadTransform", "SetScale")
+                    : PackageStateActions(use, "Load", "LoadInt", "LoadTransform", "IntClamp", "SetScale");
+                var clamp = load.Actions[factory.Rule.LoadClampIndex];
+                if (PackageField<FsmInt>(clamp, "intVariable")?.Name != c["quantityVariable"]
+                    || PackageField<FsmInt>(clamp, "minValue")?.Value != 0
+                    || PackageField<FsmInt>(clamp, "minValue")?.UseVariable != false
+                    || PackageField<FsmInt>(clamp, "maxValue")?.Value != factory.Rule.Capacity
+                    || PackageField<FsmInt>(clamp, "maxValue")?.UseVariable != false)
+                    throw new InvalidOperationException("Fixed package capacity changed.");
+                RequireFitOneShot(clamp);
+            }
             PackageStateActions(use, c["emptyState"], "DestroyComponent", "SetIntValue", "SetName");
             foreach (string state in c.ReadyStates)
-                if (FsmHook.FindState(use, state) == null) throw new InvalidOperationException("Package ready state missing.");
+                if (factory.Rule.BulbContents != null && state == "Delay") continue;
+                else if (FsmHook.FindState(use, state) == null) throw new InvalidOperationException("Package ready state missing.");
             return use;
+        }
+
+        private static void ValidatePackageContentsTarget(PackageFactory factory, PartsPackagesData c, FsmStateAction action)
+        {
+            var value = PackageField<FsmGameObject>(action, "setValue");
+            if (!FitTargetVariable(PackageField<FsmOwnerDefault>(action, "gameObject"), c["outputVariable"])
+                || PackageField<FsmString>(action, "fsmName")?.Value != c["itemFsm"]
+                || PackageField<FsmString>(action, "variableName")?.Value != c["contentsVariable"]
+                || value == null || value.Value != factory.Contents
+                || (factory.Rule.ContentsSpawnPointVariable == null
+                    ? !value.UseVariable || value.Name != c["spawnerVariable"] : value.UseVariable))
+                throw new InvalidOperationException("Package contents reference changed.");
+            RequireFitOneShot(action);
         }
 
         private void CapturePackageOutput(PackageFactory factory)

@@ -15,9 +15,28 @@ namespace WinterMP.Net
             bool senderIsAuthenticated, bool senderIsSelectedHost, bool receiverHandshakeComplete)
         {
             if (receiverIsHost)
-                return messageId == MessageId.HandshakeRequest || senderIsAuthenticated;
+                return messageId != MessageId.AdvertPhoneResult && messageId != MessageId.MotorOilFillerState && messageId != MessageId.MotorOilBottleState && messageId != MessageId.AdvertJobState && messageId != MessageId.AdvertSheetState && messageId != MessageId.TrainState && messageId != MessageId.CoffeeState && messageId != MessageId.CoffeeDrinkResult && messageId != MessageId.SausageState && messageId != MessageId.TractorTrailerState && messageId != MessageId.HouseholdFuseState && messageId != MessageId.HouseholdFuseResult && messageId != MessageId.TaxiFareState && messageId != MessageId.TaxiMeterState && messageId != MessageId.TaxiServiceState && messageId != MessageId.WiringInstallReceipt && messageId != MessageId.ApplianceState && messageId != MessageId.VehicleDamage && messageId != MessageId.WiringState && messageId != MessageId.BatteryState && messageId != MessageId.EngineBlockState && messageId != MessageId.GearboxState && messageId != MessageId.VehicleCoolantState && messageId != MessageId.HeaterState && messageId != MessageId.VehicleConditionReleaseAck
+                    && messageId != MessageId.VehicleDrivetrainWearState
+                    && messageId != MessageId.VehicleWheelHealthState
+                    && messageId != MessageId.ValveAdjustmentState
+                    && messageId != MessageId.FirewoodLoadState
+                    && messageId != MessageId.FirewoodBuyerState
+                    && messageId != MessageId.MooseMeatState
+                    && messageId != MessageId.MooseCorpseState
+                    && messageId != MessageId.MilkConditionState
+                    && messageId != MessageId.SupplyItemState
+                    && messageId != MessageId.AtfBottleState
+                    && messageId != MessageId.AtfFillerState
+                    && messageId != MessageId.UtilityBillState
+                    && messageId != MessageId.FleaSaleResult
+                    && messageId != MessageId.FleaListingState && messageId != MessageId.FleaListingResult
+                    && messageId != MessageId.FleaSaleState
+                    && messageId != MessageId.UtilityPaymentResult
+                    && messageId != MessageId.SessionSettings
+                    && messageId != MessageId.CylinderHeadState
+                    && (messageId == MessageId.HandshakeRequest || senderIsAuthenticated);
 
-            if (!senderIsSelectedHost) return false;
+            if (!senderIsSelectedHost || messageId == MessageId.AdvertPhoneIntent || messageId == MessageId.MotorOilRefillIntent || messageId == MessageId.AdvertIntent || messageId == MessageId.CoffeeIntent || messageId == MessageId.SausageOpenIntent || messageId == MessageId.TractorTrailerIntent || messageId == MessageId.HouseholdFuseIntent || messageId == MessageId.TaxiFareIntent || messageId == MessageId.TaxiMeterIntent || messageId == MessageId.TaxiCallIntent || messageId == MessageId.TaxiPaydayReadIntent || messageId == MessageId.WiringInstallRequest || messageId == MessageId.FleaListingIntent || messageId == MessageId.FleaSaleIntent || messageId == MessageId.AtfRefillIntent || messageId == MessageId.StoveKnobIntent || messageId == MessageId.WheelPunctureRequest || messageId == MessageId.FirewoodUnloadIntent || messageId == MessageId.MooseChopIntent || messageId == MessageId.UtilityPaymentIntent || messageId == MessageId.StarterDrawRequest || messageId == MessageId.StarterWearRequest || messageId == MessageId.GearboxOilUseRequest || messageId == MessageId.GearboxWearRequest) return false;
             return receiverHandshakeComplete || messageId == MessageId.HandshakeResponse;
         }
 
@@ -38,6 +57,7 @@ namespace WinterMP.Net
         public static bool IsChannelAllowed(MessageId messageId, Channel channel)
         {
             if (!IsKnownChannel(channel)) return false;
+            if (messageId == MessageId.TractorTrailerMotion) return channel == Channel.UnreliableSequenced;
 
             switch (messageId)
             {
@@ -49,6 +69,7 @@ namespace WinterMP.Net
                 case MessageId.VehicleClimate:
                 case MessageId.VehicleCargo:
                 case MessageId.NpcTransform:
+                case MessageId.TrainState:
                 case MessageId.VenttiSceneState:
                     return channel == Channel.ReliableOrdered || channel == Channel.UnreliableSequenced;
 

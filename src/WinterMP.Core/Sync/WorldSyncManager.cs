@@ -36,6 +36,7 @@ namespace WinterMP.Core.Sync
         private readonly ClothingSync _clothing = new ClothingSync();
         private readonly HeatSourceSync _heat = new HeatSourceSync();
         private FluidContainerSync _fluids = null!;
+        private AtfRefillSync _atf = null!;
         private KiljuSync _kilju = null!;
         private readonly WorldProgressSync _progress = new WorldProgressSync();
         private readonly JobSiteSync _jobSites = new JobSiteSync();
@@ -58,6 +59,9 @@ namespace WinterMP.Core.Sync
         private readonly TaxiJobSync _taxiJob = new TaxiJobSync();
         private readonly WorldScalarsSync _worldScalars = new WorldScalarsSync();
         private readonly HockeyBettingSync _hockey = new HockeyBettingSync();
+        private readonly TrainSync _train = new TrainSync();
+        private readonly TractorTrailerSync _trailer = new TractorTrailerSync();
+        private readonly FirewoodDeliverySync _woodDelivery = new FirewoodDeliverySync();
         private readonly WelfareSync _welfare = new WelfareSync();
         private readonly HitchhikerSync _hitchhiker = new HitchhikerSync();
         private readonly WantedSync _wanted = new WantedSync();
@@ -75,11 +79,13 @@ namespace WinterMP.Core.Sync
         private WorldSyncBridge _bridge = null!;
         private FsmWorldSync _fsm = null!;
         private ItemWorldSync _items = null!;
+        internal ItemWorldSync ItemSync => _items;
         private VehicleWorldSync _vehicles = null!;
         private NpcTrafficSync _npcTraffic = null!;
 
         private string _lastLevel = string.Empty;
         private float _nextScanAt;
+        private float _nextItemScanAt, _nextNpcScanAt;
         private float _nextPendingAt;
         private float _nextTimeSyncAt;
         private float _nextChecksumAt;
@@ -125,6 +131,37 @@ namespace WinterMP.Core.Sync
         private void Awake()
         {
             Instance = this;
+            ItemWorldSync.InitializeMotorOilStartup();
+        }
+
+        internal bool PrepareGuestEngineInputsForAdmission()
+        {
+            EnsureSyncReady();
+            return _items.PrepareGuestEngineInputs(force: true, admission: true);
+        }
+
+        internal bool TryReadWheelHealthInput(PlayMakerFSM fsm, int wheel, out byte health)
+        {
+            health = 0;
+            return _syncReady && _vehicles.TryReadWheelHealthInput(fsm, wheel, out health);
+        }
+
+        internal bool TryReadGearboxConditionInput(PlayMakerFSM fsm, out byte damage)
+        {
+            damage = 0;
+            return _syncReady && _vehicles.TryReadGearboxConditionInput(fsm, out damage);
+        }
+
+        internal bool TryReadDrivetrainWearInput(PlayMakerFSM fsm, int part, out float wear, out bool ready)
+        {
+            wear = 0; ready = false;
+            return _syncReady && _vehicles.TryReadDrivetrainWearInput(fsm, part, out wear, out ready);
+        }
+
+        internal bool TryReadGearboxOilInput(PlayMakerFSM fsm, out float oil, out bool ready)
+        {
+            oil = 0; ready = false;
+            return _syncReady && _vehicles.TryReadGearboxOilInput(fsm, out oil, out ready);
         }
 
         private void EnsureSyncReady()
@@ -136,9 +173,11 @@ namespace WinterMP.Core.Sync
 
             _bridge = new WorldSyncBridge(this, _hookedFsms);
             _items = new ItemWorldSync(_bridge);
+            _fleaSale.BindItems(_items);
             _lottoTickets = new LottoTicketSync(_items, _lottery);
             _vehicles = new VehicleWorldSync(_bridge, _items);
             _fluids = new FluidContainerSync(_items);
+            _atf = new AtfRefillSync(_items);
             _kilju = new KiljuSync(_items);
             _police = new PoliceSync(_items);
             _rally = new RallySync(_items);
@@ -155,13 +194,16 @@ namespace WinterMP.Core.Sync
 
         private void OnDestroy()
         {
-            if (_syncReady) _vehicles.ClearDamageHooks();
+            if (_syncReady) { _vehicles.ClearDamageState(); _vehicles.ClearVehicleStateStreams(); }
             _gambling.Clear();
             _poker.Clear();
             _ventti.Clear();
             _lottoTickets?.Clear();
             _lottery.Clear();
             _hockey.Clear();
+            _trailer.Clear();
+            _train.Clear();
+            _woodDelivery.Clear();
             _wallet.Reset();
             _welfare.Clear();
             if (Instance == this) Instance = null;
@@ -181,6 +223,11 @@ namespace WinterMP.Core.Sync
             }
         }
 
+        private void FixedUpdate()
+        {
+            if (_syncReady && !_worldSyncDisabled && _wasSessionActive && IsGameLevel()) _train.FixedUpdate();
+        }
+
         private void LateUpdate()
         {
             if (!_syncReady || _worldSyncDisabled || !_wasSessionActive || Time.unscaledTime < _syncErrorBackoffUntil)
@@ -191,6 +238,7 @@ namespace WinterMP.Core.Sync
             try
             {
                 _vehicles.LateUpdateRemoteVehicles(Time.unscaledTime);
+                _trailer.LateUpdate();
                 var session = SessionManager.Instance;
                 if (session != null) _ventti.LateUpdate(session);
             }
@@ -227,6 +275,13 @@ namespace WinterMP.Core.Sync
         {
             WatchLevelChanges();
 
+            if (GuestSaveGuard.ProtectWorld && IsGameLevel())
+            {
+                EnsureSyncReady();
+                _vehicles.PrepareGuestDamageIsolation();
+                _vehicles.PrepareGuestEngineProtection();
+            }
+
             var session = SessionManager.Instance;
             bool sessionActive = session != null
                 && (session.State == SessionState.Hosting || session.State == SessionState.Connected);
@@ -249,11 +304,7 @@ namespace WinterMP.Core.Sync
 
             _items.ProcessBags(session!);
 
-            if (Time.unscaledTime >= _nextScanAt)
-            {
-                _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
-                ScanWorld();
-            }
+            UpdateWorldDiscovery();
 
             if (Time.unscaledTime >= _nextPendingAt)
             {
@@ -295,9 +346,18 @@ namespace WinterMP.Core.Sync
             }
 
             _items.ProcessPendingSpawns(session!);
+            _items.ProcessMilk(session!);
             _items.UpdateItems(session);
+            _items.UpdateAtf(session!);
+            _atf.Update(session!);
             _npcTraffic.Update(session!);
+            _train.Update(session!);
             _vehicles.UpdateVehicleStates(session!);
+            _vehicles.UpdateStarterDraws(session!);
+            _vehicles.UpdateStarterWear(session!);
+            _vehicles.UpdateVehicleCoolant(session!);
+            _vehicles.UpdateDrivetrainWearStates(session!);
+            _vehicles.UpdateWheelHealthStates(session!);
             _vehicles.UpdateVehicleDamage(session!);
             _vehicles.UpdateVehicleCondition(session!);
             _vehicles.UpdateFuelTransfers(session!);
@@ -308,6 +368,7 @@ namespace WinterMP.Core.Sync
             _kilju.Update(session!);
             _progress.Update(session!);
             _jobSites.Update(session!);
+            _fsm.UpdateFirewoodBuyers(session!);
             _mailOrders.Update(session!);
             _inspection.Update(session!);
             _police.Update(session!);
@@ -327,6 +388,8 @@ namespace WinterMP.Core.Sync
             _taxiJob.Update(session!);
             _worldScalars.Update(session!);
             _hockey.Update(session!);
+            _trailer.Update(session!, _items);
+            _woodDelivery.Update(session!);
             _welfare.Update(session!);
             _hitchhiker.Update(session!);
             _wanted.Update(session!);
@@ -380,6 +443,8 @@ namespace WinterMP.Core.Sync
 
             _fsm.Clear();
             _bridge.PartIdentities.Clear();
+            _atf.Clear();
+            _taxiJob.Clear();
             _items.Clear();
             _npcTraffic.Clear();
             _fluids.Clear();
@@ -408,9 +473,11 @@ namespace WinterMP.Core.Sync
             _lottery.Clear();
             _repairShop.Clear();
             _fleaSale.Clear();
-            _taxiJob.Clear();
             _worldScalars.Clear();
             _hockey.Clear();
+            _trailer.Clear();
+            _train.Clear();
+            _woodDelivery.Clear();
             _welfare.Clear();
             _hitchhiker.Clear();
             _wanted.Clear();
@@ -430,11 +497,29 @@ namespace WinterMP.Core.Sync
             LocalPlayer = null;
             NextPlayerSearchAt = 0f;
             _nextScanAt = Time.unscaledTime + FirstScanDelaySeconds;
+            _nextItemScanAt = _nextNpcScanAt = 0f;
             FirstDoorRegisteredAt = -1f;
         }
 
-        private void ScanWorld()
+        private void UpdateWorldDiscovery()
         {
+            if (ScenePath.TryBeginDiscovery(ref _nextScanAt, ScanIntervalSeconds))
+                ScanWorldCore(_nextItemScanAt <= 0f || _nextNpcScanAt <= 0f);
+
+            // Initial discovery completes before join snapshots can be requested.
+            // Later passes each own a fresh scan scope on an admitted frame.
+            if (_nextItemScanAt > 0f && ScenePath.TryBeginDiscovery(ref _nextItemScanAt, ScanIntervalSeconds))
+                ScanWorldObjects(true);
+            if (_nextNpcScanAt > 0f && ScenePath.TryBeginDiscovery(ref _nextNpcScanAt, ScanIntervalSeconds))
+                ScanWorldObjects(false);
+        }
+
+        private void ScanWorld() => ScanWorldCore(true);
+
+        private void ScanWorldCore(bool includeObjects)
+        {
+            _vehicles.PrepareGuestDamageIsolationNow();
+            _vehicles.PrepareGuestEngineProtectionNow();
             _items.RefreshBagFactories();
             _items.PrepareGuestPartIsolation();
             int newDoors = 0, newParts = 0, newBuys = 0, newBolts = 0, newIgnitions = 0, newControls = 0, newStarters = 0;
@@ -446,15 +531,27 @@ namespace WinterMP.Core.Sync
                 {
                     var fsm = obj as PlayMakerFSM;
                     if (fsm == null || _hookedFsms.ContainsKey(fsm)) continue;
-                    if (ItemWorldSync.IsBagUse(fsm)) continue;
-                    var nativePart = NativePartIdentity.FindData(fsm.transform);
-                    if (nativePart != null && _items.IsPendingGuestPartIsolation(nativePart)) continue;
 
                     try
                     {
                         if (!fsm.gameObject.activeInHierarchy || !fsm.enabled) continue;
-
+                        if (!fsm.Fsm.Initialized || !fsm.Fsm.Started) continue;
+                        if (TrainSync.Owns(fsm.transform) || ItemWorldSync.IsCoffeeFsm(fsm) || ItemWorldSync.IsAdvertFsm(fsm) || ItemWorldSync.IsBagUse(fsm)) continue;
                         string fsmName = fsm.FsmName;
+                        // The remaining branches accept only catalogued starter or
+                        // control names. Avoid walking saved-part parents for graphs
+                        // that none of this scan's registration paths can accept.
+                        if (fsmName != "Use" && fsmName != "Screw" && fsmName != "Buy" && fsmName != "Data" && fsmName != "Button"
+                            && !SyncCatalog.HasStarterOrControlRules(fsmName)) continue;
+                        // Parent lookup is needed only for a protected guest's saved
+                        // parts. Hosts cannot defer discovery for guest isolation.
+                        var session = SessionManager.Instance;
+                        if (GuestSaveGuard.ProtectWorld && session != null && !session.IsHost)
+                        {
+                            var nativePart = NativePartIdentity.FindData(fsm.transform);
+                            if (nativePart != null && _items.IsPendingGuestPartIsolation(nativePart)) continue;
+                        }
+
                         if (fsmName == "Use")
                         {
                             string[]? states = SyncCatalog.TryMatchDoor(fsm);
@@ -522,8 +619,9 @@ namespace WinterMP.Core.Sync
                     }
                 }
 
-                int newItems = _items.ScanItems();
-                int newNpcs = _npcTraffic.Scan();
+                int newItems = includeObjects ? _items.ScanItems() : 0;
+                int newNpcs = includeObjects ? _npcTraffic.Scan() : 0;
+                if (includeObjects) _nextItemScanAt = _nextNpcScanAt = Time.unscaledTime + ScanIntervalSeconds;
                 if (newDoors > 0 || newParts > 0 || newBuys > 0 || newBolts > 0 || newIgnitions > 0 || newControls > 0 || newStarters > 0 || newItems > 0 || newNpcs > 0)
                 {
                     RecomputeIdHash();
@@ -542,6 +640,21 @@ namespace WinterMP.Core.Sync
             catch (Exception e)
             {
                 WinterMPPlugin.Log.LogError($"WorldSync: world scan failed: {e}");
+            }
+        }
+
+        private void ScanWorldObjects(bool items)
+        {
+            try
+            {
+                int added = items ? _items.ScanItems() : _npcTraffic.Scan();
+                if (added <= 0) return;
+                RecomputeIdHash();
+                WinterMPPlugin.Log.LogInfo($"WorldSync: +{added} {(items ? "items" : "npcs")} — now {_items.ItemCount} items, {_npcTraffic.NpcCount} npcs (id hash {IdHash:X8}).");
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError($"WorldSync: {(items ? "item" : "NPC")} scan failed: {e}");
             }
         }
 
@@ -666,9 +779,12 @@ namespace WinterMP.Core.Sync
 
         private void ReleaseEverything()
         {
+            _nextItemScanAt = _nextNpcScanAt = 0f;
             _wallet.Reset();
             if (!_syncReady) return;
 
+            _atf.Clear();
+            _taxiJob.Clear();
             _items.ReleaseSession();
             _npcTraffic.ReleaseSession();
             _fsm.Clear();
@@ -687,9 +803,11 @@ namespace WinterMP.Core.Sync
             _lottery.Clear();
             _repairShop.Clear();
             _fleaSale.Clear();
-            _taxiJob.Clear();
             _worldScalars.Clear();
             _hockey.Clear();
+            _trailer.Clear();
+            _train.Clear();
+            _woodDelivery.Clear();
             _welfare.Clear();
             _hitchhiker.Clear();
             _wanted.Clear();

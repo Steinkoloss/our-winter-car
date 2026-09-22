@@ -7,6 +7,7 @@ public sealed class VehicleChecksumTests
 {
     private static VehicleCondition Condition() => new()
     {
+        Availability = VehicleCondition.AvailableAll,
         VehicleId = 1234, OwnerPlayerId = 0, Sequence = 17,
         TirePressure = 230, DrivetrainDamage = 2,
         HealthFL = 88, HealthFR = 87, HealthRL = 86, HealthRR = 85,

@@ -61,7 +61,7 @@ namespace WinterMP.Core.Sync
             }
         }
 
-        private static void BindReplicaBoltVisual(SyncedBolt bolt)
+        internal static void BindReplicaBoltVisual(SyncedBolt bolt)
         {
             var fsm = bolt.Fsm;
             var init = BoltActions(fsm, "Init", new[] { "GetChild", "GetScale", "GetName", "GetSubstring",

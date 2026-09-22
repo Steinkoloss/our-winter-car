@@ -46,6 +46,22 @@ namespace WinterMP.Core.Sync
     /// </summary>
     internal static class FsmHook
     {
+        internal static FsmStateAction? NativeAction(FsmState state, int index)
+        {
+            if (!state.IsInitialized || index < 0) return null;
+            var actions = state.Actions;
+            int offset = 0;
+            // Catalog indices predate our state-entry observers. Only our leading
+            // hooks may be skipped; foreign edits must still fail signature checks.
+            while (offset < actions.Length && actions[offset] is FsmHookAction) offset++;
+            return index < actions.Length - offset ? actions[offset + index] : null;
+        }
+
+        internal static bool IsNativeAction(FsmState state, int index, FsmStateAction action)
+        {
+            return action != null && ReferenceEquals(NativeAction(state, index), action);
+        }
+
         /// <summary>Invoke <paramref name="callback"/> whenever <paramref name="stateName"/> is entered.</summary>
         public static bool OnStateEnter(PlayMakerFSM fsm, string stateName, Action callback)
         {
@@ -56,17 +72,12 @@ namespace WinterMP.Core.Sync
         {
             hook = null;
             var state = FindState(fsm, stateName);
-            if (state == null) return false;
+            // Actions lazily deserializes through the state's Fsm. Before Awake,
+            // even a caught read emits several Unity errors on every retry.
+            if (state == null || !state.IsInitialized) return false;
 
             try
             {
-                // Reading state.Actions lazy-loads the FSM's ActionData, which needs the
-                // state's back-ref to its Fsm. On an FSM that hasn't initialized yet
-                // (e.g. hooked via Transform.Find on an inactive object — state.Fsm == null)
-                // that throws deep inside PlayMaker. Swallow it and report "not hooked" so
-                // the caller retries once the FSM Awakes, instead of letting the NRE escape
-                // and trip WorldSyncManager's shared kill switch (which disables ALL world
-                // sync, vehicles included).
                 var actions = state.Actions ?? new FsmStateAction[0];
                 var expanded = new FsmStateAction[actions.Length + 1];
                 hook = new FsmHookAction(callback);

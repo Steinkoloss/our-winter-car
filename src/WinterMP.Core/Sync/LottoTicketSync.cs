@@ -63,7 +63,7 @@ namespace WinterMP.Core.Sync
             {
                 if (!_ready && Time.unscaledTime >= _probeAt) { _probeAt = Time.unscaledTime + 2f; Locate(); }
                 if (!_ready) return;
-                if (Time.unscaledTime >= _scanAt) { _scanAt = Time.unscaledTime + 5f; Discover(session); }
+                if (ScenePath.TryBeginDiscovery(ref _scanAt, 5f)) Discover(session);
                 if (_resetClaim) { _resetClaim = false; Enter(_claim, "claimReset"); }
                 if (!session.IsHost) ApplyPending();
                 if (_pending != null && Time.unscaledTime >= _retryAt)

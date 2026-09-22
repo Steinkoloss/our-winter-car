@@ -86,7 +86,7 @@ namespace WinterMP.Core.Sync
             if (!IsFinite(message.Primary) || !IsFinite(message.Secondary)) return;
             if (site.PrimaryInt != null) site.PrimaryInt.Value = Mathf.Max(0, Mathf.RoundToInt(message.Primary));
             if (site.Primary != null) site.Primary.Value = Mathf.Max(0f, message.Primary);
-            if (site.Secondary != null) site.Secondary.Value = Mathf.Max(0f, message.Secondary);
+            if (site.Secondary != null) site.Secondary.Value = WinterMP.Net.Sync.FirewoodLoadPolicy.SiteSecondary(site.Kind, message.Secondary);
             if (site.Active != null) site.Active.Value = message.IsActive;
             if (site.HoseAttached != null)
                 site.HoseAttached.Value = (message.Flags & JobSiteState.FlagHoseAttached) != 0;
@@ -135,8 +135,7 @@ namespace WinterMP.Core.Sync
 
         private void Scan(bool force = false)
         {
-            if (!force && Time.unscaledTime < _nextScanAt) return;
-            _nextScanAt = Time.unscaledTime + ScanIntervalSeconds;
+            if (!ScenePath.TryBeginDiscovery(ref _nextScanAt, ScanIntervalSeconds, force)) return;
 
             var fsms = ScenePath.ScanFsms();
             foreach (var obj in fsms)
@@ -146,6 +145,8 @@ namespace WinterMP.Core.Sync
 
                 try
                 {
+                    string fsmName = fsm.FsmName;
+                    if (fsmName != "Speak" && fsmName != "Level" && fsmName != "Logic" && fsmName != "Pump") continue;
                     string path = ScenePath.Of(fsm.transform);
                     byte kind;
                     FsmFloat? primary;
@@ -156,7 +157,7 @@ namespace WinterMP.Core.Sync
                     FsmBool? hoseInWaste = null;
                     FsmBool? sucking = null;
 
-                    if (path == "JOBS/Farm/Farmer/Walker" && fsm.FsmName == "Speak")
+                    if (path == "JOBS/Farm/Farmer/Walker" && fsmName == "Speak")
                     {
                         kind = JobSiteState.KindFarm;
                         primary = null;
@@ -165,7 +166,7 @@ namespace WinterMP.Core.Sync
                         active = fsm.FsmVariables.FindFsmBool("Done");
                     }
                     else if (path.StartsWith("JOBS/HouseShit", StringComparison.Ordinal)
-                        && fsm.FsmName == "Level")
+                        && fsmName == "Level")
                     {
                         kind = JobSiteState.KindSewage;
                         primary = fsm.FsmVariables.FindFsmFloat("ShitLevel");
@@ -173,14 +174,14 @@ namespace WinterMP.Core.Sync
                         active = fsm.FsmVariables.FindFsmBool("Called");
                     }
                     else if (path.StartsWith("JOBS/HouseWood", StringComparison.Ordinal)
-                        && fsm.FsmName == "Logic")
+                        && fsmName == "Logic")
                     {
                         kind = JobSiteState.KindFirewood;
                         primary = fsm.FsmVariables.FindFsmFloat("Surplus");
                         secondary = fsm.FsmVariables.FindFsmFloat("Penalty");
                         active = fsm.FsmVariables.FindFsmBool("Order");
                     }
-                    else if (path == "GIFU(750/450psi)/ShitTank" && fsm.FsmName == "Pump")
+                    else if (path == "GIFU(750/450psi)/ShitTank" && fsmName == "Pump")
                     {
                         kind = JobSiteState.KindSewageTruck;
                         primary = fsm.FsmVariables.FindFsmFloat("ShitLevel");
@@ -196,7 +197,7 @@ namespace WinterMP.Core.Sync
                     }
 
                     if ((primary == null && primaryInt == null) || active == null) continue;
-                    uint id = StableHash.Fnv1a32(path + "::" + fsm.FsmName);
+                    uint id = StableHash.Fnv1a32(path + "::" + fsmName);
                     if (_sites.ContainsKey(id)) continue;
 
                     _sites[id] = new Site

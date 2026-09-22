@@ -12,15 +12,19 @@ namespace WinterMP.Net
             crc = StableHash.Combine(crc, flags);
             crc = StableHash.Combine(crc, fuel);
             crc = StableHash.Combine(crc, damageMask & VehicleDamage.ConcretePartsMask);
-            // Missing systems contribute zero on vehicles without those bindings.
+            // Availability distinguishes missing data from known zero. Ignored
+            // payload bytes cannot cause a resync for an unavailable field.
             // Do not fold owners, sequences, binding bookkeeping or continuous wear.
-            crc = StableHash.Combine(crc, condition != null ? condition.TirePressure : 0u);
-            crc = StableHash.Combine(crc, condition != null ? condition.DrivetrainDamage : 0u);
-            crc = StableHash.Combine(crc, condition != null ? condition.HealthFL : 0u);
-            crc = StableHash.Combine(crc, condition != null ? condition.HealthFR : 0u);
-            crc = StableHash.Combine(crc, condition != null ? condition.HealthRL : 0u);
-            crc = StableHash.Combine(crc, condition != null ? condition.HealthRR : 0u);
-            return StableHash.Combine(crc, condition != null ? condition.Flags : 0u);
+            byte available = condition != null ? (byte)(condition.Availability & VehicleCondition.AvailableAll) : (byte)0;
+            crc = StableHash.Combine(crc, available);
+            crc = StableHash.Combine(crc, condition != null && condition.HasPressure ? condition.TirePressure : 0u);
+            crc = StableHash.Combine(crc, condition != null && condition.HasDrivetrain ? condition.DrivetrainDamage : 0u);
+            crc = StableHash.Combine(crc, condition != null && condition.HasWheel(0) ? condition.HealthFL : 0u);
+            crc = StableHash.Combine(crc, condition != null && condition.HasWheel(1) ? condition.HealthFR : 0u);
+            crc = StableHash.Combine(crc, condition != null && condition.HasWheel(2) ? condition.HealthRL : 0u);
+            crc = StableHash.Combine(crc, condition != null && condition.HasWheel(3) ? condition.HealthRR : 0u);
+            int wheels = available >> 2;
+            return StableHash.Combine(crc, condition != null ? (uint)(condition.Flags & (wheels | wheels << 4)) : 0u);
         }
     }
 }

@@ -117,6 +117,8 @@ namespace WinterMP.Core.Sync
         {
             if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
+            // Its rent cart is local; the dedicated checkout carries the paid weeks.
+            if (FleaSaleBinding.OwnsCheckout(path, fsm.FsmName)) return false;
             if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
             if (_buys.ContainsKey(id) || _doors.ContainsKey(id) || _parts.ContainsKey(id) || _bolts.ContainsKey(id))
             {
@@ -161,6 +163,8 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterBolt(PlayMakerFSM fsm)
         {
+            if (CylinderHeadFasteners.Matches(fsm)) return false;
+            if (IsValveAdjustment(fsm)) return RegisterValve(fsm);
             if (!fsm.Fsm.Initialized || !fsm.Fsm.Started || fsm.ActiveStateName == "Init") return false;
             if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
@@ -197,6 +201,7 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterIgnition(PlayMakerFSM fsm, string[] syncedStates)
         {
+            if (VehicleWorldSync.UsesEngineHandoff(fsm)) { MarkRegistered(fsm); return false; }
             if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
             if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
@@ -222,23 +227,39 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterControl(PlayMakerFSM fsm, string[] syncedStates)
         {
-            return RegisterControl(fsm, syncedStates, null, null);
+            return RegisterControl(fsm, syncedStates, null, null, null);
         }
 
         internal bool RegisterControl(PlayMakerFSM fsm, CatalogControlMatch match)
         {
-            return RegisterControl(fsm, match.States, match.ScalarFloatName, match.ScalarCommitState);
+            return RegisterControl(fsm, match.States, match.ScalarFloatName, match.ScalarCommitState, match.HostPayment);
         }
 
         private bool RegisterControl(
             PlayMakerFSM fsm,
             string[] syncedStates,
             string? scalarFloatName,
-            string? scalarCommitState)
+            string? scalarCommitState,
+            string? hostPayment)
         {
             if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
-            if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;
+            // Dedicated receipts own this cash boundary, including with an older local catalog.
+            if (FleaSaleBinding.OwnsEnvelope(path, fsm.FsmName)) return false;
+            string identityPath = path;
+            if (hostPayment == "firewood")
+            {
+                // Optional presentation metadata must not remove the existing
+                // native cash/income guard when a game update breaks a buyer.
+                try
+                {
+                    var buyer = FirewoodBuyerBinding.ConfigFor(fsm);
+                    if (buyer != null) identityPath = buyer.PaymentPath;
+                }
+                catch (System.Exception e)
+                { WinterMPPlugin.Log.LogWarning("Firewood buyer identity unavailable: " + e.Message); }
+            }
+            if (!_bridge.PartIdentities.TryFsmId(fsm, identityPath, out uint id)) return false;
             if (_controls.ContainsKey(id) || _starters.ContainsKey(id) || _ignitions.ContainsKey(id) || _doors.ContainsKey(id) || _bolts.ContainsKey(id))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: control id collision, not syncing '{path}'.");
@@ -270,6 +291,14 @@ namespace WinterMP.Core.Sync
                 if (!HookState(fsm, capturedCommit, () => OnScalarControlCommitted(id))) return false;
             }
 
+            FirewoodPaymentGuard? payment = null;
+            if (hostPayment != null)
+            {
+                if (hostPayment != "firewood" || syncedStates.Length != 1 || syncedStates[0] != "State 1") return false;
+                payment = new FirewoodPaymentGuard(fsm);
+                if (!HookState(fsm, "Wait player", payment.Ready) || !HookState(fsm, "Wait button", payment.Ready)) return false;
+            }
+
             foreach (string state in syncedStates)
             {
                 if (!FsmHook.EnsureRemoteEntry(fsm, state)) return false;
@@ -284,6 +313,7 @@ namespace WinterMP.Core.Sync
                 SyncedStates = syncedStates,
                 ScalarFloat = scalarFloat,
                 ScalarCommitState = scalarFloat != null ? commitState : null,
+                Payment = payment,
             };
             MarkRegistered(fsm);
 
@@ -300,6 +330,7 @@ namespace WinterMP.Core.Sync
 
         internal bool RegisterStarter(PlayMakerFSM fsm, string[] syncedStates)
         {
+            if (VehicleWorldSync.UsesEngineHandoff(fsm)) { MarkRegistered(fsm); return false; }
             if (!BeginRegistration(fsm)) return false;
             string path = ScenePath.Of(fsm.transform);
             if (!_bridge.PartIdentities.TryFsmId(fsm, path, out uint id)) return false;

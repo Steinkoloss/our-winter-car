@@ -16,6 +16,8 @@ namespace WinterMP.Net.Messages
 
         public const byte FlagFire = 1;
         public const byte FlagFuseOk = 2;
+        public const byte FlagStoveLight = 4;
+        public const byte FlagStoveSmoke = 8;
 
         public uint ApplianceId;
         public byte Kind;
@@ -28,6 +30,9 @@ namespace WinterMP.Net.Messages
         public byte FireCount;
         /// <summary>Plate (1-4) of the latest ignition, 0 = none yet; appended v85.</summary>
         public byte FirePlate;
+        public uint StoveRevision;
+        public float[] StoveHeat = new float[4], StoveRotation = new float[4];
+        public byte GrillMask, BurnMask;
 
         public bool OnFire => (Flags & FlagFire) != 0;
 
@@ -35,6 +40,7 @@ namespace WinterMP.Net.Messages
 
         public void Write(NetWriter writer)
         {
+            if (!Sync.StovePolicy.Valid(this)) throw new ProtocolException("Invalid stove state.");
             writer.WriteUInt32(ApplianceId);
             writer.WriteByte(Kind);
             writer.WriteByte(Flags);
@@ -44,6 +50,10 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(Heat4);
             writer.WriteByte(FireCount);
             writer.WriteByte(FirePlate);
+            writer.WriteUInt32(StoveRevision);
+            for (int i = 0; i < 4; i++) writer.WriteSingle(StoveHeat[i]);
+            for (int i = 0; i < 4; i++) writer.WriteSingle(StoveRotation[i]);
+            writer.WriteByte(GrillMask); writer.WriteByte(BurnMask);
         }
 
         public void Read(NetReader reader)
@@ -57,6 +67,11 @@ namespace WinterMP.Net.Messages
             Heat4 = reader.ReadByte();
             FireCount = reader.ReadByte();
             FirePlate = reader.ReadByte();
+            StoveRevision = reader.ReadUInt32();
+            for (int i = 0; i < 4; i++) StoveHeat[i] = reader.ReadSingle();
+            for (int i = 0; i < 4; i++) StoveRotation[i] = reader.ReadSingle();
+            GrillMask = reader.ReadByte(); BurnMask = reader.ReadByte();
+            if (!Sync.StovePolicy.Valid(this)) throw new ProtocolException("Invalid stove state.");
         }
     }
 

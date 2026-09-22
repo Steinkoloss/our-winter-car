@@ -56,6 +56,15 @@ namespace WinterMP.Core.Sync
                 scalarControl = control;
             }
 
+            // Payment requests execute only against a live, unclaimed offer. Never
+            // queue an inactive payment for a later delivery or another LOD visit.
+            if (_controls.TryGetValue(message.NetId, out var paymentControl) && paymentControl.Payment != null)
+            {
+                bool reserved = paymentControl.Payment.Reserve();
+                SyncEventLog.Record("firewood-payment", message.NetId.ToString("X8") + " player=" + playerId
+                    + (reserved ? " accepted" : " unavailable"));
+                if (!reserved) return false;
+            }
             OnRemoteStateEnter(message);
             if (scalarControl != null)
             {
@@ -71,6 +80,7 @@ namespace WinterMP.Core.Sync
         /// <summary>Host gate for the only allowed raw events: nearby bolt turns.</summary>
         public bool TryAcceptGuestRawEvent(FsmRawEvent message, byte playerId)
         {
+            if (_valves.TryGetValue(message.NetId, out var valve)) return TryAcceptGuestValve(message, playerId, valve);
             if (Array.IndexOf(AllowedRawEvents, message.EventName) < 0
                 || !_bolts.TryGetValue(message.NetId, out var bolt) || bolt.Fsm == null)
             {
@@ -192,6 +202,7 @@ namespace WinterMP.Core.Sync
                 return true;
             }
             if (_controls.TryGetValue(netId, out var control) && control.Fsm != null
+                && !VehicleWorldSync.IsParkingBrakeControl(control.Fsm)
                 && Array.IndexOf(control.SyncedStates, stateName) >= 0)
             {
                 fsm = control.Fsm;
@@ -295,6 +306,7 @@ namespace WinterMP.Core.Sync
                 }
 
                 if (!ignition.Fsm.gameObject.activeInHierarchy || !ignition.Fsm.enabled) return false;
+                if (!GuestEngineProtection.Prepare(force: true)) return false;
 
                 WinterMPPlugin.Log.LogInfo($"WorldSync: ignition {netId:X8} -> '{stateName}' (remote).");
                 _bridge.ApplyingRemote = true;
@@ -313,6 +325,9 @@ namespace WinterMP.Core.Sync
 
             if (_controls.TryGetValue(netId, out var control) && control.Fsm != null)
             {
+                if (VehicleWorldSync.IsParkingBrakeControl(control.Fsm)) return true;
+                // A payout is a host transaction, never a presentation replay.
+                if (control.Payment != null && SessionManager.Instance?.IsHost != true) return true;
                 if (Array.IndexOf(control.SyncedStates, stateName) < 0)
                 {
                     WinterMPPlugin.Log.LogWarning($"WorldSync: '{stateName}' is not a synced control state of {control.Path}; dropped.");
@@ -347,6 +362,7 @@ namespace WinterMP.Core.Sync
                 }
 
                 if (!starter.Fsm.gameObject.activeInHierarchy || !starter.Fsm.enabled) return false;
+                if (!GuestEngineProtection.Prepare(force: true)) return false;
 
                 WinterMPPlugin.Log.LogInfo($"WorldSync: starter {netId:X8} -> '{stateName}' (remote).");
                 _bridge.ApplyingRemote = true;
@@ -459,6 +475,7 @@ namespace WinterMP.Core.Sync
         {
             var session = SessionManager.Instance;
             ProcessReplicaBolts();
+            ProcessValves();
             ProcessReplicaPartViews();
 
             if (_pendingBoltStates.Count > 0)

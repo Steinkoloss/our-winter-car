@@ -1,6 +1,7 @@
 using HutongGames.PlayMaker;
 using UnityEngine;
 using WinterMP.Core.Session;
+using WinterMP.Net;
 using WinterMP.Net.Messages;
 
 namespace WinterMP.Core.Sync
@@ -30,6 +31,8 @@ namespace WinterMP.Core.Sync
         private bool _hasPendingDirtiness;
         private float _pendingAlco;
         private bool _hasPendingAlco;
+        private float _pendingBodyTemp;
+        private bool _hasPendingBodyTemp;
 
         public bool Ready => _hunger != null || _fatigue != null;
 
@@ -52,6 +55,8 @@ namespace WinterMP.Core.Sync
             _hasPendingDirtiness = false;
             _pendingAlco = 0f;
             _hasPendingAlco = false;
+            _pendingBodyTemp = 0f;
+            _hasPendingBodyTemp = false;
         }
 
         public void Locate(bool force = false)
@@ -59,10 +64,9 @@ namespace WinterMP.Core.Sync
             if (!force && Time.unscaledTime < _nextProbeAt) return;
             _nextProbeAt = Time.unscaledTime + 5f;
 
-            // BodyTemp and Drunk live on local PLAYER FSMs, which can initialize after
-            // the need globals. Keep probing for them even once hunger/fatigue are resolved.
-            if (_bodyTemp == null)
-                _bodyTemp = FindLocalFloat("PLAYER/BodyTemp", "Calculations", "Temperature");
+            // Calculations.Temperature is the current air/heat-source input.
+            // PlayerTemp is the native body's accumulated warmth, including zero.
+            _bodyTemp = FindGlobalFloat("PlayerTemp");
             if (_drunk == null)
                 _drunk = FindLocalFloat("PLAYER/Pivot/AnimPivot/Camera/FPSCamera/FPSCamera", "Drunk Mode", "DrunkCurrent");
             if (_stress == null)
@@ -83,6 +87,12 @@ namespace WinterMP.Core.Sync
                 Write(_alco, _pendingAlco);
                 _hasPendingAlco = false;
                 WinterMPPlugin.Log.LogInfo("PlayerNeedsSync: restored pending guest BAC from host profile.");
+            }
+            if (_hasPendingBodyTemp && _bodyTemp != null)
+            {
+                Write(_bodyTemp, _pendingBodyTemp);
+                _hasPendingBodyTemp = false;
+                WinterMPPlugin.Log.LogInfo("PlayerNeedsSync: restored pending guest body warmth from host profile.");
             }
 
             if (_hunger != null && _fatigue != null) return;
@@ -127,7 +137,8 @@ namespace WinterMP.Core.Sync
                 Fatigue = Read(_fatigue),
                 Thirst = Read(_thirst),
                 Urine = Read(_urine),
-                BodyTemp = Read(_bodyTemp),
+                BodyTemp = HasBodyTemp ? ReadBodyTemp() : 0f,
+                HasBodyTemp = HasBodyTemp,
                 Stress = Read(_stress),
                 Drunk = Read(_drunk),
                 Sequence = ++_sequence,
@@ -138,19 +149,20 @@ namespace WinterMP.Core.Sync
             };
         }
 
-        public GuestProfileStore.NeedsSnapshot ReadSnapshot()
+        public WinterMP.Net.Sync.GuestProfile.NeedsSnapshot ReadSnapshot()
         {
             Locate();
             if (!Ready)
-                return default(GuestProfileStore.NeedsSnapshot);
+                return default(WinterMP.Net.Sync.GuestProfile.NeedsSnapshot);
 
-            return new GuestProfileStore.NeedsSnapshot
+            return new WinterMP.Net.Sync.GuestProfile.NeedsSnapshot
             {
                 Hunger = Read(_hunger),
                 Fatigue = Read(_fatigue),
                 Thirst = Read(_thirst),
                 Urine = Read(_urine),
-                BodyTemp = Read(_bodyTemp),
+                BodyTemp = HasBodyTemp ? ReadBodyTemp() : 0f,
+                HasBodyTemp = HasBodyTemp,
                 Stress = Read(_stress),
                 Drunk = Read(_drunk),
                 Dirtiness = Read(_dirtiness),
@@ -161,20 +173,23 @@ namespace WinterMP.Core.Sync
             };
         }
 
-        public void ApplySnapshot(GuestProfileStore.NeedsSnapshot needs)
+        public void ApplySnapshot(WinterMP.Net.Sync.GuestProfile.NeedsSnapshot needs)
         {
             if (!needs.Valid) return;
 
+            // A newer host snapshot supersedes any deferred warmth from an older
+            // offer, including a legacy profile with no known body warmth.
+            _hasPendingBodyTemp = false;
             Locate(force: true);
             Write(_hunger, needs.Hunger);
             Write(_fatigue, needs.Fatigue);
             Write(_thirst, needs.Thirst);
             Write(_urine, needs.Urine);
-            // 0 means "absent" for BodyTemp (pre-v28 sidecar rows) — writing it would
-            // restore the guest at freezing. Stress/Drunk 0 are honest defaults (calm,
-            // sober) so those always apply.
-            if (needs.BodyTemp != 0f)
-                Write(_bodyTemp, needs.BodyTemp);
+            if (needs.HasBodyTemp && PlayerWarmthPolicy.Valid(true, needs.BodyTemp))
+            {
+                if (_bodyTemp != null) Write(_bodyTemp, needs.BodyTemp);
+                else { _pendingBodyTemp = needs.BodyTemp; _hasPendingBodyTemp = true; }
+            }
             Write(_stress, needs.Stress);
             Write(_drunk, needs.Drunk);
             if (needs.HasDirtiness)
@@ -221,12 +236,8 @@ namespace WinterMP.Core.Sync
             return null;
         }
 
-        // BodyTemp is a LOCAL fsm var on the PLAYER/BodyTemp "Calculations" FSM, so it must be
-        // path-located rather than read from GlobalVariables. Match by FsmName: today the object
-        // carries only "Calculations", but a game patch could add a second FSM and a bare
-        // GetComponent would then grab an arbitrary one and silently read 0 (ClothingSync reads
-        // ClothingStage off this same object and matches by name for exactly this reason). Null
-        // returns and the try/catch keep it safe while the object/component is mid-teardown.
+        // Match by FSM name so another component added in a game update cannot
+        // silently replace the local DrunkCurrent source.
         private static HutongGames.PlayMaker.FsmFloat? FindLocalFloat(string scenePath, string fsmName, string varName)
         {
             try
@@ -256,6 +267,12 @@ namespace WinterMP.Core.Sync
 
         private static float Read(HutongGames.PlayMaker.FsmFloat? variable) =>
             variable != null ? variable.Value : 0f;
+
+        // Until the native global appears, retain the host's pending value in
+        // reports so a reconnect during initialization cannot erase known warmth.
+        private bool HasBodyTemp => _hasPendingBodyTemp
+            || _bodyTemp != null && PlayerWarmthPolicy.Valid(true, _bodyTemp.Value);
+        private float ReadBodyTemp() => _hasPendingBodyTemp ? _pendingBodyTemp : Read(_bodyTemp);
 
         private static void Write(HutongGames.PlayMaker.FsmFloat? variable, float value)
         {

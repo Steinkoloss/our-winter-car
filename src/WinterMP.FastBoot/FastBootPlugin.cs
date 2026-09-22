@@ -90,7 +90,7 @@ namespace WinterMP.FastBoot
                 "Max wait for Check Save FSM before clicking Continue anyway.");
             _continueStepDelaySeconds = Config.Bind(
                 "Boot", "ContinueStepDelaySeconds", 0f,
-                "Seconds between Continue OVER and DOWN. 0 = same frame.");
+                "Seconds after Continue becomes ready before clicking. 0 = same frame.");
             _skipMenuLoadWaits = Config.Bind(
                 "Boot", "SkipMenuLoadWaits", true,
                 "Nudge main-menu loading PlayMaker FSMs after Continue to skip artificial waits.");

@@ -10,51 +10,35 @@ namespace WinterMP.Core.Sync
 {
     internal sealed partial class VehicleWorldSync
     {
-        private const float GuestVehiclePoseMaxAgeSeconds = 2f;
-        private const float GuestVehicleInteractionDistance = 16f;
+        private readonly VehicleStateStreamPolicy _vehicleStateStreams = new VehicleStateStreamPolicy();
 
         // ------------------------------------------------------------------ engine & ignition
 
         /// <summary>Host gate for the driver-owned engine/electrics stream.</summary>
         public bool TryAcceptGuestVehicleState(VehicleState message, byte playerId)
         {
-            if (message.OwnerPlayerId != playerId || !_items.Items.TryGetValue(message.VehicleId, out var item)
-                || !item.IsVehicle || item.Body == null)
+            if (!VehicleStateStreamPolicy.IsValid(message) || message.OwnerPlayerId != playerId
+                || message.Sequence == VehicleState.SnapshotSequence
+                || !_items.Items.TryGetValue(message.VehicleId, out var item)
+                || !item.IsVehicle || item.Body == null || item.LocallyOwned || _items.IsLocalPlayerDriving(item))
                 return false;
 
-            if (item.RemoteOwner == playerId) return true;
-            if (item.RemoteOwner != WorldSyncIds.NoOwner) return false;
-            return IsGuestNearVehicle(playerId, item.Body.transform.position);
+            return playerId != 0 && item.RemoteOwner == playerId;
         }
 
-        /// <summary>Host gate for nearby climate observers (driver or passenger).</summary>
+        /// <summary>Only the established guest simulator can propose climate state.</summary>
         public bool TryAcceptGuestVehicleClimate(VehicleClimate message, byte playerId)
         {
-            if (message.OwnerPlayerId != playerId || !_items.Items.TryGetValue(message.VehicleId, out var item)
-                || !item.IsVehicle || item.Body == null)
-                return false;
-            return IsGuestNearVehicle(playerId, item.Body.transform.position);
-        }
-
-        private static bool IsGuestNearVehicle(byte playerId, Vector3 vehiclePosition)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || !session.IsHost) return false;
-            float now = Time.unscaledTime;
-            foreach (var player in session.Players)
-            {
-                if (player.PlayerId != playerId) continue;
-                if (player.LastTransformTime <= 0f || now - player.LastTransformTime > GuestVehiclePoseMaxAgeSeconds)
-                    return false;
-                return (player.Position - vehiclePosition).sqrMagnitude
-                    <= GuestVehicleInteractionDistance * GuestVehicleInteractionDistance;
-            }
-            return false;
+            if (!VehicleClimateStreamPolicy.IsValid(message) || message.OwnerPlayerId != playerId
+                || message.Sequence == VehicleClimate.SnapshotSequence || playerId == 0
+                || !_items.Items.TryGetValue(message.VehicleId, out var item)
+                || !item.IsVehicle || item.Body == null || item.LocallyOwned || _items.IsLocalPlayerDriving(item)) return false;
+            return item.RemoteOwner == playerId;
         }
 
         /// <summary>
-        /// Stream ignition/engine state for vehicles we are driving *or* whose engine
-        /// is running locally (parked idling — pose ownership may already be released).
+        /// Only the established simulator publishes engine state. Parked ignition
+        /// keeps that ownership until its reliable final state has been sent.
         /// </summary>
         public void UpdateVehicleStates(SessionManager session)
         {
@@ -64,7 +48,13 @@ namespace WinterMP.Core.Sync
             foreach (var item in _items.Items.Values)
             {
                 if (!item.IsVehicle || item.Body == null) continue;
-                if (!item.LocallyOwned && !HasLocalIgnitionActivity(item)) continue;
+                if (session.IsHost) { EnsureElectricalInputs(item); EnsureDrivetrainWear(item); }
+                if (!VehicleStateStreamPolicy.CanPublish(session.IsHost, item.LocallyOwned, item.RemoteOwner)) continue;
+                // A timed-out transform lease can leave remote ACC active until
+                // its own timeout reconciles. That view cannot start a host stream.
+                if (!item.LocallyOwned && item.AcceptedVehicleState != null
+                    && (item.RemoteEngineOn || item.RemoteAccOn || item.RemoteElectricsApplied || !item.HasRemoteElectricsState)) continue;
+                if (!item.LocallyOwned && !HasLocalIgnitionActivity(item) && !item.LastSentIgnitionActive) continue;
                 SendVehicleState(session, item, now);
             }
         }
@@ -72,13 +62,25 @@ namespace WinterMP.Core.Sync
         private static bool HasLocalIgnitionActivity(SyncedItem item)
         {
             EnsureVehicleSystemsProbe(item);
-            if (!item.SystemsReady) return false;
-            return ReadAccOn(item) || ReadEngineRevs(item) > EngineRunningRevs;
+            return ReadAccOn(item) || (item.SystemsReady && ReadBestRpm(item) > EngineRunningRevs);
         }
 
-        private void SendVehicleState(SessionManager session, SyncedItem item, float now)
+        internal static bool KeepVehicleIgnitionOwnership(SyncedItem item)
         {
-            if (now < item.NextVehicleStateAt) return;
+            return item.IsVehicle && item.LocallyOwned && HasLocalIgnitionActivity(item);
+        }
+
+        internal void SendFinalVehicleState(SessionManager session, SyncedItem item)
+        {
+            FlushStarterDraw(session, item);
+            FlushStarterWear(session, item);
+            if (item.IsVehicle && item.LocallyOwned)
+                SendVehicleState(session, item, Time.unscaledTime, final: true);
+        }
+
+        private void SendVehicleState(SessionManager session, SyncedItem item, float now, bool final = false)
+        {
+            if (!final && now < item.NextVehicleStateAt) return;
             item.NextVehicleStateAt = now + 1f / VehicleStateRateHz;
 
             EnsureVehicleSystemsProbe(item);
@@ -103,32 +105,45 @@ namespace WinterMP.Core.Sync
                     $"WorldSync: streaming '{item.Path}' ignition — engine={engineOn} ACC={accOn} revs={revs:0} speed={speedKmh:0.0} km/h.");
             }
 
-            session.SendWorldMessage(new VehicleState
+            var state = new VehicleState
             {
                 VehicleId = item.Id,
                 OwnerPlayerId = session.LocalPlayerId,
-                Sequence = ++item.OutVehicleStateSequence,
+                Sequence = item.OutVehicleStateSequence = VehicleStateStreamPolicy.NextSequence(item.OutVehicleStateSequence),
                 Flags = flags,
                 Rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue),
                 SpeedTenthsKmh = (ushort)Mathf.Clamp(speedKmh * 10f, 0f, ushort.MaxValue),
                 FuelLevel = ReadFuelLevelByte(item),
                 CoolantTemp = ReadCoolantTempByte(item),
                 Gear = ReadGearByte(item),
-            }, Channel.UnreliableSequenced);
+            };
+            CaptureHandoffTemperature(item, state);
+            CaptureHeatTelemetry(item, state);
+            CaptureSpeedTelemetry(item, state);
+            CaptureDifferentialSpeedTelemetry(item, state);
+            bool stopped = item.LastSentIgnitionActive && !engineOn && !accOn;
+            item.LastSentIgnitionActive = engineOn || accOn;
+            session.SendWorldMessage(state, final || stopped ? Channel.ReliableOrdered : Channel.UnreliableSequenced);
         }
 
         private static float ReadEngineRevs(SyncedItem item)
         {
-            return item.EngineRevsVar != null ? item.EngineRevsVar.Value : 0f;
+            var source = item.NativeEngineRpm?.Fsm;
+            if (item.RequiresNativeEngineRpm && (source == null || !source.enabled
+                || !source.gameObject.activeInHierarchy || !source.Fsm.Started)) return 0f;
+            return FiniteRpm(item.EngineRevsVar) ? item.EngineRevsVar!.Value : 0f;
         }
 
         private static float ReadBestRpm(SyncedItem item)
         {
-            // The dashboard's RPM float is closest to what the driver sees; fall
-            // back to engine sim variables when the gauge object is inactive.
-            if (item.GaugeRpmVar != null && item.GaugeRpmVar.Value > 1f)
-                return item.GaugeRpmVar.Value;
-            return ReadEngineRevs(item);
+            // Sorbet's inactive FuelLine retains its last running RPM after release.
+            // Only the actual simulator can say whether a later claim may restart it.
+            float? handoff = ReadHandoffRpm(item);
+            if (handoff.HasValue) return handoff.Value;
+            // Dashboard needles can retain their last RPM after losing power.
+            // A bound simulator decides whether the engine is still running.
+            if (item.RequiresNativeEngineRpm || item.EngineRevsVar != null) return ReadEngineRevs(item);
+            return FiniteRpm(item.GaugeRpmVar) ? item.GaugeRpmVar!.Value : 0f;
         }
 
         private static bool ReadAccOn(SyncedItem item)
@@ -150,30 +165,31 @@ namespace WinterMP.Core.Sync
             return false;
         }
 
-        public void OnRemoteVehicleState(VehicleState message)
+        public bool OnRemoteVehicleState(VehicleState message)
         {
+            var session = SessionManager.Instance;
+            if (session == null) return false;
             if (!_items.Items.TryGetValue(message.VehicleId, out var item) || item.Body == null || !item.IsVehicle)
-                return;
+                return false;
 
-            // Join/resync snapshots carry SnapshotSequence and bypass the live-stream
-            // dedup (otherwise a fresh guest drops the Sequence-0 snapshot and never
-            // sees a parked car's engine/electrics). The sentinel does not advance the
-            // baseline, so the live stream's dedup is unaffected.
-            if (message.Sequence != VehicleState.SnapshotSequence)
+            bool localDriver = item.LocallyOwned || _items.IsLocalPlayerDriving(item);
+            if (!_vehicleStateStreams.Receive(message, session.IsHost, localDriver, item.RemoteOwner))
             {
-                ushort diff = (ushort)(message.Sequence - item.LastVehicleStateSequence);
-                if (diff == 0 || diff > short.MaxValue)
-                {
+                if (message.Sequence != VehicleState.SnapshotSequence)
                     ConnectionQuality.Instance.NoteUnreliableDropped();
-                    return;
-                }
-
-                ConnectionQuality.Instance.NoteUnreliableReceived();
-                item.LastVehicleStateSequence = message.Sequence;
+                return false;
             }
+            if (message.Sequence != VehicleState.SnapshotSequence)
+                ConnectionQuality.Instance.NoteUnreliableReceived();
+            EnsureVehicleSystemsProbe(item);
+            item.AcceptedVehicleState = VehicleStateStreamPolicy.Copy(message);
+            EnsureWearInputs(item);
+            EnsureHeatBinding(item);
+            EnsureCoolingInputs(item);
+            EnsureElectricalInputs(item);
 
             bool electricsOn = message.AccOn || message.EngineOn;
-            bool electricsChanged = electricsOn != item.RemoteElectricsApplied;
+            bool electricsChanged = !item.HasRemoteElectricsState || electricsOn != item.RemoteElectricsApplied;
             item.RemoteEngineOn = message.EngineOn;
             item.RemoteAccOn = message.AccOn;
             item.RemoteRpm = message.Rpm;
@@ -181,6 +197,7 @@ namespace WinterMP.Core.Sync
             item.RemoteFuelLevel = message.FuelLevel;
             item.RemoteCoolantTemp = message.CoolantTemp;
             item.RemoteEngineUntil = Time.unscaledTime + EngineAudioHoldSeconds;
+            if (session.IsHost) EnsureDrivetrainWear(item);
 
             // Selected gear indicator for observers (not for a car we drive ourselves).
             if (!item.LocallyOwned && item.GearVar != null)
@@ -197,12 +214,6 @@ namespace WinterMP.Core.Sync
             item.RemoteHazard = message.HazardOn;
             item.RemoteDashDirty = true;
 
-            // Only accept a remote peer's fuel for a car we do NOT own locally. When we own
-            // the car (host driving its own car, or a guest driving a delegated car) a nearby
-            // observer's VehicleState — which the host accepts because the car has NoOwner and
-            // the observer is in range — would otherwise stomp our authoritative, live-simulated
-            // tank with a stale, 255-step-quantized echo. The intended case (a delegated driver's
-            // refuel) still applies because the car is not LocallyOwned on the receiving host.
             if (!item.LocallyOwned)
                 ApplyRemoteFuel(item, message.FuelLevel);
 
@@ -211,6 +222,50 @@ namespace WinterMP.Core.Sync
 
             if (!item.LocallyOwned && (blinkersChanged || hazardChanged))
                 ApplyRemoteLights(item, message.BlinkerLeft, message.BlinkerRight, message.HazardOn);
+            return true;
+        }
+
+        internal void ForgetVehicleStatePlayer(byte playerId)
+        {
+            _starterDrawPolicy.ForgetPlayer(playerId);
+            _starterWearPolicy.ForgetPlayer(playerId);
+            _oilUsePolicy.ForgetPlayer(playerId);
+            _gearboxWearPolicy.ForgetPlayer(playerId);
+            _vehicleStateStreams.ForgetPlayer(playerId);
+            ForgetClimatePlayer(playerId);
+            ForgetConditionPlayer(playerId);
+            foreach (var item in _items.Items.Values)
+                if (item.AcceptedVehicleState?.OwnerPlayerId == playerId)
+                    item.AcceptedVehicleState = null;
+        }
+
+        internal void ClearVehicleStateStreams()
+        {
+            ClearStarterDraws();
+            _vehicleStateStreams.Clear();
+            ClearClimateStreams();
+            ClearConditionStreams();
+            ClearVehicleCoolant();
+            ClearDrivetrainWearStates();
+            ClearWheelHealthStates();
+            foreach (var item in _items.Items.Values)
+            {
+                ClearParkingBrake(item);
+                ClearTemperatureReader(item);
+                ClearWearInputs(item);
+                ClearHeatBinding(item);
+                ClearDrivetrainWear(item);
+                item.DifferentialSpeedSource = null;
+                item.NextDifferentialProbeAt = item.NextDifferentialErrorAt = 0;
+                ClearCoolingInputs(item);
+                ClearElectricalInputs(item);
+                item.AcceptedVehicleState = null;
+                item.OutVehicleStateSequence = 0;
+                item.NextVehicleStateAt = 0f;
+                item.LastSentIgnitionActive = false;
+                item.HasRemoteElectricsState = false;
+                item.NextRemoteElectricsAttemptAt = 0f;
+            }
         }
 
         /// <summary>
@@ -220,26 +275,46 @@ namespace WinterMP.Core.Sync
         /// </summary>
         private static void ApplyRemoteElectricity(SyncedItem item, bool on)
         {
+            // Failed attempts can rescan every engine. Share the routine discovery
+            // slot; first attempts and transitions after success remain immediate.
+            bool retry = item.NextRemoteElectricsAttemptAt > 0f;
+            if (!ScenePath.TryBeginDiscovery(ref item.NextRemoteElectricsAttemptAt, SystemsProbeIntervalSeconds)) return;
             EnsureVehicleSystemsProbe(item);
-            item.RemoteElectricsApplied = on;
-            if (on) item.RemoteDashDirty = true; // power restored — re-present gauges/lights once
-
             if (item.ElectricityPowerFsm == null)
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: no Electricity FSM on '{item.Path}' — remote ignition skipped.");
                 return;
             }
+            var power = item.ElectricityPowerFsm;
+            if (!RemotePowerReady(power)) return;
+            // Contain unresolved graphs before power awakens them. Simulation
+            // readiness itself may depend on the activation we are about to replay.
+            if (retry && !GuestEngineProtection.PrepareForActivation()) return;
+            if (!GuestEngineProtection.PrepareForActivation(force: true)) return;
+            if (!ReferenceEquals(power, item.ElectricityPowerFsm) || !RemotePowerReady(power)) return;
 
             string state = on ? "ON" : "OFF";
-            if (!FsmHook.EnsureRemoteEntry(item.ElectricityPowerFsm, state))
+            if (!FsmHook.EnsureRemoteEntry(power, state))
             {
                 WinterMPPlugin.Log.LogWarning($"WorldSync: Electricity '{state}' missing on '{item.Path}'.");
                 return;
             }
 
             WinterMPPlugin.Log.LogInfo($"WorldSync: remote electricity '{item.Path}' -> {state}.");
-            FsmHook.FireRemoteEntry(item.ElectricityPowerFsm, state);
+            FsmHook.FireRemoteEntry(power, state);
+            if (!ReferenceEquals(power, item.ElectricityPowerFsm) || !RemotePowerReady(power) || ReadAccOn(item) != on) return;
+            item.RemoteElectricsApplied = on;
+            item.HasRemoteElectricsState = true;
+            item.NextRemoteElectricsAttemptAt = 0f;
+            if (on) item.RemoteDashDirty = true;
+            if (item.GearVar != null && item.AcceptedVehicleState != null)
+                item.GearVar.Value = item.AcceptedVehicleState.Gear - 1;
         }
+
+        private static bool RemotePowerReady(PlayMakerFSM power)
+            // An inactive/unstarted FSM can ignore SendEvent while its default ACC
+            // already matches OFF. That is not a completed native transition.
+            => power != null && power.Fsm.Initialized && power.Fsm.Started && power.gameObject.activeInHierarchy;
 
         private static void ApplyRemoteGauges(SyncedItem item)
         {
@@ -248,10 +323,10 @@ namespace WinterMP.Core.Sync
             if (item.GaugeSpeedAngleVar != null)
                 item.GaugeSpeedAngleVar.Value = SpeedAngleForKmh(item.RemoteSpeedKmh);
 
-            if (item.GaugeRpmVar != null)
+            if (item.GaugeRpmVar != null && !IsNativeRpmOutput(item, item.GaugeRpmVar))
                 item.GaugeRpmVar.Value = item.RemoteRpm;
 
-            if (item.GaugeTachRevsVar != null)
+            if (item.GaugeTachRevsVar != null && !IsNativeRpmOutput(item, item.GaugeTachRevsVar))
                 item.GaugeTachRevsVar.Value = item.RemoteRpm;
             if (item.GaugeTachRotationVar != null)
                 item.GaugeTachRotationVar.Value = TachRotationForRpm(item.RemoteRpm);
@@ -270,11 +345,7 @@ namespace WinterMP.Core.Sync
             if (item.GaugeFuelAngleVar != null)
                 item.GaugeFuelAngleVar.Value = FuelAngleForLevel(fuel01);
 
-            float coolantC = item.RemoteCoolantTemp / 255f * CoolantTempMaxC;
-            if (item.GaugeCoolantVar != null)
-                item.GaugeCoolantVar.Value = coolantC;
-            if (item.GaugeCoolantAngleVar != null)
-                item.GaugeCoolantAngleVar.Value = CoolantAngleForTemp(coolantC);
+            ApplyRemoteTemperature(item, item.RemoteCoolantTemp / 255f * CoolantTempMaxC);
         }
 
         /// <summary>
@@ -413,6 +484,8 @@ namespace WinterMP.Core.Sync
         // Selected gear encoded as gear+1 (0 = reverse, 1 = neutral, 2.. = forward); neutral when unknown.
         private static byte ReadGearByte(SyncedItem item)
         {
+            var native = ReadHandoffGear(item);
+            if (native.HasValue) return native.Value;
             if (item.GearVar == null) return 1;
             try { return (byte)Mathf.Clamp(item.GearVar.Value + 1, 0, 255); }
             catch { return 1; }
@@ -461,8 +534,15 @@ namespace WinterMP.Core.Sync
             {
                 item.RemoteEngineOn = false;
                 item.RemoteAccOn = false;
-                if (item.RemoteElectricsApplied)
+                if (item.RemoteElectricsApplied || (item.AcceptedVehicleState != null && !item.HasRemoteElectricsState))
                     ApplyRemoteElectricity(item, false);
+            }
+
+            if (!item.LocallyOwned && item.AcceptedVehicleState != null)
+            {
+                bool on = now < item.RemoteEngineUntil && (item.RemoteEngineOn || item.RemoteAccOn);
+                if (!item.HasRemoteElectricsState || item.RemoteElectricsApplied != on)
+                    ApplyRemoteElectricity(item, on);
             }
 
             if (!item.LocallyOwned && item.RemoteElectricsApplied && item.RemoteDashDirty)
@@ -497,6 +577,8 @@ namespace WinterMP.Core.Sync
         public static void EnsureVehicleSystemsProbe(SyncedItem item)
         {
             if (item.Body == null) return;
+            var nativeRpm = RefreshNativeRpmBinding(item);
+            if (item.ElectricityPowerFsm == null || !HasEngineRpm(item)) item.SystemsReady = false;
 
             if (item.SystemsReady)
             {
@@ -507,7 +589,9 @@ namespace WinterMP.Core.Sync
             if (Time.unscaledTime < item.NextSystemsProbeAt) return;
             item.NextSystemsProbeAt = Time.unscaledTime + SystemsProbeIntervalSeconds;
 
-            foreach (var fsm in item.Body.GetComponentsInChildren<PlayMakerFSM>(true))
+            var fsms = item.Body.GetComponentsInChildren<PlayMakerFSM>(true);
+            if (nativeRpm != null && item.NativeEngineRpm == null) BindNativeEngineRpm(item, nativeRpm, fsms);
+            foreach (var fsm in fsms)
             {
                 if (item.ElectricityPowerFsm == null
                     && fsm.FsmName == "Power"
@@ -527,14 +611,13 @@ namespace WinterMP.Core.Sync
                 if (item.GearVar == null && fsm.FsmName == "Gears" && fsm.gameObject.name == "Drivetrain")
                     item.GearVar = fsm.FsmVariables.FindFsmInt("Gear");
 
-                if (item.EngineRevsVar == null)
+                if (item.EngineRevsVar == null && !item.RequiresNativeEngineRpm)
                 {
                     var revs = fsm.FsmVariables.FindFsmFloat("Revs");
                     if (revs != null && (fsm.FsmName == "FuelLine" || fsm.FsmName == "RotateEngine"))
                         item.EngineRevsVar = revs;
                 }
 
-                string path = ScenePath.Of(fsm.transform);
                 if (item.GaugeSpeedVar == null && fsm.FsmName == "Speedo")
                 {
                     var speed = fsm.FsmVariables.FindFsmFloat("Speed");
@@ -575,7 +658,7 @@ namespace WinterMP.Core.Sync
                 }
 
                 if (item.TurnSignalsFsm == null && fsm.FsmName == "TurnSignals"
-                    && path.IndexOf("/PowerON/Systems", StringComparison.Ordinal) >= 0)
+                    && ScenePath.Of(fsm.transform).IndexOf("/PowerON/Systems", StringComparison.Ordinal) >= 0)
                 {
                     item.TurnSignalsFsm = fsm;
                     item.BlinkerLeftVar = fsm.FsmVariables.FindFsmBool("BlinkerLeft");
@@ -588,19 +671,6 @@ namespace WinterMP.Core.Sync
                     && FsmWorldSync.HasAllStates(fsm, "On", "Off"))
                 {
                     item.HazardButtonFsm = fsm;
-                }
-
-                if (item.GaugeCoolantAngleVar == null && fsm.FsmName == "Temp"
-                    && (path.IndexOf("GaugeData", StringComparison.Ordinal) >= 0
-                        || path.IndexOf("StandardGaugesData", StringComparison.Ordinal) >= 0))
-                {
-                    var rotation = fsm.FsmVariables.FindFsmFloat("Rotation");
-                    var angle = fsm.FsmVariables.FindFsmFloat("Angle");
-                    if (rotation != null || angle != null)
-                    {
-                        item.GaugeCoolantAngleVar = rotation ?? angle;
-                        item.GaugeCoolantVar = fsm.FsmVariables.FindFsmFloat("Temp");
-                    }
                 }
 
                 if (item.GaugeTachDataFsm == null && fsm.FsmName == "Tach"
@@ -616,15 +686,18 @@ namespace WinterMP.Core.Sync
                 }
             }
 
-            foreach (var transform in item.Body.GetComponentsInChildren<Transform>(true))
+            if (item.AudioEngine == null)
             {
-                if (item.AudioEngine != null) break;
-                if (transform.name != "AudioEngine") continue;
-                item.AudioEngine = transform.gameObject;
+                foreach (var transform in item.Body.GetComponentsInChildren<Transform>(true))
+                {
+                    if (transform.name != "AudioEngine") continue;
+                    item.AudioEngine = transform.gameObject;
+                    break;
+                }
             }
 
             // Electricity + revs are the minimum; audio/gauges are nice-to-have.
-            if (item.ElectricityPowerFsm != null && item.EngineRevsVar != null)
+            if (item.ElectricityPowerFsm != null && HasEngineRpm(item))
             {
                 item.SystemsReady = true;
                 WinterMPPlugin.Log.LogInfo($"WorldSync: vehicle systems ready on '{item.Path}'.");

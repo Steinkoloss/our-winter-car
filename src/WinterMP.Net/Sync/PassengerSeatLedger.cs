@@ -12,6 +12,17 @@ namespace WinterMP.Net.Sync
 
         public IEnumerable<PassengerState> Occupants => _occupants.Values;
 
+        public bool IsOccupant(byte playerId, uint vehicleId) => vehicleId != 0
+            && _occupants.TryGetValue(playerId, out var seat) && seat.VehicleId == vehicleId && seat.SeatIndex < 3;
+
+        public bool HasOccupant(uint vehicleId)
+        {
+            if (vehicleId == 0) return false;
+            foreach (var occupant in _occupants.Values)
+                if (occupant.VehicleId == vehicleId && occupant.SeatIndex < 3) return true;
+            return false;
+        }
+
         public void Clear()
         {
             _occupants.Clear();
@@ -23,6 +34,12 @@ namespace WinterMP.Net.Sync
             _occupants.Remove(playerId);
             _sequences.Remove(playerId);
         }
+
+        // Death/respawn end occupancy within the same connection. Keep request
+        // history so an old claim cannot become a fresh entry after revival.
+        public void RetirePlayer(byte playerId) => _occupants.Remove(playerId);
+
+        public void RetireAll() => _occupants.Clear();
 
         public void Record(PassengerState state)
         {

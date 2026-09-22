@@ -56,16 +56,22 @@ namespace WinterMP.Net.Messages
         public NetQuaternion Rotation = NetQuaternion.Identity;
         /// <summary>Coarse animation flags — see <c>WinterMP.Core.Sync.PlayerMoveState</c>.</summary>
         public byte MoveState;
+        public bool HasSweat;
+        public float Sweat;
+        public bool ValidSweat => HasSweat ? PassengerCondensationPolicy.ValidSweat(Sweat) : Sweat == 0f;
 
         public MessageId Id => MessageId.PlayerTransform;
 
         public void Write(NetWriter writer)
         {
+            if (!ValidSweat) throw new ProtocolException("Invalid player sweat.");
             writer.WriteByte(PlayerId);
             writer.WriteUInt16(Sequence);
             writer.WriteVector3(Position);
             writer.WriteQuaternion(Rotation);
             writer.WriteByte(MoveState);
+            writer.WriteByte(HasSweat ? (byte)1 : (byte)0);
+            writer.WriteSingle(Sweat);
         }
 
         public void Read(NetReader reader)
@@ -75,6 +81,11 @@ namespace WinterMP.Net.Messages
             Position = reader.ReadVector3();
             Rotation = reader.ReadQuaternion();
             MoveState = reader.ReadByte();
+            byte available = reader.ReadByte();
+            if (available > 1) throw new ProtocolException("Invalid player sweat availability.");
+            HasSweat = available == 1;
+            Sweat = reader.ReadSingle();
+            if (!ValidSweat) throw new ProtocolException("Invalid player sweat.");
         }
     }
 
@@ -90,6 +101,8 @@ namespace WinterMP.Net.Messages
         public const byte FlagHasSavedDirtiness = 4;
         /// <summary>Wire v78: the persisted PlayerAlco BAC is known (legacy sidecars omit it).</summary>
         public const byte FlagHasSavedAlco = 8;
+        /// <summary>v189: saved native PlayerTemp is known; legacy ambient samples are omitted.</summary>
+        public const byte FlagHasSavedBodyTemp = 16;
 
         public NetVector3 HostPosition;
         public NetQuaternion HostRotation = NetQuaternion.Identity;
@@ -100,7 +113,7 @@ namespace WinterMP.Net.Messages
         public float Fatigue;
         public float Thirst;
         public float Urine;
-        /// <summary>Wire v28: saved BodyTemp (5th need), restored alongside the others.</summary>
+        /// <summary>v189: native PlayerTemp, applied only with FlagHasSavedBodyTemp.</summary>
         public float BodyTemp;
         /// <summary>Wire v30: saved Stress (global need float), restored on rejoin.</summary>
         public float Stress;
@@ -115,11 +128,15 @@ namespace WinterMP.Net.Messages
         public bool HasSavedNeeds => (Flags & FlagHasSavedNeeds) != 0;
         public bool HasSavedDirtiness => (Flags & FlagHasSavedDirtiness) != 0;
         public bool HasSavedAlco => (Flags & FlagHasSavedAlco) != 0;
+        public bool HasSavedBodyTemp => (Flags & FlagHasSavedBodyTemp) != 0;
+        public bool ValidBodyTemp => (!HasSavedBodyTemp || HasSavedNeeds)
+            && PlayerWarmthPolicy.Valid(HasSavedBodyTemp, BodyTemp);
 
         public MessageId Id => MessageId.GuestSpawn;
 
         public void Write(NetWriter writer)
         {
+            if (!ValidBodyTemp) throw new ProtocolException("Invalid saved body warmth.");
             writer.WriteVector3(HostPosition);
             writer.WriteQuaternion(HostRotation);
             writer.WriteVector3(LastPosition);
@@ -152,6 +169,7 @@ namespace WinterMP.Net.Messages
             Drunk = reader.ReadSingle();
             Dirtiness = reader.ReadSingle();
             PlayerAlco = reader.ReadSingle();
+            if (!ValidBodyTemp) throw new ProtocolException("Invalid saved body warmth.");
         }
     }
 
@@ -170,7 +188,7 @@ namespace WinterMP.Net.Messages
         public byte PlayerId;
         /// <summary>Synced item id of the vehicle (0 when <see cref="SeatIndex"/> is <see cref="SeatNone"/>).</summary>
         public uint VehicleId;
-        /// <summary>0 = front passenger, 1 = rear left, 2 = rear right, 255 = none.</summary>
+        /// <summary>0 = front passenger, 1 = rear right (reserved in taxi), 2 = rear left, 255 = none.</summary>
         public byte SeatIndex = SeatNone;
         public ushort Sequence;
 

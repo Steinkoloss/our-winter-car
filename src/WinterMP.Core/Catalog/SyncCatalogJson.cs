@@ -22,6 +22,11 @@ namespace WinterMP.Core.Catalog
             if (root.TryGetValue("gameBuild", out var build) && build is string buildText)
                 data.GameBuild = buildText;
 
+            if (root.TryGetValue("fleaSale", out var fleaSale))
+            {
+                try { data.FleaSale = ParseFleaSale(fleaSale); }
+                catch (FormatException e) { data.FleaSaleError = e.Message; }
+            }
             ParseRuleArray(root, "doors", data.Doors);
             ParseRuleArray(root, "spawnContainers", data.SpawnContainers);
             if (root.TryGetValue("trophyFactories", out var factories))
@@ -41,6 +46,116 @@ namespace WinterMP.Core.Catalog
             ParseBuyArray(root, "buys", data.Buys);
             ParsePartArray(root, "parts", data.Parts);
             ParseBoltArray(root, "bolts", data.Bolts);
+            if (root.TryGetValue("firewoodDelivery", out var firewoodDelivery))
+            {
+                try { data.FirewoodDelivery = ParseFirewoodDelivery(firewoodDelivery); }
+                catch (FormatException e) { data.FirewoodDeliveryError = e.Message; }
+            }
+            if (root.TryGetValue("motorOil", out var motorOil))
+            {
+                try { data.MotorOil = ParseMotorOil(motorOil); }
+                catch (FormatException e) { data.MotorOilError = e.Message; }
+            }
+            if (root.TryGetValue("advertPhone", out var advertPhone))
+            {
+                try { data.AdvertPhone = ParseAdvertPhone(advertPhone); }
+                catch (FormatException e) { data.AdvertPhoneError = e.Message; }
+            }
+            if (root.TryGetValue("adverts", out var adverts))
+            {
+                try { data.Adverts = ParseAdverts(adverts); }
+                catch (FormatException e) { data.AdvertsError = e.Message; }
+            }
+            if (root.TryGetValue("train", out var train))
+            {
+                try { data.Train = ParseTrain(train); }
+                catch (FormatException e) { data.TrainError = e.Message; }
+            }
+            if (root.TryGetValue("coffee", out var coffee))
+            {
+                try { data.Coffee = ParseCoffee(coffee); }
+                catch (FormatException e) { data.CoffeeError = e.Message; }
+            }
+            if (root.TryGetValue("taxiPassengers", out var taxiPassengers))
+            {
+                try { data.TaxiPassengers = ParseTaxiPassengers(taxiPassengers); }
+                catch (FormatException e) { data.TaxiPassengersError = e.Message; }
+            }
+            if (root.TryGetValue("sausages", out var sausages))
+            {
+                try { data.Sausages = ParseSausages(sausages); }
+                catch (FormatException e) { data.SausagesError = e.Message; }
+            }
+            if (root.TryGetValue("tractorTrailer", out var tractorTrailer))
+            {
+                try { data.TractorTrailer = ParseTractorTrailer(tractorTrailer); }
+                catch (FormatException e) { data.TractorTrailerError = e.Message; }
+            }
+            if (root.TryGetValue("householdFuses", out var householdFuses))
+            {
+                try { data.HouseholdFuses = ParseHouseholdFuses(householdFuses); }
+                catch (FormatException e) { data.HouseholdFusesError = e.Message; }
+            }
+            if (root.TryGetValue("taxiFare", out var taxiFare))
+            {
+                try { data.TaxiFare = ParseTaxiFare(taxiFare); }
+                catch (FormatException e) { data.TaxiFareError = e.Message; }
+            }
+            if (root.TryGetValue("taxiMeter", out var taxiMeter))
+            {
+                try { data.TaxiMeter = ParseTaxiMeter(taxiMeter); }
+                catch (FormatException e) { data.TaxiMeterError = e.Message; }
+            }
+            if (root.TryGetValue("taxiService", out var taxiService))
+            {
+                try { data.TaxiService = ParseTaxiService(taxiService); }
+                catch (FormatException e) { data.TaxiServiceError = e.Message; }
+            }
+            if (root.TryGetValue("taxiPickup", out var taxiPickup))
+            {
+                try { data.TaxiPickup = ParseTaxiPickup(taxiPickup); }
+                catch (FormatException e) { data.TaxiPickupError = e.Message; }
+            }
+            if (root.TryGetValue("firewoodBuyers", out var firewoodBuyers))
+            {
+                try { data.FirewoodBuyers = ParseFirewoodBuyers(firewoodBuyers); }
+                catch (FormatException e) { data.FirewoodBuyersError = e.Message; }
+            }
+            if (root.TryGetValue("utilityPayments", out var utilityPayments))
+            {
+                try { data.UtilityPayments = ParseUtilityPayments(utilityPayments); }
+                catch (FormatException e) { data.UtilityPaymentsError = e.Message; }
+            }
+            if (root.TryGetValue("phonePayments", out var phonePayments))
+            {
+                try { data.PhonePayments = ParseUtilityPayments(phonePayments, true); }
+                catch (FormatException e) { data.PhonePaymentsError = e.Message; }
+            }
+            if (root.TryGetValue("mooseChop", out var mooseChop))
+            {
+                try { data.MooseChop = ParseMooseChop(mooseChop); }
+                catch (FormatException e) { data.MooseChopError = e.Message; }
+            }
+            if (root.TryGetValue("mooseMeat", out var mooseMeat))
+            {
+                try { data.MooseMeat = ParseMooseMeat(mooseMeat); }
+                catch (FormatException e) { data.MooseMeatError = e.Message; }
+            }
+            if (root.TryGetValue("milkCondition", out var milkCondition))
+            {
+                try { data.MilkCondition = ParseMilkCondition(milkCondition); }
+                catch (FormatException e) { data.MilkConditionError = e.Message; }
+            }
+            if (root.TryGetValue("cylinderHead", out var cylinderHead))
+            {
+                try { data.CylinderHead = ParseCylinderHead(cylinderHead); }
+                catch (FormatException e) { data.CylinderHeadError = e.Message; }
+            }
+            if (root.TryGetValue("valveAdjustment", out var valveAdjustment))
+            {
+                try { data.ValveAdjustment = ParseValveAdjustment(valveAdjustment); }
+                catch (FormatException e) { data.ValveAdjustmentError = e.Message; }
+            }
             if (root.TryGetValue("vehicles", out var vehiclesObj) && vehiclesObj is Dictionary<string, object?> vehicles)
                 data.Vehicles = ParseVehicles(vehicles);
             if (root.TryGetValue("pickables", out var pickablesObj) && pickablesObj is Dictionary<string, object?> pickables)
@@ -53,6 +168,92 @@ namespace WinterMP.Core.Catalog
                 data.Banking = ParseBanking(bank);
             if (root.TryGetValue("vehicleDamage", out var damageObj) && damageObj is Dictionary<string, object?> damage)
                 data.VehicleDamage = ParseVehicleDamage(damage);
+            if (root.TryGetValue("guestEngineProtection", out var engineProtection))
+            {
+                // Malformed local protection metadata must not discard unrelated sync rules.
+                try { data.GuestEngineProtection = ParseGuestEngineProtection(engineProtection); }
+                catch (FormatException e) { data.GuestEngineProtectionError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleElectrical", out var electrical))
+            {
+                try { data.VehicleElectrical = ParseVehicleElectrical(electrical); }
+                catch (FormatException e) { data.VehicleElectricalError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleCooling", out var speed))
+            {
+                try { data.VehicleCooling = ParseVehicleCooling(speed); }
+                catch (FormatException e) { data.VehicleCoolingError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleDrivetrainWear", out var drivetrainWear))
+            {
+                try { data.VehicleDrivetrainWear = ParseVehicleDrivetrainWear(drivetrainWear); }
+                catch (FormatException e) { data.VehicleDrivetrainWearError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleDifferentialSpeed", out var differential))
+            {
+                try { data.VehicleDifferentialSpeed = ParseVehicleDifferentialSpeed(differential); }
+                catch (FormatException e) { data.VehicleDifferentialSpeedError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleHeat", out var heat))
+            {
+                try { data.VehicleHeat = ParseVehicleHeat(heat); }
+                catch (FormatException e) { data.VehicleHeatError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleWearInputs", out var wearInputs))
+            {
+                try { data.VehicleWearInputs = ParseVehicleWearInputs(wearInputs); }
+                catch (FormatException e) { data.VehicleWearInputsError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleTemperature", out var temperature))
+            {
+                try { data.VehicleTemperature = ParseVehicleTemperature(temperature); }
+                catch (FormatException e) { data.VehicleTemperatureError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleWheelHealth", out var wheelHealth))
+            {
+                try { data.VehicleWheelHealth = ParseVehicleWheelHealth(wheelHealth); }
+                catch (FormatException e) { data.VehicleWheelHealthError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleTirePressure", out var tirePressure))
+            {
+                try { data.VehicleTirePressure = ParseVehicleTirePressure(tirePressure); }
+                catch (FormatException e) { data.VehicleTirePressureError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleEngineRpm", out var engineRpm))
+            {
+                try { data.VehicleEngineRpm = ParseVehicleEngineRpm(engineRpm); }
+                catch (FormatException e) { data.VehicleEngineRpmError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleParkingJoint", out var parkingJoint))
+            {
+                try { data.ParkingJoint = ParseParkingJoint(parkingJoint); }
+                catch (FormatException e) { data.ParkingJointError = e.Message; }
+            }
+            if (root.TryGetValue("atfRefill", out var atfRefill))
+            {
+                try { data.AtfRefill = ParseAtfRefill(atfRefill); }
+                catch (FormatException e) { data.AtfRefillError = e.Message; }
+            }
+            if (root.TryGetValue("stoves", out var stoves))
+            {
+                try { data.Stoves = ParseStoves(stoves); }
+                catch (FormatException e) { data.StovesError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleParkingBrake", out var parkingBrake))
+            {
+                try { data.ParkingBrake = ParseParkingBrake(parkingBrake); }
+                catch (FormatException e) { data.ParkingBrakeError = e.Message; }
+            }
+            if (root.TryGetValue("vehicleEngineHandoff", out var engineHandoff))
+            {
+                try { data.VehicleEngineHandoff = ParseVehicleEngineHandoff(engineHandoff); }
+                catch (FormatException e) { data.VehicleEngineHandoffError = e.Message; }
+            }
+            if (root.TryGetValue("guestEngineInputs", out var engineInputs))
+            {
+                try { data.GuestEngineInputs = ParseGuestEngineInputs(engineInputs, data.ReplacementParts, data.GuestEngineProtection); }
+                catch (FormatException e) { data.GuestEngineInputsError = e.Message; }
+            }
             if (root.TryGetValue("slotMachines", out var slotsObj) && slotsObj is Dictionary<string, object?> slots)
                 data.SlotMachines = ParseSlotMachines(slots);
             if (root.TryGetValue("videoPoker", out var pokerObj) && pokerObj is Dictionary<string, object?> poker)
@@ -259,6 +460,33 @@ namespace WinterMP.Core.Catalog
             AppendStrings(obj, "pathPrefixes", data.PathPrefixes);
             AppendStrings(obj, "carTempPathContains", data.CarTempPathContains);
             AppendStrings(obj, "heaterPathContains", data.HeaterPathContains);
+            if (obj.TryGetValue("passengerHeating", out var heating))
+            {
+                try
+                {
+                    if (heating is not Dictionary<string, object?> p) throw new FormatException("Invalid passenger heating profile.");
+                    data.PassengerHeating = new PassengerHeatingData {
+                        BodyPath = TemperaturePath(p, "bodyPath"), BodyFsm = TemperatureName(p, "bodyFsm"),
+                        AmbientState = TemperatureName(p, "ambientState"), HeatState = TemperatureName(p, "heatState"),
+                        RainPath = TemperaturePath(p, "rainPath"), RainVariable = TemperatureName(p, "rainVariable"),
+                        RainFsm = TemperatureName(p, "rainFsm"), HeatVariable = TemperatureName(p, "heatVariable"),
+                        HeatFsm = TemperatureName(p, "heatFsm"), TemperatureVariable = TemperatureName(p, "temperatureVariable") };
+                }
+                catch (FormatException error) { data.PassengerHeatingError = error.Message; }
+            }
+            if (obj.TryGetValue("passengerCondensation", out var condensation))
+            {
+                try
+                {
+                    if (condensation is not Dictionary<string, object?> p) throw new FormatException("Invalid passenger condensation profile.");
+                    data.PassengerCondensation = new PassengerCondensationData {
+                        State = TemperatureName(p, "state"), EntryVariable = TemperatureName(p, "entryVariable"),
+                        SweatGlobal = TemperatureName(p, "sweatGlobal"), SweatVariable = TemperatureName(p, "sweatVariable"),
+                        RateVariable = TemperatureName(p, "rateVariable"), DefaultRate = TemperatureName(p, "defaultRate"),
+                        DefrostingRate = TemperatureName(p, "defrostingRate") };
+                }
+                catch (FormatException error) { data.PassengerCondensationError = error.Message; }
+            }
             return data;
         }
 
@@ -438,11 +666,15 @@ namespace WinterMP.Core.Catalog
                 FsmName = GetString(obj, "fsmName"),
                 ScalarFloatName = GetOptionalString(obj, "scalarFloat"),
                 ScalarCommitState = GetOptionalString(obj, "scalarCommitState"),
+                HostPayment = GetOptionalString(obj, "hostPayment"),
             };
 
             AppendStrings(obj, "states", rule.States);
             AppendStrings(obj, "requireStates", rule.RequireStates);
             AppendStrings(obj, "excludePathPrefixes", rule.ExcludePathPrefixes);
+            if (obj.ContainsKey("hostPayment") && (rule.HostPayment != "firewood" || rule.ScalarFloatName != null
+                || rule.States.Count != 1 || rule.States[0] != "State 1" || rule.FsmName != "Use"))
+                throw new FormatException("Unsupported host payment control.");
             return rule;
         }
 
@@ -647,6 +879,58 @@ namespace WinterMP.Core.Catalog
         public VehicleClimateData? VehicleClimate;
         public BankingData? Banking;
         public VehicleDamageData? VehicleDamage;
+        public GuestEngineProtectionData? GuestEngineProtection;
+        public string? GuestEngineProtectionError;
+        public VehicleElectricalData? VehicleElectrical;
+        public string? VehicleElectricalError;
+        public VehicleCoolingData? VehicleCooling;
+        public string? VehicleCoolingError;
+        public VehicleDrivetrainWearData? VehicleDrivetrainWear;
+        public string? VehicleDrivetrainWearError;
+        public VehicleDifferentialSpeedData? VehicleDifferentialSpeed;
+        public string? VehicleDifferentialSpeedError;
+        public VehicleHeatData? VehicleHeat;
+        public string? VehicleHeatError;
+        public VehicleWearInputData? VehicleWearInputs;
+        public string? VehicleWearInputsError;
+        public VehicleTemperatureData? VehicleTemperature;
+        public string? VehicleTemperatureError;
+        public VehicleWheelHealthData? VehicleWheelHealth;
+        public string? VehicleWheelHealthError;
+        public VehicleTirePressureData? VehicleTirePressure;
+        public string? VehicleTirePressureError;
+        public VehicleEngineRpmData? VehicleEngineRpm;
+        public ParkingJointData? ParkingJoint;
+        public AtfRefillData? AtfRefill;
+        public string? AtfRefillError;
+        public MotorOilData? MotorOil;
+        public string? MotorOilError;
+        public AdvertPhoneData? AdvertPhone;
+        public string? AdvertPhoneError;
+        public AdvertsData? Adverts;
+        public string? AdvertsError;
+        public TrainData? Train;
+        public string? TrainError;
+        public CoffeeData? Coffee;
+        public string? CoffeeError;
+        public TaxiPassengersData? TaxiPassengers;
+        public string? TaxiPassengersError;
+        public SausagesData? Sausages;
+        public string? SausagesError;
+        public TractorTrailerData? TractorTrailer;
+        public string? TractorTrailerError;
+        public HouseholdFuseData? HouseholdFuses;
+        public string? HouseholdFusesError;
+        public StoveData? Stoves;
+        public string? StovesError;
+        public string? ParkingJointError;
+        public ParkingBrakeData? ParkingBrake;
+        public string? ParkingBrakeError;
+        public VehicleEngineHandoffData? VehicleEngineHandoff;
+        public string? VehicleEngineHandoffError;
+        public string? VehicleEngineRpmError;
+        public GuestEngineInputsData? GuestEngineInputs;
+        public string? GuestEngineInputsError;
         public SlotMachineData? SlotMachines;
         public PokerData? VideoPoker;
         public DebtLetterData? DebtLetter;
@@ -661,6 +945,32 @@ namespace WinterMP.Core.Catalog
         public ShoppingBagsData? ShoppingBags;
         public PartIdentityData? PartIdentity;
         public ReplacementPartsData? ReplacementParts;
+        public ValveAdjustmentData? ValveAdjustment;
+        public CylinderHeadData? CylinderHead;
+        public FirewoodDeliveryData? FirewoodDelivery;
+        public TaxiFareData? TaxiFare;
+        public string? TaxiFareError;
+        public TaxiMeterData? TaxiMeter;
+        public string? TaxiMeterError;
+        public TaxiServiceData? TaxiService;
+        public string? TaxiServiceError;
+        public TaxiPickupData? TaxiPickup;
+        public string? TaxiPickupError;
+        public string? FirewoodDeliveryError;
+        public List<FirewoodBuyerData>? FirewoodBuyers;
+        public string? FirewoodBuyersError;
+        public FleaSaleData? FleaSale;
+        public string? FleaSaleError;
+        public UtilityPaymentsData? UtilityPayments, PhonePayments;
+        public string? UtilityPaymentsError, PhonePaymentsError;
+        public MooseChopData? MooseChop;
+        public string? MooseChopError;
+        public MooseMeatData? MooseMeat;
+        public string? MooseMeatError;
+        public MilkConditionData? MilkCondition;
+        public string? MilkConditionError;
+        public string? CylinderHeadError;
+        public string? ValveAdjustmentError;
     }
 
     internal sealed class VenttiPropertyData
@@ -747,6 +1057,22 @@ namespace WinterMP.Core.Catalog
         public readonly List<string> PathPrefixes = new List<string>();
         public readonly List<string> CarTempPathContains = new List<string>();
         public readonly List<string> HeaterPathContains = new List<string>();
+        public PassengerCondensationData? PassengerCondensation;
+        public string? PassengerCondensationError;
+        public PassengerHeatingData? PassengerHeating;
+        public string? PassengerHeatingError;
+    }
+
+    internal sealed class PassengerHeatingData
+    {
+        public string BodyPath = "", BodyFsm = "", AmbientState = "", HeatState = "", RainPath = "";
+        public string RainVariable = "", RainFsm = "", HeatVariable = "", HeatFsm = "", TemperatureVariable = "";
+    }
+
+    internal sealed class PassengerCondensationData
+    {
+        public string State = "", EntryVariable = "", SweatGlobal = "", SweatVariable = "";
+        public string RateVariable = "", DefaultRate = "", DefrostingRate = "";
     }
 
     internal sealed class BuyRuleData
@@ -803,6 +1129,7 @@ namespace WinterMP.Core.Catalog
         public string FsmName = string.Empty;
         public string? ScalarFloatName;
         public string? ScalarCommitState;
+        public string? HostPayment;
         public readonly List<string> States = new List<string>();
         public readonly List<string> RequireStates = new List<string>();
         public readonly List<string> ExcludePathPrefixes = new List<string>();

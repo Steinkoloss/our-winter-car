@@ -83,6 +83,8 @@ namespace WinterMP.Core.Sync
                 _bridge.HookedFsms.Remove(fsm); _registeredFsms.Remove(fsm);
             }
             RemovePartEntries(_bolts, fsms, x => x.Fsm);
+            foreach (var valve in _valves.Values) if (fsms.Contains(valve.Fsm)) RestoreGuestValve(valve);
+            RemovePartEntries(_valves, fsms, x => x.Fsm);
         }
 
         private static void RequireNoPartEntries<T>(Dictionary<uint, T> entries, HashSet<PlayMakerFSM> fsms, Func<T, PlayMakerFSM> getFsm)

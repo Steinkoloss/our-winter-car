@@ -7,8 +7,13 @@ namespace WinterMP.Net.Sync
     {
         public const int MaxSlots = 32;
 
-        public static bool ValidRequest(PartFitOperation operation, byte slot) => (byte)operation <= 3
-            && slot <= MaxSlots && (operation == PartFitOperation.Install || slot == 0);
+        public static bool RockerBoltedInput(ReplacementPartState? state, byte slot, float tightness) =>
+            state != null && slot >= 1 && slot <= 8 && state.Installed && state.AssemblyId == slot
+            && PartAttachmentPolicy.HasAttachment(state) && Finite(tightness) && tightness >= 1;
+
+        public static bool ValidRequest(PartFitOperation operation, byte slot) => (byte)operation <= 7
+            && slot <= MaxSlots && (operation == PartFitOperation.Install || slot == 0
+                || (PartToolScrewPolicy.IsTurn(operation) && slot <= CylinderHeadPolicy.BoltCount));
 
         /// <summary>Native arrays reserve index zero and break distance ties with the later slot.</summary>
         public static byte Nearest(NetVector3 part, NetVector3?[] points, float tolerance)

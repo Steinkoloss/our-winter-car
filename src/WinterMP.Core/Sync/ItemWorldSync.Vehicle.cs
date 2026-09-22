@@ -59,33 +59,9 @@ namespace WinterMP.Core.Sync
             if (_bridge.LocalPlayer.IsChildOf(vehicleBody.transform))
                 return true;
 
-            // PlayerInVar (the game's PlayerIn FsmBool) is the game's own "actually got in"
-            // signal, but it is not a clean local-only one: the REMOTE climate stream
-            // overwrites it on the observing machine (see
-            // VehicleWorldSync.Climate.ApplyRemoteFogLevel), so on an observer it reflects
-            // whether the *remote* occupant is in the car, not the local one. Trust it only
-            // when no remote owner is asserting this car — otherwise an observer of a
-            // remotely owned/driven car would be mis-detected as its driver and could
-            // wrongly claim it with FlagDriver, fighting the real owner. Entering your own
-            // free car still works because an unowned car has RemoteOwner == NoOwner.
-            //
-            // We deliberately do NOT fall back to raw proximity (distance to MassDriver):
-            // that promoted anyone merely standing by the driver's door to "driver", so
-            // other players saw them snap into the seat without ever getting in. Sitting is
-            // detected only from actually being seated — parented under the car (above) or
-            // the game's PlayerIn flag (below).
-            if (item != null && item.RemoteOwner == WorldSyncIds.NoOwner)
-            {
-                // Additional guard for PlayerInVar specifically: the transform stream can
-                // go stale (RemoteOwner scrubbed to NoOwner) while the CLIMATE stream is
-                // still live — e.g. a remote player sitting in a parked car — and during
-                // that window PlayerInVar is still the remote occupant's contaminated
-                // value. Only trust it when no remote climate is live either.
-                if (item.PlayerInVar != null && item.PlayerInVar.Value
-                    && Time.unscaledTime >= item.RemoteClimateUntil)
-                    return true;
-            }
-
+            // GlassFrosting.PlayerIn describes cabin proximity, including a player
+            // standing beside the car after exiting. It cannot establish a driver
+            // claim: doing so keeps the other peer's driver trigger blocked.
             return false;
         }
 
