@@ -30,7 +30,7 @@ namespace WinterMP.Net.Tests
         public void AcceptedStoppedCrankingAndRunningInputsRetainExistingWireUnits(ushort rpm)
         {
             var state = new VehicleState { VehicleId = 91, OwnerPlayerId = 1, Sequence = 0, Rpm = rpm };
-            var wire = PacketCodec.Encode(state); Assert.Equal(35, wire.Length);
+            var wire = PacketCodec.Encode(state); Assert.Equal(43, wire.Length);
             var copy = VehicleStateStreamPolicy.Copy((VehicleState)PacketCodec.Decode(wire));
             Assert.Equal(rpm, copy.Rpm); Assert.True(VehicleWearSimulationPolicy.HasSample(copy, 91, 1, true));
             Assert.False(VehicleWearSimulationPolicy.HasSample(copy, 92, 1, true));

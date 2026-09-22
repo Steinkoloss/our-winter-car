@@ -703,10 +703,11 @@ remain open. No complete-mod or full M7 acceptance is claimed.
 5. Prepare reviewable change groups and a short tester brief at playable
    checkpoints. Commit/release only when requested. Each test release identifies
    the exact build, changes and a small set of checks; carry forward unresolved
-   failures. Keep the shipped guide tied to its actual package: `docs/TESTING.md`
-   currently describes 0.1.33 / protocol 120; local join/shop checks used 210 and
-   sleep checks now use 211. Unreleased checks do not establish what testers
-   experienced on that package.
+   failures. Keep the guide tied to its actual package: `docs/TESTING.md` now
+   describes the unreleased local 0.1.33 / protocol261 package workflow, not the
+   historical protocol120 public kit. Read the fresh attempt's `validation.json`
+   for artifact/build checks and missing dependencies. Historical join/shop/sleep
+   checks do not establish what testers experience on this package.
 
 **Every task's Definition of Done (DoD):**
 1. Follows the **host-authoritative** rule (guests send intents; host validates + broadcasts). Host always wins.

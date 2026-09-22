@@ -123,7 +123,7 @@ namespace WinterMP.Tools
             json.Key("trigger"); json.Value(trigger);
             json.Key("dumpedAtUtc"); json.Value(DateTime.UtcNow.ToString("o"));
             json.Key("toolsVersion"); json.Value(MyPluginInfo.PLUGIN_VERSION);
-            json.Key("schemaVersion"); json.Value(3L);
+            json.Key("schemaVersion"); json.Value(4L);
             json.EndObject();
 
             DumpFsms(json);
@@ -134,8 +134,10 @@ namespace WinterMP.Tools
 
             string dir = Path.Combine(Path.Combine(Paths.GameRootPath, "WinterMP"), "dumps");
             Directory.CreateDirectory(dir);
-            string file = Path.Combine(dir, $"catalog-{DateTime.Now:yyyyMMdd-HHmmss}.json");
-            File.WriteAllText(file, json.ToString());
+            string file = Path.Combine(dir, $"catalog-{DateTime.UtcNow:yyyyMMdd-HHmmss-fffffff}.json");
+            using (var stream = new FileStream(file, FileMode.CreateNew, FileAccess.Write))
+            using (var writer = new StreamWriter(stream))
+                writer.Write(json.ToString());
             return file;
         }
 
@@ -153,6 +155,7 @@ namespace WinterMP.Tools
             }
 
             var components = Resources.FindObjectsOfTypeAll(fsmType);
+            var actionCatalog = new ActionCatalogWriter();
             int dumped = 0;
 
             foreach (var obj in components)
@@ -182,6 +185,7 @@ namespace WinterMP.Tools
                 json.Key("netId"); json.Value(StableHash.Fnv1a32(scenePath + "::" + fsmName));
                 json.Key("active"); json.Value(active);
                 json.Key("activeState"); json.Value(ReflectionUtil.GetString(fsm, "ActiveStateName"));
+                json.Key("objectReference"); ActionCatalogWriter.Write(json, actionCatalog.Reference(component));
 
                 json.Key("states");
                 json.BeginArray();
@@ -207,18 +211,7 @@ namespace WinterMP.Tools
                         }
                         json.EndArray();
 
-                        // Action type names are deliberately enough to identify what a
-                        // state does (payment, save, spawn, random roll) without dumping
-                        // arbitrary object references or save data from each action.
-                        json.Key("actionTypes");
-                        json.BeginArray();
-                        var actions = ReflectionUtil.GetMember(state, "Actions") as IEnumerable;
-                        if (actions != null)
-                        {
-                            foreach (var action in actions)
-                                json.Value(ActionTypeName(action));
-                        }
-                        json.EndArray();
+                        actionCatalog.WriteState(json, state);
                         json.EndObject();
                     }
                 }
@@ -278,12 +271,8 @@ namespace WinterMP.Tools
             Log.LogInfo($"Dumped {dumped} FSMs.");
         }
 
-        // Cash, the bank balance, and several economy scalars live in PlayMaker GLOBALS,
-        // which no per-FSM record carries — without this section a dump cannot answer
-        // "what is the bank balance variable actually called" (COVERAGE-ROADMAP R1.1) and
-        // global bindings stay unverifiable by tools/check_fsm_bindings.py. Scalar VALUES
-        // are included on purpose: a recognizable balance is what disambiguates
-        // similarly-named candidates.
+        // Keep global binding names, never sample live save/resource values. Schema 4
+        // retains the legacy value slot as null with an explicit redaction marker.
         private static void DumpGlobalVariables(JsonWriter json)
         {
             json.Key("globalVariables");
@@ -315,8 +304,9 @@ namespace WinterMP.Tools
                     json.Key("name"); json.Value(ReflectionUtil.GetString(namedVar, "Name"));
                     if (scalar)
                     {
-                        object? value = ReflectionUtil.GetMember(namedVar, "Value");
-                        json.Key("value"); json.Value(value != null ? value.ToString() : null);
+                        json.Key("value"); json.Value((string?)null);
+                        json.Key("valueStatus"); ActionCatalogWriter.Write(json,
+                            ActionCatalogWriter.Marker("withheld", "live-global-value"));
                     }
                     json.EndObject();
                 }
@@ -326,18 +316,6 @@ namespace WinterMP.Tools
             json.EndObject();
         }
 
-        private static string? ActionTypeName(object? action)
-        {
-            if (action == null) return null;
-            try
-            {
-                return action.GetType().FullName ?? action.GetType().Name;
-            }
-            catch
-            {
-                return "unknown";
-            }
-        }
 
         private static void DumpRigidbodies(JsonWriter json)
         {

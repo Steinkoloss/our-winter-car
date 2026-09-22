@@ -49,6 +49,8 @@ namespace WinterMP.Core.Sync
     // Fuel/liquid containers (M8). These are deliberately separate from vehicle
     // fuel: a jerrycan can be held by a different delegated owner than the car.
     public float NextFluidProbeAt;
+    public uint FuelRevision;
+    public float AcceptedFluidLevel = float.NaN;
     public HutongGames.PlayMaker.FsmFloat? FluidLevelVar;
     public HutongGames.PlayMaker.FsmFloat? FluidCapacityVar;
     public HutongGames.PlayMaker.FsmBool? FluidPouringVar;

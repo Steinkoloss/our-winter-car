@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <ProjectReference Include="../../WinterMP.Net/WinterMP.Net.csproj" />
+    <Compile Include="../../WinterMP.Core/Sync/HeatSourceSync.cs" Link="Core/HeatSourceSync.cs" />
+    <Compile Include="../../WinterMP.Core/Sync/HeatSourceSync.Sauna.cs" Link="Core/HeatSourceSync.Sauna.cs" />
+    <Compile Include="../../WinterMP.Core/Sync/HeatSourceSync.Cabin.cs" Link="Core/HeatSourceSync.Cabin.cs" />
+    <Compile Include="../../WinterMP.Core/Sync/HeatSourceSync.CabinNative.cs" Link="Core/HeatSourceSync.CabinNative.cs" />
+    <Compile Include="../../WinterMP.Core/Sync/FsmHook.cs" Link="Core/FsmHook.cs" />
+    <Compile Include="../../WinterMP.Core/Catalog/SyncCatalogJson.WoodstoveFuel.cs" Link="Core/SyncCatalogJson.WoodstoveFuel.cs" />
+  </ItemGroup>
+</Project>

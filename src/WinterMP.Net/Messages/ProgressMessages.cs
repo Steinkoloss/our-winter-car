@@ -15,6 +15,7 @@ namespace WinterMP.Net.Messages
         public byte Flags;
         public float Level;
         public float Capacity;
+        public uint FuelRevision;
 
         public bool IsPouring => (Flags & FlagPouring) != 0;
 
@@ -28,6 +29,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(Flags);
             writer.WriteSingle(Level);
             writer.WriteSingle(Capacity);
+            writer.WriteUInt32(FuelRevision);
         }
 
         public void Read(NetReader reader)
@@ -38,6 +40,7 @@ namespace WinterMP.Net.Messages
             Flags = reader.ReadByte();
             Level = reader.ReadSingle();
             Capacity = reader.ReadSingle();
+            FuelRevision = reader.ReadUInt32();
         }
     }
 

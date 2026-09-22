@@ -303,6 +303,10 @@ namespace WinterMP.Net.Messages
         /// <summary>Exact signed native coolant for simulator handoff; appended v213.</summary>
         public bool HandoffTemperatureAvailable;
         public float HandoffTemperature;
+        public uint FuelRevision;
+        public float FuelLiters;
+        public bool ValidFuelLiters => !float.IsNaN(FuelLiters) && !float.IsInfinity(FuelLiters)
+            && FuelLiters >= 0 && (FuelRevision != 0 || FuelLiters == 0);
         public bool ValidHandoffTemperature => !float.IsNaN(HandoffTemperature) && !float.IsInfinity(HandoffTemperature)
             && HandoffTemperature >= -100 && HandoffTemperature <= 300
             && (HandoffTemperatureAvailable || HandoffTemperature == 0);
@@ -326,6 +330,7 @@ namespace WinterMP.Net.Messages
             if (!ValidMovementSpeed) throw new ProtocolException("Invalid vehicle movement speed.");
             if (!ValidDifferentialSpeed) throw new ProtocolException("Invalid vehicle differential speed.");
             if (!ValidHandoffTemperature) throw new ProtocolException("Invalid vehicle handoff temperature.");
+            if (!ValidFuelLiters) throw new ProtocolException("Invalid vehicle absolute fuel.");
             writer.WriteUInt32(VehicleId);
             writer.WriteByte(OwnerPlayerId);
             writer.WriteUInt16(Sequence);
@@ -343,6 +348,8 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(DifferentialSpeed);
             writer.WriteByte(HandoffTemperatureAvailable ? (byte)1 : (byte)0);
             writer.WriteSingle(HandoffTemperature);
+            writer.WriteUInt32(FuelRevision);
+            writer.WriteSingle(FuelLiters);
         }
 
         public void Read(NetReader reader)
@@ -372,6 +379,9 @@ namespace WinterMP.Net.Messages
             if (temperatureAvailable > 1) throw new ProtocolException("Invalid handoff temperature availability.");
             HandoffTemperatureAvailable = temperatureAvailable == 1;
             HandoffTemperature = reader.ReadSingle();
+            FuelRevision = reader.ReadUInt32();
+            FuelLiters = reader.ReadSingle();
+            if (!ValidFuelLiters) throw new ProtocolException("Invalid vehicle absolute fuel.");
             if (!ValidTorque) throw new ProtocolException("Invalid vehicle torque.");
             if (!ValidMovementSpeed) throw new ProtocolException("Invalid vehicle movement speed.");
             if (!ValidDifferentialSpeed) throw new ProtocolException("Invalid vehicle differential speed.");

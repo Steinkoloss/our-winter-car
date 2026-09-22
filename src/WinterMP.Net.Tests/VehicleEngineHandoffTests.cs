@@ -56,7 +56,7 @@ namespace WinterMP.Net.Tests
         {
             var state = Running(); state.HandoffTemperatureAvailable = true; state.HandoffTemperature = celsius;
             var wire = PacketCodec.Encode(state);
-            Assert.Equal(35, wire.Length); Assert.Equal(1, wire[30]); Assert.Equal(celsius, BitConverter.ToSingle(wire, 31));
+            Assert.Equal(43, wire.Length); Assert.Equal(1, wire[30]); Assert.Equal(celsius, BitConverter.ToSingle(wire, 31));
             var decoded = (VehicleState)PacketCodec.Decode(wire);
             var copy = VehicleStateStreamPolicy.CaptureEngineClaim(decoded, 42, 1, true, false, 10, 11)!;
             decoded.HandoffTemperature = 0; decoded.HandoffTemperatureAvailable = false;

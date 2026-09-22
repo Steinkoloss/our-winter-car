@@ -81,6 +81,31 @@ namespace WinterMP.Core.Session
         {
             switch (message)
             {
+                case PissAreaIntent pissIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte pissActor))
+                        Sync.WorldSyncManager.Instance?.OnPissAreaIntent(pissIntent, pissActor);
+                    break;
+                case ScraperAction scraper when IsHost:
+                    if (TryGetPlayerId(peer, out byte scraperActor))
+                        Sync.PaneScrapeSync.Instance?.OnAction(scraper, scraperActor);
+                    break;
+                case WoodstoveFeedIntent cabinFeed when IsHost:
+                    if (TryGetPlayerId(peer, out byte cabinActor))
+                        Sync.WorldSyncManager.Instance?.OnCabinFuelIntent(cabinFeed, cabinActor);
+                    break;
+                case WoodstoveFuelUpdate cabinFuel when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnCabinFuelUpdate(cabinFuel);
+                    break;
+                case SaunaTimerIntent saunaTimer when IsHost:
+                    if (TryGetPlayerId(peer, out byte saunaActor))
+                        Sync.WorldSyncManager.Instance?.OnSaunaTimerIntent(saunaTimer, saunaActor);
+                    break;
+                case SaunaTimerState saunaState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnSaunaTimerState(saunaState);
+                    break;
+                case PaneScrapeUpdate paneUpdate when !IsHost:
+                    Sync.PaneScrapeSync.Instance?.OnUpdate(paneUpdate);
+                    break;
                 case SessionSettings settings when !IsHost:
                     SetPermanentDeathEnabled((settings.Flags & SessionFlags.PermadeathEnabled) != 0);
                     break;
@@ -122,6 +147,7 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PlayerSpawn spawn when !IsHost:
+                    if (HasClothingAdmission(spawn)) break;
                     if (spawn.PlayerId != LocalPlayerId)
                     {
                         var remote = new RemotePlayer
@@ -130,6 +156,7 @@ namespace WinterMP.Core.Session
                             Peer = peer, // clients only talk to the host; host relays
                             SteamId = spawn.SteamId,
                             Name = spawn.Name,
+                            ClothingAdmission = spawn.ClothingAdmission,
                         };
                         _playersByPeer[new PeerId(spawn.SteamId != 0 ? spawn.SteamId : spawn.PlayerId)] = remote;
                         AddChatLine($"* {remote.Name} joined");
@@ -239,15 +266,7 @@ namespace WinterMP.Core.Session
                     break;
 
                 case PlayerClothingState clothingState:
-                    if (IsHost && !IsPeerPlayer(peer, clothingState.PlayerId))
-                    {
-                        WinterMPPlugin.Log.LogWarning(
-                            $"Dropped PlayerClothingState claiming player {clothingState.PlayerId} from {peer}.");
-                        break;
-                    }
-                    Sync.WorldSyncManager.Instance?.OnRemoteClothingState(clothingState);
-                    if (IsHost)
-                        Broadcast(clothingState, Channel.ReliableOrdered, except: peer);
+                    HandlePlayerClothingState(peer, clothingState);
                     break;
 
                 case FsmStateEnter stateEnter when IsHost:
@@ -488,6 +507,14 @@ namespace WinterMP.Core.Session
 
                     if (Sync.WorldSyncManager.Instance?.OnHostVehicleFuelIntent(fuelIntent, out var fuelState) == true)
                         Broadcast(fuelState, Channel.ReliableOrdered);
+                    break;
+
+                case ContainerFuelIntent containerFuel when IsHost:
+                    if (TryGetPlayerId(peer, out byte fuelActor))
+                        Sync.WorldSyncManager.Instance?.OnContainerFuelIntent(containerFuel, fuelActor);
+                    break;
+                case ContainerFuelResult containerFuelResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnContainerFuelResult(containerFuelResult);
                     break;
 
                 case TimeSync timeSync when !IsHost:
@@ -825,6 +852,18 @@ namespace WinterMP.Core.Session
                     Sync.WorldSyncManager.Instance?.OnTrainState(trainState); break;
                 case CoffeeState coffeeState when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnCoffeeState(coffeeState); break;
+                case VendorCoffeeState vendorCoffeeState when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVendorCoffeeState(vendorCoffeeState); break;
+                case BeerCaseExtractIntent beerCaseIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte beerCaseActor)) Sync.WorldSyncManager.Instance?.OnBeerCaseExtract(beerCaseIntent, beerCaseActor);
+                    break;
+                case BeerCaseUpdate beerCaseUpdate when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnBeerCaseUpdate(beerCaseUpdate); break;
+                case VendorCoffeeResult vendorCoffeeResult when !IsHost:
+                    Sync.WorldSyncManager.Instance?.OnVendorCoffeeResult(vendorCoffeeResult); break;
+                case VendorCoffeeIntent vendorCoffeeIntent when IsHost:
+                    if (TryGetPlayerId(peer, out byte vendorCoffeeActor)) Sync.WorldSyncManager.Instance?.OnVendorCoffeeIntent(vendorCoffeeIntent, vendorCoffeeActor);
+                    break;
                 case CoffeeDrinkResult coffeeDrink when !IsHost:
                     Sync.WorldSyncManager.Instance?.OnCoffeeDrink(coffeeDrink); break;
                 case CoffeeIntent coffeeIntent when IsHost:

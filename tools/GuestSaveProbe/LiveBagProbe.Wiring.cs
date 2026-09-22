@@ -118,6 +118,15 @@ namespace WinterMP.GuestSaveProbe
                     rows.Add("wire-tool|" + entry.Key + "|" + Get(entry.Value, "LocallyOwned") + "|" + Get(entry.Value, "RemoteOwner") + "|" + Vector(body.position));
             rows.Add("wire-player|" + (Player != null ? Vector(Player.position) : "none"));
             var client = Get(Items, "_wireInstallClient");
+            rows.Add("wire-finish-count|" + Get(Items, "_wireFinishCount"));
+            rows.Add("wire-pending|" + (Get(Items, "_wireInstalling") != null));
+            rows.Add("wire-client-pending|" + (client != null && Get(client, "_pending") != null));
+            var ledger = Get(Items, "_wireInstallLedger");
+            foreach (DictionaryEntry entry in (IDictionary)Get(ledger, "_entries"))
+            {
+                var receipt = (WiringInstallReceipt)Get(entry.Value, "Receipt");
+                rows.Add("wire-receipt|" + receipt.PlayerId + "|" + receipt.Token + "|" + receipt.Sequence + "|" + receipt.SourceId + "|" + receipt.Status);
+            }
             rows.Add("wire-client|" + (client == null ? "none" : Get(client, "_token") + "|" + Get(client, "_sequence")));
             var electrics = Find("CORRIS/Simulation/Systems/Electrics", "Electrics");
             rows.Add("wire-electrics|" + electrics.FsmVariables.FindFsmBool("Installed3").Value);

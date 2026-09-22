@@ -12,14 +12,26 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The source-linked pane bridge has its own engine doubles/assembly. -->
+    <Compile Remove="PaneScrapeGameplay/**/*.cs" />
+    <Compile Remove="WoodstoveGameplay/**/*.cs" />
     <ProjectReference Include="..\WinterMP.Net\WinterMP.Net.csproj" />
+    <Compile Include="..\WinterMP.Core\Sync\ClothingSync.cs" Link="Clothing\ClothingSync.cs" />
+    <Compile Include="..\WinterMP.Core\Sync\PlayerSyncManager.Clothing.cs" Link="Clothing\PlayerSyncManager.Clothing.cs" />
+    <Compile Include="..\WinterMP.Core\Session\SessionManager.Clothing.cs" Link="Clothing\SessionManager.Clothing.cs" />
+    <Compile Include="..\WinterMP.Core\Session\GuestProfileStore.cs" Link="Clothing\GuestProfileStore.cs" />
+    <Compile Include="..\WinterMP.Core\Session\RemotePlayer.cs" Link="Clothing\RemotePlayer.cs" />
+    <Compile Include="..\WinterMP.Core\Util\BootTrace.cs" Link="Util\BootTrace.cs" />
     <!-- The catalog reader is engine-independent; exercise the actual Core source
          without pulling Unity/PlayMaker into CI. -->
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Firewood.cs" Link="Catalog\SyncCatalogJson.Firewood.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.PaneScrape.cs" Link="Catalog\SyncCatalogJson.PaneScrape.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.WoodstoveFuel.cs" Link="Catalog\SyncCatalogJson.WoodstoveFuel.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.MotorOil.cs" Link="Catalog\SyncCatalogJson.MotorOil.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Adverts.cs" Link="Catalog\SyncCatalogJson.Adverts.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Train.cs" Link="Catalog\SyncCatalogJson.Train.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Coffee.cs" Link="Catalog\SyncCatalogJson.Coffee.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.VendorCoffee.cs" Link="Catalog\SyncCatalogJson.VendorCoffee.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Passengers.cs" Link="Catalog\SyncCatalogJson.Passengers.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Sausages.cs" Link="Catalog\SyncCatalogJson.Sausages.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.TractorTrailer.cs" Link="Catalog\SyncCatalogJson.TractorTrailer.cs" />

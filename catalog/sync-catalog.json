@@ -1,4 +1,77 @@
 {
+  "vendorCoffee": {
+    "schemaVersion": 1,
+    "machines": [
+      {
+        "root": "INSPECTION/LOD/CoffeeAutomatic",
+        "roles": {
+          "buy": {
+            "suffix": "Functions/CoffeeButton",
+            "fsm": "Buy",
+            "requiredStates": ["Wait player", "Wait button", "Purchase"],
+            "requiredVariables": ["String:Notification", "GameObject:Pan"]
+          },
+          "acquire": {
+            "suffix": "Functions/GetACup",
+            "fsm": "Use",
+            "requiredStates": ["Wait player", "Wait button", "State 1", "State 2"],
+            "requiredVariables": []
+          },
+          "target": {
+            "suffix": "Functions/PanTarget",
+            "fsm": "Data",
+            "requiredStates": ["ON", "OFF"],
+            "requiredVariables": ["Bool:Pouring"]
+          },
+          "cup": {
+            "suffix": "Functions/CupPivot/coffee cup(itemx)",
+            "fsm": "Use",
+            "requiredStates": ["Wait player", "Wait button", "Cup full?", "Pour", "Delay", "Check drink 2", "Play anim", "State 1", "Data"],
+            "requiredVariables": ["Float:Coffee", "Float:Distance", "Float:Pos", "Float:Scale", "Bool:Pouring", "GameObject:HandDrink", "GameObject:Mesh", "GameObject:Pivot", "GameObject:TargetPan"]
+          }
+        },
+        "native": {
+          "price": null,
+          "references": null,
+          "actions": null,
+          "cupLifecycle": null,
+          "playerEffect": null,
+          "persistence": null,
+          "initialization": null,
+          "geometry": null
+        }
+      }
+    ]
+  },
+  "woodstoveFuel": {
+    "source": "CABIN/Cabin/woodstove/Fireplace",
+    "loggingPath": "CABIN/LOD/Logging/Logwall",
+    "loggingFsm": "Use",
+    "createState": "Create log",
+    "pieceName": "firewood(Clone)"
+  },
+  "paneScrape": {
+    "vehicle": "CORRIS",
+    "panePath": "CORRIS/BODY/Windshield/collider",
+    "paneFsm": "Scrape",
+    "freezingPath": "CORRIS/Simulation/CarTempCorris",
+    "freezingFsm": "Freezing",
+    "cutoff": "CutoffWindshield",
+    "deltaState": "State 7",
+    "strokeState": "Scrape 2",
+    "strokeEvent": "WINDSHIELD",
+    "toolName": "ice scraper(itemx)",
+    "handPath": "PLAYER/Pivot/AnimPivot/Camera/FPSCamera/1Hand_Assemble/Hand",
+    "handFsm": "PickUp",
+    "picked": "PickedObject",
+    "pickup": "Set pivot 2",
+    "equip": "Ice Scraper",
+    "off": "Off",
+    "drop": "Drop part",
+    "throw": "Drop part 2",
+    "eyePath": "PLAYER/Pivot/AnimPivot/Camera/FPSCamera/FPSCamera/Camera/Camera",
+    "insidePath": "CORRIS/Functions/PlayerTrigger"
+  },
   "fleaSale": {
     "listingName": "potato chips(itemx)",
     "listingIdPrefix": "chips",
@@ -6304,13 +6377,6 @@
   ],
   "controls": [
     {
-      "objectName": "beercase",
-      "fsmName": "Use",
-      "states": [
-        "Remove bottle"
-      ]
-    },
-    {
       "pathPrefix": "SORBET(190-200psi)/",
       "objectName": "ButtonLightModes",
       "fsmName": "Use",
@@ -6891,6 +6957,7 @@
     },
     {
       "pathContains": "/SetFire",
+      "excludePathPrefixes": ["CABIN/Cabin/woodstove/Fireplace/"],
       "fsmName": "Use",
       "states": [
         "Burn",

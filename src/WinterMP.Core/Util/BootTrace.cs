@@ -20,13 +20,39 @@ namespace WinterMP.Core.Util
             try
             {
                 EnsureWriter();
-                _writer!.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {message}");
+                _writer!.WriteLine($"[{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}] pid={System.Diagnostics.Process.GetCurrentProcess().Id} role={InstanceLogRedirect.Role} {message}");
                 _writer.Flush();
             }
             catch
             {
                 // tracing must never take the process down
             }
+        }
+
+        public static void Step(string name, Action action)
+        {
+            Crumb(name + " begin");
+            try
+            {
+                action();
+                Crumb(name + " end");
+            }
+            catch (Exception error)
+            {
+                Error(name, error);
+                throw; // Diagnostics must not turn a failed initialization into ready.
+            }
+        }
+
+        public static void Error(string name, Exception error)
+        {
+            try
+            {
+                string detail = error.ToString();
+                if (detail.Length > 2048) detail = detail.Substring(0, 2048);
+                Crumb(name + " error " + detail.Replace("\r", " ").Replace("\n", " "));
+            }
+            catch { }
         }
 
         private static void EnsureWriter()

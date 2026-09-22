@@ -19,6 +19,15 @@ namespace WinterMP.Core.Catalog
         private static SyncCatalogData ToData(Dictionary<string, object?> root)
         {
             var data = new SyncCatalogData();
+            if (root.TryGetValue("vendorCoffee", out var vendorCoffee))
+            {
+                try { data.VendorCoffee = ParseVendorCoffee(vendorCoffee); }
+                catch (FormatException e) { data.VendorCoffeeError = e.Message; }
+            }
+            if (root.TryGetValue("woodstoveFuel", out var woodstoveFuel))
+                data.WoodstoveFuel = ParseWoodstoveFuel(woodstoveFuel);
+            if (root.TryGetValue("paneScrape", out var paneScrape))
+                data.PaneScrape = ParsePaneScrape(paneScrape);
             if (root.TryGetValue("gameBuild", out var build) && build is string buildText)
                 data.GameBuild = buildText;
 
@@ -913,6 +922,8 @@ namespace WinterMP.Core.Catalog
         public string? TrainError;
         public CoffeeData? Coffee;
         public string? CoffeeError;
+        public VendorCoffeeData? VendorCoffee;
+        public string? VendorCoffeeError;
         public TaxiPassengersData? TaxiPassengers;
         public string? TaxiPassengersError;
         public SausagesData? Sausages;
@@ -943,6 +954,8 @@ namespace WinterMP.Core.Catalog
         public TrophyFactoriesData? TrophyFactories;
         public PartsPackagesData? PartsPackages;
         public ShoppingBagsData? ShoppingBags;
+        public PaneScrapeData? PaneScrape;
+        public WoodstoveFuelData? WoodstoveFuel;
         public PartIdentityData? PartIdentity;
         public ReplacementPartsData? ReplacementParts;
         public ValveAdjustmentData? ValveAdjustment;

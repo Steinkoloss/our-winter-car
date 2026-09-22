@@ -12,7 +12,7 @@ namespace WinterMP.Net
         private readonly Dictionary<uint, Dictionary<byte, ushort>> _sequences = new Dictionary<uint, Dictionary<byte, ushort>>();
 
         public static bool IsValid(VehicleState? state) => state != null && state.VehicleId != 0
-            && state.OwnerPlayerId != NoOwner && (state.Flags & ~KnownFlags) == 0 && state.ValidTorque && state.ValidMovementSpeed && state.ValidDifferentialSpeed && state.ValidHandoffTemperature;
+            && state.OwnerPlayerId != NoOwner && (state.Flags & ~KnownFlags) == 0 && state.ValidTorque && state.ValidMovementSpeed && state.ValidDifferentialSpeed && state.ValidHandoffTemperature && state.ValidFuelLiters;
 
         public static bool CanPublish(bool isHost, bool locallyOwned, byte remoteOwner)
             => locallyOwned || (isHost && remoteOwner == NoOwner);
@@ -72,7 +72,8 @@ namespace WinterMP.Net
         public static VehicleState Copy(VehicleState state) => new VehicleState {
             VehicleId = state.VehicleId, OwnerPlayerId = state.OwnerPlayerId, Sequence = state.Sequence,
             Flags = state.Flags, Rpm = state.Rpm, SpeedTenthsKmh = state.SpeedTenthsKmh,
-            FuelLevel = state.FuelLevel, CoolantTemp = state.CoolantTemp, Gear = state.Gear,
+            FuelLevel = state.FuelLevel, FuelRevision = state.FuelRevision, FuelLiters = state.FuelLiters,
+            CoolantTemp = state.CoolantTemp, Gear = state.Gear,
             TorqueAvailable = state.TorqueAvailable, EngineTorque = state.EngineTorque,
             MovementSpeedAvailable = state.MovementSpeedAvailable, MovementSpeedTenthsKmh = state.MovementSpeedTenthsKmh,
             DifferentialSpeedAvailable = state.DifferentialSpeedAvailable, DifferentialSpeed = state.DifferentialSpeed,

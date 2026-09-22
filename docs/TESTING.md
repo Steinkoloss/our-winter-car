@@ -1,8 +1,20 @@
-# Tester guide — Our Winter Car 0.1.33
+# Tester guide — UNRELEASED LOCAL TEST PACKAGE
+
+Local package: mod **0.1.33**, protocol **265**, channel **test**.
 
 Target: My Winter Car **v.260516-01**, Steam build **23268598**, on Windows x64
 or Linux x64 through Steam Proton. Use Steam's public branch and the same mod package
-on every machine. This build uses protocol **120** and rejects incompatible peers.
+on every machine. This build uses protocol **265** and rejects incompatible peers.
+The unchanged mod version is not a package identity: compare `SHA256SUMS.txt` and
+the payload manifest on every peer. This is not the historical 0.1.33 public kit.
+
+Consult `validation.json` for this exact attempt's builds, tests and artifact hashes.
+A payload-only kit is NOT a standalone installer: it lacks the launcher and BepInEx
+vendor archive. Do not run the install steps unless a complete matching launcher kit
+is supplied. Setup/AppImage/universal installers are optional, not promised artifacts.
+No installation or gameplay is established by packaging. Native discovery, ordinary
+input, different saves, fresh-player late join, native save/reload, Steam/two-PC and
+four-player soak are **NOT_TESTED** for this package unless separately recorded.
 
 ## Install and protect your save
 
@@ -15,7 +27,7 @@ on every machine. This build uses protocol **120** and rejects incompatible peer
    launch the unmodified game. Set Steam's launch options to
    `WINEDLLOVERRIDES="winhttp=n,b" %command%` so Proton loads BepInEx.
 4. The launcher installs the bundled mod. If detection fails, select the folder containing
-   **mywintercar.exe** in Settings. Info should show **0.1.33**, protocol **120** and
+   **mywintercar.exe** in Settings. Info should show **0.1.33**, protocol **265** and
    game build **23268598**. An older public release in the update status is normal.
 5. Use **Backup save** once and confirm the backup exists before your first test.
    The launcher also completes a backup before starting each hosted session.
@@ -42,8 +54,8 @@ on every machine. This build uses protocol **120** and rejects incompatible peer
 8. Host saves and ends the session. Guests leave without saving. Reload the host save
    and check it. Keep the backup until the entire test pass is accepted.
 
-Begin with groceries such as food and drinks. Opening bags containing native engine
-parts, including **fan belts and oil filters**, remains guarded in this release.
+Begin with ordinary groceries; unsupported native part products remain guarded.
+Supported fan-belt/oil-filter adapters are not evidence that every part product works.
 Restart the game after joining before trying to host or save singleplayer: guest
 world-save protection intentionally remains active until restart.
 
@@ -53,7 +65,7 @@ Record **PASS / FAIL / NOT TESTED**, host/guest platform and steps for each case
 
 | Area | What to try | Expected result |
 |---|---|---|
-| Installation | Fresh install, upgrade from 0.1.32, install again | 0.1.33 on both peers; no missing-file errors |
+| Installation | Fresh install, upgrade, install again (only with a complete launcher kit) | Same protocol265 package hashes on both peers; no missing-file errors |
 | Connection | Steam invite, late join, guest disconnect/rejoin | Matching world and player list; no duplicate player |
 | Replacement boxes | Host and guest open newly purchased boxes; repeat the click and reconnect | One part appears per box; no duplicate item or payment |
 | Fixed replacement parts | Guest picks up, carries, releases and fits a supported replacement part | Host accepts the correct mount; both peers see the fitted part |
@@ -70,19 +82,14 @@ Record **PASS / FAIL / NOT TESTED**, host/guest platform and steps for each case
 | Teardown | Leave, close the game and relaunch singleplayer from Steam | Native controls and normal saving work again |
 | Recovery | Restore a backup with the game closed, then host again | Restored world loads; previous save has its own backup |
 
-Guest controls cover supported integer bolt turns and both alternator hand adjustments.
-Special timing adjustments, other adjustment families, non-box part creation and full
-guest engine behavior remain unfinished. Record unexpected occupied mounts or missing
-parts after reconnecting; do not assume the whole engine is operational because a part
-fits or its bolts move.
-
-Ventti settlement and property/table synchronization now have implementations, but
-runtime validation is still pending. Keep car/house wagers confined to disposable saves.
-Broader residuals are listed in the source's `docs/COVERAGE-ROADMAP.md`. Run the
-first-session checks before a longer survival session. Development checks passed
-1,067 protocol/policy tests, 18 launcher tests, 11 catalog-tool tests and 66 isolated
-native game checks. Those results do not mark any of these two-player cases passed;
-record actual results for this package and consult `validation.json` for release checks.
+These are test procedures, not a list of passed capabilities. Record unexpected
+occupied mounts or missing parts after reconnecting; a fitted part or moving bolt
+does not prove the whole engine works. Keep car/house wagers on disposable saves.
+Use the source's `docs/SYNC-SCOPE-AUDIT.md` and `docs/COVERAGE-ROADMAP.md` for bounded
+implementation status and residuals. Test counts belong only in the current kit's
+`validation.json` with raw command receipts, never copied from historical releases.
+Protocol261 beer-case extraction is a portable, native-UNBOUND foundation, not a
+working native bottle-extraction feature. Vendor coffee also remains unbound.
 
 ## Report a problem
 

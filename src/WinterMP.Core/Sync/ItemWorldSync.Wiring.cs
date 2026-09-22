@@ -42,6 +42,13 @@ namespace WinterMP.Core.Sync
             var lookup = new EngineSourceLookup();
             foreach (var rule in profile.Wires)
             {
+                // Native actions are synchronous, but completion is polled. A
+                // snapshot or retry receipt must not publish a partial write.
+                if (_wireInstalling != null && _wireBefore != null && rule.Id == _wireBefore.SourceId)
+                {
+                    states.Add(new WiringState { SourceId = _wireBefore.SourceId, Revision = _wireBefore.Revision, Flags = _wireBefore.Flags });
+                    continue;
+                }
                 byte flags = 0;
                 try
                 {

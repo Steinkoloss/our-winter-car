@@ -151,25 +151,51 @@ namespace WinterMP.Core.Session
 
         public void Shutdown(string reason)
         {
-            if (_transport != null)
+            bool disconnectFailed = true;
+            try
             {
-                var bye = new DisconnectMessage { Reason = reason };
-                foreach (var peer in _playersByPeer.Keys)
-                    SendTo(peer, bye, Channel.ReliableOrdered);
+                if (_transport != null)
+                {
+                    var bye = new DisconnectMessage { Reason = reason };
+                    foreach (var peer in _playersByPeer.Keys)
+                        SendTo(peer, bye, Channel.ReliableOrdered);
+                }
+                disconnectFailed = false;
             }
-
-            _failedSessionCleanupPending = false;
-            DisposeSessionTransport();
-            ResetSessionRuntimeState();
-            SetState(SessionState.Idle, "Idle");
+            finally
+            {
+                // Keep an in-flight send exception on its original stack (net35).
+                // The selected reset callback may log, but must not replace it.
+                _failedSessionCleanupPending = false;
+                DisposeSessionTransport();
+                ResetSessionRuntimeState(disconnectFailed, finishShutdown: true);
+            }
         }
 
         private void DisposeSessionTransport()
         {
-            _devClient?.Dispose();
+            var devClient = _devClient;
+            var transport = _transport;
+            // Detach before external cleanup: a failed disposer must not leave
+            // a stale transport available for sends or a later shutdown retry.
             _devClient = null;
-            _transport?.Dispose();
             _transport = null;
+            try
+            {
+                devClient?.Dispose();
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError("Session dev client dispose failed: " + e);
+            }
+            try
+            {
+                transport?.Dispose();
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError("Session transport dispose failed: " + e);
+            }
 #if STEAMWORKS
             // Lobby creation/join can fail before SteamP2PTransport is constructed.
             // Releasing here covers that path as well as normal transport teardown.
@@ -178,33 +204,52 @@ namespace WinterMP.Core.Session
 #endif
         }
 
-        /// <summary>Clears state tied to a transport without replacing the current user-facing session state.</summary>
-        private void ResetSessionRuntimeState()
+        /// <summary>Clears transport state, preserving failure text unless finishing an explicit shutdown.</summary>
+        private void ResetSessionRuntimeState(bool disconnectFailed = false, bool finishShutdown = false)
         {
-            Sync.PlayerSyncManager.Instance?.ResetGuestSpawn();
-            _joinAttempt.Clear();
-            _hostPeer = null;
-            _playersByPeer.Clear();
-            _pendingPings.Clear();
-            _nextSnapshotRequestAt.Clear();
-            _nextResyncRequestAt.Clear();
-            _nextObjectStateRequestAt.Clear();
-            _passengerSeats.Clear();
-            _deathSession.Reset();
-            Sync.DeathSyncManager.Instance?.ResetSession();
-            _guestSlotsBySteam.Clear();
-            _nextPlayerId = 1;
-            LocalPlayerId = 0;
-            _nextPingAt = 0f;
-            _pingNonce = 0;
-            _steamOpStartedAt = -1f;
-            _steamLobbyAttemptActive = false;
-            _bypassHostPlayerGate = false;
-            IsHost = false;
-            PermanentDeathEnabled = false;
-            _joinBrowseActive = false;
-            ConnectionQuality.Instance.Reset();
-            NetTrafficMeter.Instance.Reset();
+            try
+            {
+                Sync.PaneScrapeSync.Instance?.ResetSession();
+            }
+            catch (Exception e)
+            {
+                WinterMPPlugin.Log.LogError("Session PaneScrape reset failed: " + e);
+                // Without a primary send failure, retain the callback's original
+                // exception for the caller after the remaining runtime is cleared.
+                if (!disconnectFailed) throw;
+            }
+            finally
+            {
+                Sync.PlayerSyncManager.Instance?.ResetGuestSpawn();
+                Sync.PlayerSyncManager.Instance?.ResetClothingSession();
+                LocalClothingAdmission = 0;
+                _clothingSequence = 0;
+                _joinAttempt.Clear();
+                _hostPeer = null;
+                _playersByPeer.Clear();
+                _pendingPings.Clear();
+                _nextSnapshotRequestAt.Clear();
+                _nextResyncRequestAt.Clear();
+                _nextObjectStateRequestAt.Clear();
+                _passengerSeats.Clear();
+                _deathSession.Reset();
+                Sync.DeathSyncManager.Instance?.ResetSession();
+                _guestSlotsBySteam.Clear();
+                _nextPlayerId = 1;
+                LocalPlayerId = 0;
+                _nextPingAt = 0f;
+                _pingNonce = 0;
+                _steamOpStartedAt = -1f;
+                _steamLobbyAttemptActive = false;
+                _bypassHostPlayerGate = false;
+                IsHost = false;
+                PermanentDeathEnabled = false;
+                _joinBrowseActive = false;
+                ConnectionQuality.Instance.Reset();
+                NetTrafficMeter.Instance.Reset();
+                // Do not claim Idle if another, uncontained reset failed early.
+                if (finishShutdown) SetState(SessionState.Idle, "Idle");
+            }
         }
 
         /// <summary>

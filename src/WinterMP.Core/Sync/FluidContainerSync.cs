@@ -13,7 +13,7 @@ namespace WinterMP.Core.Sync
     /// ownership already determines who can manipulate a jerrycan; this layer
     /// carries the otherwise-local FuelLevel / Pouring FSM variables alongside it.
     /// </summary>
-    internal sealed class FluidContainerSync
+    internal sealed partial class FluidContainerSync
     {
         private const float ProbeIntervalSeconds = 5f;
         private const float SendIntervalSeconds = 2f;
@@ -29,12 +29,23 @@ namespace WinterMP.Core.Sync
 
         /// <summary>Level change: path-derived item ids repeat after a reload, so a parked
         /// pre-reload state must not apply to the re-registered item.</summary>
-        public void Clear() => _pending.Clear();
+        public void Clear()
+        {
+            _pending.Clear(); _fuelAuthority?.Clear(); _fuelSequence=0; _pendingFuelResult=null;
+            foreach (var item in _items.Items.Values)
+            {
+                item.FuelRevision=0; item.AcceptedFluidLevel=float.NaN;
+                item.LastRemoteFluidOwner=WorldSyncIds.NoOwner;
+                item.LastRemoteFluidSequence=item.OutFluidSequence=0;
+                item.LastSentFluidLevel=float.NaN; item.NextFluidSendAt=0;
+            }
+        }
 
         public void Update(SessionManager session)
         {
             float now = Time.unscaledTime;
             ApplyPending(now);
+            UpdateFuelInput(session);
             if (session.PlayerCount == 0) return;
 
             foreach (var item in _items.Items.Values)
@@ -42,6 +53,12 @@ namespace WinterMP.Core.Sync
                 if (item.IsVehicle || item.Body == null) continue;
                 Locate(item, now);
                 if (item.FluidLevelVar == null) continue;
+
+                if (!session.IsHost && IsFiniteSource(item))
+                {
+                    if (!float.IsNaN(item.AcceptedFluidLevel)) item.FluidLevelVar.Value=item.AcceptedFluidLevel;
+                    continue;
+                }
 
                 // Guests may only report containers they currently simulate. The host
                 // is the authority for resting and unclaimed containers.
@@ -67,6 +84,7 @@ namespace WinterMP.Core.Sync
                     Flags = pouring ? FluidContainerState.FlagPouring : (byte)0,
                     Level = level,
                     Capacity = capacity,
+                    FuelRevision = item.FuelRevision,
                 }, Channel.ReliableOrdered);
             }
         }
@@ -89,6 +107,7 @@ namespace WinterMP.Core.Sync
                         ? FluidContainerState.FlagPouring : (byte)0,
                     Level = item.FluidLevelVar.Value,
                     Capacity = item.FluidCapacityVar != null ? item.FluidCapacityVar.Value : 0f,
+                    FuelRevision = item.FuelRevision,
                 };
             }
         }
@@ -105,7 +124,8 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost
                 || !_items.Items.TryGetValue(message.ItemId, out var item)
-                || item.IsVehicle || item.Body == null || item.RemoteOwner != playerId)
+                || item.IsVehicle || item.Body == null || item.RemoteOwner != playerId || IsFiniteSource(item)
+                || message.FuelRevision != item.FuelRevision)
                 return false;
 
             return TryApplyKnownState(item, message);
@@ -122,6 +142,7 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session != null && message.OwnerPlayerId == session.LocalPlayerId)
                 return;
+            if (session != null && session.IsHost && IsFiniteSource(item)) return;
 
             // A guest can only change a container it currently owns. The transform
             // stream establishes RemoteOwner before this state arrives; accepting a
@@ -134,12 +155,16 @@ namespace WinterMP.Core.Sync
                 return;
             }
 
-            TryApplyKnownState(item, message);
+            if (!TryApplyKnownState(item, message) && IsFiniteSource(item) && item.FluidLevelVar == null)
+                _pending[item.Id]=message;
         }
 
         private bool TryApplyKnownState(SyncedItem item, FluidContainerState message)
         {
-            if (!IsValidMessage(message)) return false;
+            if (!IsValidMessage(message) || message.FuelRevision < item.FuelRevision) return false;
+
+            Locate(item, Time.unscaledTime);
+            if (item.FluidLevelVar == null) return false;
 
             if (item.LastRemoteFluidOwner == message.OwnerPlayerId)
             {
@@ -149,14 +174,14 @@ namespace WinterMP.Core.Sync
             item.LastRemoteFluidOwner = message.OwnerPlayerId;
             item.LastRemoteFluidSequence = message.Sequence;
 
-            Locate(item, Time.unscaledTime);
-            if (item.FluidLevelVar == null) return false;
-
             float capacity = item.FluidCapacityVar != null ? item.FluidCapacityVar.Value : message.Capacity;
             if (capacity > ChangeEpsilon)
                 item.FluidLevelVar.Value = Mathf.Clamp(message.Level, 0f, capacity);
             else
                 item.FluidLevelVar.Value = Mathf.Max(0f, message.Level);
+
+            item.FuelRevision=message.FuelRevision;
+            if (IsFiniteSource(item)) item.AcceptedFluidLevel=item.FluidLevelVar.Value;
 
             if (item.FluidPouringVar != null)
                 item.FluidPouringVar.Value = message.IsPouring;
@@ -190,6 +215,7 @@ namespace WinterMP.Core.Sync
 
             try
             {
+                if (IsFiniteSource(item)) { LocateGasoline(item); return; }
                 var fsms = item.Body.GetComponentsInChildren<PlayMakerFSM>(true);
                 foreach (var fsm in fsms)
                 {

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <ProjectReference Include="../../src/WinterMP.Net/WinterMP.Net.csproj" />
+  </ItemGroup>
+  <Target Name="ExtractTrainProduction" BeforeTargets="CoreCompile">
+    <Exec Command="python3 -B &quot;$(MSBuildProjectDirectory)/../s09_train_fixture.py&quot; --out &quot;$(MSBuildProjectDirectory)/obj/$(Configuration)/$(TargetFramework)/production&quot;" />
+    <ItemGroup><Compile Include="$(MSBuildProjectDirectory)/obj/$(Configuration)/$(TargetFramework)/production/*.g.cs" /></ItemGroup>
+  </Target>
+</Project>

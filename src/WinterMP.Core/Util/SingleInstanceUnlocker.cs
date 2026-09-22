@@ -44,12 +44,16 @@ namespace WinterMP.Core.Util
         /// <returns>true if a single-instance mutex was found and released.</returns>
         public static bool Release()
         {
+            BootTrace.Crumb("SingleInstanceUnlocker.Release begin");
             try
             {
-                return ReleaseCore();
+                bool result = ReleaseCore();
+                BootTrace.Crumb("SingleInstanceUnlocker.Release end result=" + result);
+                return result;
             }
             catch (Exception e)
             {
+                BootTrace.Error("SingleInstanceUnlocker.Release", e);
                 WinterMPPlugin.Log.LogWarning($"SingleInstanceUnlocker failed: {e.Message}");
                 return false;
             }
@@ -57,13 +61,17 @@ namespace WinterMP.Core.Util
 
         private static bool ReleaseCore()
         {
+            BootTrace.Crumb("GetCurrentProcessId begin");
             int myPid = GetCurrentProcessId();
+            BootTrace.Crumb("GetCurrentProcessId end pid=" + myPid);
 
             byte[] buffer = new byte[1 << 20];
             int status, len;
             for (int attempt = 0; attempt < 12; attempt++)
             {
+                BootTrace.Crumb("NtQuerySystemInformation begin attempt=" + attempt + " bytes=" + buffer.Length);
                 status = NtQuerySystemInformation(SystemHandleInformation, buffer, buffer.Length, out len);
+                BootTrace.Crumb("NtQuerySystemInformation end status=" + status + " length=" + len);
                 if (status == STATUS_INFO_LENGTH_MISMATCH)
                 {
                     buffer = new byte[buffer.Length * 2];
@@ -78,6 +86,7 @@ namespace WinterMP.Core.Util
             }
 
             int handleCount = BitConverter.ToInt32(buffer, 0);
+            BootTrace.Crumb("Mutex handle scan begin count=" + handleCount);
             int baseOffset = IntPtr.Size;
 
             for (int i = 0; i < handleCount; i++)
@@ -98,10 +107,13 @@ namespace WinterMP.Core.Util
                     continue;
 
                 WinterMPPlugin.Log.LogInfo($"Releasing single-instance mutex so a second instance can start: {name}");
-                CloseHandle(handle);
+                BootTrace.Crumb("SingleInstanceMutex CloseHandle begin handle=" + handleValue);
+                bool closed = CloseHandle(handle);
+                BootTrace.Crumb("SingleInstanceMutex CloseHandle end result=" + closed);
                 return true;
             }
 
+            BootTrace.Crumb("Mutex handle scan end no match");
             WinterMPPlugin.Log.LogWarning("No single-instance mutex found to release (already released, or name changed).");
             return false;
         }

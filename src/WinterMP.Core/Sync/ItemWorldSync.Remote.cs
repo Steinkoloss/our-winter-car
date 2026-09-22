@@ -1,4 +1,5 @@
 using UnityEngine;
+using WinterMP.Core.Catalog;
 using WinterMP.Core.Session;
 using WinterMP.Net.Messages;
 using WinterMP.Net.Sync;
@@ -21,6 +22,11 @@ namespace WinterMP.Core.Sync
         /// </summary>
         public bool TryAcceptGuestItemTransform(ItemTransform message, byte playerId)
         {
+            if (_cabinItemIds.Contains(message.ItemId) && _items.TryGetValue(message.ItemId, out var wood)
+                && wood.Body != null && IsHeldByLocalPlayer(wood.Body)) return false;
+            if (_items.TryGetValue(message.ItemId, out var scraperItem) && scraperItem.Body != null
+                && scraperItem.Body.name == SyncCatalog.PaneScrape?["toolName"]
+                && PaneScrapeSync.Instance?.AllowsToolMotion(message.ItemId, playerId) != true) return false;
             if (playerId == 0 || playerId == WorldSyncIds.NoOwner || message.OwnerPlayerId != playerId
                 || !_items.TryGetValue(message.ItemId, out var item)
                 || item.Body == null || !CanSyncItemMotion(item))

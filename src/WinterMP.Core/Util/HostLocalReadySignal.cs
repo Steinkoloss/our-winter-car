@@ -13,18 +13,29 @@ namespace WinterMP.Core.Util
 
         public static void MarkReady()
         {
-            if (IsPresent()) return;
+            if (IsPresent())
+            {
+                BootTrace.Crumb("HostLocalReadySignal existing flag");
+                return;
+            }
 
             try
             {
                 string dir = Path.Combine(BepInEx.Paths.GameRootPath, "WinterMP");
+                BootTrace.Crumb("HostLocalReadySignal directory begin");
                 Directory.CreateDirectory(dir);
+                BootTrace.Crumb("HostLocalReadySignal directory end");
                 string path = Path.Combine(dir, FileName);
+                BootTrace.Crumb("HostLocalReadySignal write begin path=" + path);
                 File.WriteAllText(path, DateTime.UtcNow.Ticks.ToString());
+                BootTrace.Crumb("HostLocalReadySignal write end");
+                BootTrace.Crumb("HostLocalReadySignal log begin");
                 WinterMPPlugin.Log.LogInfo($"HostLocal ready (mutex released): {path}");
+                BootTrace.Crumb("HostLocalReadySignal log end");
             }
             catch (Exception e)
             {
+                BootTrace.Error("HostLocalReadySignal.MarkReady", e);
                 WinterMPPlugin.Log.LogWarning($"HostLocal ready signal not written: {e.Message}");
             }
         }

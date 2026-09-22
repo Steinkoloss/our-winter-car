@@ -19,7 +19,7 @@ namespace WinterMP.Net.Tests
         public void NativeTorqueRoundTripsWithoutQuantizationAndIsCopied(float torque)
         {
             var original = State(torque); byte[] packet = PacketCodec.Encode(original);
-            Assert.Equal(35, packet.Length); Assert.Equal(1, packet[17]);
+            Assert.Equal(43, packet.Length); Assert.Equal(1, packet[17]);
             var read = (VehicleState)PacketCodec.Decode(packet); var copy = VehicleStateStreamPolicy.Copy(read);
             Assert.True(copy.TorqueAvailable); Assert.Equal(torque, copy.EngineTorque); Assert.Equal(packet, PacketCodec.Encode(copy));
             read.TorqueAvailable = false; read.EngineTorque = 0; Assert.True(copy.TorqueAvailable); Assert.Equal(torque, copy.EngineTorque);

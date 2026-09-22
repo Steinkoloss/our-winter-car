@@ -382,7 +382,15 @@ namespace WinterMP.Net
         // v252: single-use bulb boxes and host-owned session-only loose bulb condition.
         // v253: advert pile/sheets, exact native mailbox ledger and guest delivery intents.
         // v256: advert telephone enrolment intents/results (256-257).
-        public const ushort Version = 257;
+        // v258: exclusive scraper equipment and host-authoritative Corris windshield strokes.
+        // v259: authenticated cabin feed, deferred resource retirement and fuel admission (260-261).
+        // v260: disabled-by-default vendor-coffee transaction/serving foundation (262-264).
+        // v261: exact beer-case extraction intent and absolute remaining-count update (265-266).
+        // v262: finite gasoline-container transfers (267/268) and fuel snapshot revision barriers.
+        // v263: guest native yard-stain contribution (269); epoch/revision/admission on absolute state (109).
+        // v264: optional guest clothing sidecar/restore and admission-bound sequenced owner reports.
+        // v265: electric sauna timer intents and absolute revisioned native timer results.
+        public const ushort Version = 265;
     }
 
     /// <summary>

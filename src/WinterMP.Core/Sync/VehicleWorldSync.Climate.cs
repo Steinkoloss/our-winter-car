@@ -404,7 +404,8 @@ namespace WinterMP.Core.Sync
         private static void ApplyRemoteIceLevel(SyncedItem item)
         {
             // Missing source panes cannot borrow the windshield or overwrite a local pane.
-            WriteCutoff(item.CutoffWindshieldVar, item.RemoteIce, item.RemoteIceMask, VehicleClimate.Windshield);
+            if (PaneScrapeSync.Instance?.OwnsPane(item.Id) != true)
+                WriteCutoff(item.CutoffWindshieldVar, item.RemoteIce, item.RemoteIceMask, VehicleClimate.Windshield);
             WriteCutoff(item.CutoffSideLeftVar, item.RemoteIceSideLeft, item.RemoteIceMask, VehicleClimate.SideLeft);
             WriteCutoff(item.CutoffSideRightVar, item.RemoteIceSideRight, item.RemoteIceMask, VehicleClimate.SideRight);
             WriteCutoff(item.CutoffDoorLeftVar, item.RemoteIceDoorLeft, item.RemoteIceMask, VehicleClimate.DoorLeft);

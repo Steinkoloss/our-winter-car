@@ -9,7 +9,7 @@ namespace WinterMP.Core.Sync
         private static void ValidateWireConnection(WireConnection b)
         {
             var c = b.Rule.Connection!;
-            if (b.Data.FsmVariables.FindFsmBool("Installed") == null
+            if (b.Data.FsmVariables.FindFsmBool("Installed") == null || b.Data.FsmVariables.FindFsmBool("Trigger") == null
                 || b.Prerequisite.FsmVariables.FindFsmBool(c["prerequisiteVariable"]) == null
                 || b.Data.FsmVariables.FindFsmGameObject("WireMesh")?.Value != b.Mesh
                 || b.Data.FsmVariables.FindFsmGameObject("WireTriggers")?.Value != b.Triggers)

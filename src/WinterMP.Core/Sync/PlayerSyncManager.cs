@@ -14,7 +14,7 @@ namespace WinterMP.Core.Sync
     /// transforms. Lives on the persistent WinterMP GameObject; avatars are scene
     /// objects and die with each level load, so they are lazily (re)created.
     /// </summary>
-    public sealed class PlayerSyncManager : MonoBehaviour
+    public sealed partial class PlayerSyncManager : MonoBehaviour
     {
         private const float SendRateHz = 12f;
         private const float PlayerSearchIntervalSeconds = 2f;
@@ -58,15 +58,6 @@ namespace WinterMP.Core.Sync
         private void OnDestroy()
         {
             if (Instance == this) Instance = null;
-        }
-
-        public void OnGuestSpawn(GuestSpawn message)
-        {
-            var session = SessionManager.Instance;
-            if (session == null || session.IsHost || Application.loadedLevelName != "GAME") return;
-            WatchLevelChanges();
-            if (!_guestResume.ReceiveOffer(message.HasLastPosition)) return;
-            _pendingSpawnOffer = message;
         }
 
         internal void ChooseGuestSpawn() => _guestResume.Choose();

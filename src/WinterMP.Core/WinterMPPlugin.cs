@@ -57,6 +57,7 @@ namespace WinterMP.Core
             root.AddComponent<UI.SleepConsentPrompt>();
             root.AddComponent<Sync.DeathSyncManager>();
             var worldSync = root.AddComponent<Sync.WorldSyncManager>();
+            root.AddComponent<Sync.PaneScrapeSync>();
             worldSync.Configure(launch);
             root.AddComponent<Sync.PassengerController>();
             Util.BootTrace.Crumb("Awake step 7: SessionManager.Initialize");
@@ -65,21 +66,26 @@ namespace WinterMP.Core
             Util.BootTrace.Crumb("Awake done");
 
             if (launch.Mode == LaunchMode.HostLocal)
-                TryReleaseHostLocalMutex();
+                Util.BootTrace.Step("TryReleaseHostLocalMutex", TryReleaseHostLocalMutex);
 
-            Log.LogInfo($"WinterMP {MyPluginInfo.PLUGIN_VERSION} loaded (mode: {launch.Mode}, protocol v{WinterMP.Net.ProtocolInfo.Version}).");
+            Util.BootTrace.Step("FinalPluginLog", () =>
+                Log.LogInfo($"WinterMP {MyPluginInfo.PLUGIN_VERSION} loaded (mode: {launch.Mode}, protocol v{WinterMP.Net.ProtocolInfo.Version})."));
+            Util.BootTrace.Crumb("Awake return");
         }
 
         private static void TryReleaseHostLocalMutex()
         {
-            if (Util.SingleInstanceUnlocker.Release())
+            bool released = Util.SingleInstanceUnlocker.Release();
+            Util.BootTrace.Crumb("HostLocalMutexLog begin");
+            if (released)
                 Log.LogInfo("HostLocal: single-instance mutex released (second instance can start).");
             else
                 Log.LogWarning("HostLocal: single-instance mutex not found to release.");
+            Util.BootTrace.Crumb("HostLocalMutexLog end");
 
             // Always signal ready — on Linux/Proton the mutex doesn't exist but the
             // ready flag is still needed for the shell script to launch the guest.
-            Util.HostLocalReadySignal.MarkReady();
+            Util.BootTrace.Step("HostLocalReadySignal.MarkReady", Util.HostLocalReadySignal.MarkReady);
         }
     }
 }

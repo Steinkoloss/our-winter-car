@@ -6,6 +6,7 @@ namespace WinterMP.Net.Messages
         public byte PlayerId;
         public ulong SteamId;
         public string Name = string.Empty;
+        public ulong ClothingAdmission;
 
         public MessageId Id => MessageId.PlayerSpawn;
 
@@ -14,6 +15,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(PlayerId);
             writer.WriteUInt64(SteamId);
             writer.WriteString(Name);
+            writer.WriteUInt64(ClothingAdmission);
         }
 
         public void Read(NetReader reader)
@@ -21,6 +23,7 @@ namespace WinterMP.Net.Messages
             PlayerId = reader.ReadByte();
             SteamId = reader.ReadUInt64();
             Name = reader.ReadString();
+            ClothingAdmission = reader.ReadUInt64();
         }
     }
 
@@ -123,6 +126,12 @@ namespace WinterMP.Net.Messages
         public float Dirtiness;
         /// <summary>Wire v78: saved persistent PlayerAlco BAC, restored only when the sidecar supplied it.</summary>
         public float PlayerAlco;
+        public byte ClothingPlayerId;
+        public ulong ClothingAdmission;
+        public bool HasSavedClothing;
+        public byte ClothingStage, ClothingType, WinterGarment;
+        public bool ValidClothing => HasSavedClothing ? WinterGarment <= 2
+            : ClothingStage == 0 && ClothingType == 0 && WinterGarment == 0;
 
         public bool HasLastPosition => (Flags & FlagHasLastPosition) != 0;
         public bool HasSavedNeeds => (Flags & FlagHasSavedNeeds) != 0;
@@ -137,6 +146,7 @@ namespace WinterMP.Net.Messages
         public void Write(NetWriter writer)
         {
             if (!ValidBodyTemp) throw new ProtocolException("Invalid saved body warmth.");
+            if (!ValidClothing) throw new ProtocolException("Invalid saved clothing.");
             writer.WriteVector3(HostPosition);
             writer.WriteQuaternion(HostRotation);
             writer.WriteVector3(LastPosition);
@@ -151,6 +161,12 @@ namespace WinterMP.Net.Messages
             writer.WriteSingle(Drunk);
             writer.WriteSingle(Dirtiness);
             writer.WriteSingle(PlayerAlco);
+            writer.WriteByte(ClothingPlayerId);
+            writer.WriteUInt64(ClothingAdmission);
+            writer.WriteBool(HasSavedClothing);
+            writer.WriteByte(ClothingStage);
+            writer.WriteByte(ClothingType);
+            writer.WriteByte(WinterGarment);
         }
 
         public void Read(NetReader reader)
@@ -169,6 +185,15 @@ namespace WinterMP.Net.Messages
             Drunk = reader.ReadSingle();
             Dirtiness = reader.ReadSingle();
             PlayerAlco = reader.ReadSingle();
+            ClothingPlayerId = reader.ReadByte();
+            ClothingAdmission = reader.ReadUInt64();
+            byte clothingAvailable = reader.ReadByte();
+            if (clothingAvailable > 1) throw new ProtocolException("Invalid clothing availability.");
+            HasSavedClothing = clothingAvailable == 1;
+            ClothingStage = reader.ReadByte();
+            ClothingType = reader.ReadByte();
+            WinterGarment = reader.ReadByte();
+            if (!ValidClothing) throw new ProtocolException("Invalid saved clothing.");
             if (!ValidBodyTemp) throw new ProtocolException("Invalid saved body warmth.");
         }
     }

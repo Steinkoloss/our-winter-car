@@ -78,6 +78,7 @@ namespace WinterMP.Core.Catalog
         internal static AdvertsData? Adverts { get; private set; }
         internal static TrainData? Train { get; private set; }
         internal static CoffeeData? Coffee { get; private set; }
+        internal static VendorCoffeeData? VendorCoffee { get; private set; }
         internal static TaxiPassengersData? TaxiPassengers { get; private set; }
         internal static SausagesData? Sausages { get; private set; }
         internal static TractorTrailerData? TractorTrailer { get; private set; }
@@ -100,6 +101,8 @@ namespace WinterMP.Core.Catalog
         internal static TrophyFactoriesData? TrophyFactories { get; private set; }
         internal static PartsPackagesData? PartsPackages { get; private set; }
         internal static ShoppingBagsData? ShoppingBags { get; private set; }
+        internal static PaneScrapeData? PaneScrape { get; private set; }
+        internal static WoodstoveFuelData? WoodstoveFuel { get; private set; }
         internal static PartIdentityData? PartIdentity { get; private set; }
         internal static ReplacementPartsData? ReplacementParts { get; private set; }
         internal static ValveAdjustmentData? ValveAdjustment { get; private set; }
@@ -124,6 +127,8 @@ namespace WinterMP.Core.Catalog
             TrophyFactories = null;
             PartsPackages = null;
             ShoppingBags = null;
+            PaneScrape = null;
+            WoodstoveFuel = null;
             PartIdentity = null;
             ReplacementParts = null;
             FirewoodBuyers = null; FirewoodDelivery = null;
@@ -171,7 +176,7 @@ namespace WinterMP.Core.Catalog
             VehicleWheelHealthError = null;
             VehicleEngineRpm = null;
             VehicleEngineHandoff = null;
-            ParkingBrake = null; ParkingJoint = null; Stoves = null; HouseholdFuses = null; TractorTrailer = null; Sausages = null; TaxiPassengers = null; Coffee = null; Train = null; Adverts = null; AdvertPhone = null; MotorOil = null; AtfRefill = null;
+            ParkingBrake = null; ParkingJoint = null; Stoves = null; HouseholdFuses = null; TractorTrailer = null; Sausages = null; TaxiPassengers = null; Coffee = null; VendorCoffee = null; Train = null; Adverts = null; AdvertPhone = null; MotorOil = null; AtfRefill = null;
             VehicleEngineRpmError = null;
             GuestEngineInputs = null;
             GuestEngineInputsError = null;
@@ -259,6 +264,8 @@ namespace WinterMP.Core.Catalog
                 if (data.TrainError != null) WinterMPPlugin.Log.LogWarning("Train unavailable: " + data.TrainError);
                 Coffee = data.Coffee;
                 if (data.CoffeeError != null) WinterMPPlugin.Log.LogWarning("Home coffee unavailable: " + data.CoffeeError);
+                VendorCoffee = data.VendorCoffee;
+                WinterMPPlugin.Log.LogWarning("Vendor coffee disabled: " + (data.VendorCoffeeError ?? VendorCoffee?.DisabledReason ?? "vendorCoffee catalog missing"));
                 TaxiPassengers = data.TaxiPassengers;
                 if (data.TaxiPassengersError != null) WinterMPPlugin.Log.LogWarning("Taxi passengers unavailable: " + data.TaxiPassengersError);
                 Sausages = data.Sausages;
@@ -289,6 +296,8 @@ namespace WinterMP.Core.Catalog
                 TrophyFactories = data.TrophyFactories;
                 PartsPackages = data.PartsPackages;
                 ShoppingBags = data.ShoppingBags;
+                PaneScrape = data.PaneScrape;
+                WoodstoveFuel = data.WoodstoveFuel;
                 PartIdentity = data.PartIdentity;
                 ReplacementParts = data.ReplacementParts;
                 FirewoodDelivery = data.FirewoodDelivery;

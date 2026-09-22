@@ -55,6 +55,7 @@ namespace WinterMP.Net.Messages
         public string HostPlayerName = string.Empty;
         /// <summary>See <see cref="SessionFlags"/> (bit 0 = host permadeath enabled).</summary>
         public byte SessionFlags;
+        public ulong ClothingAdmission;
 
         public MessageId Id => MessageId.HandshakeResponse;
 
@@ -65,6 +66,7 @@ namespace WinterMP.Net.Messages
             writer.WriteByte(PlayerId);
             writer.WriteString(HostPlayerName);
             writer.WriteByte(SessionFlags);
+            writer.WriteUInt64(ClothingAdmission);
         }
 
         public void Read(NetReader reader)
@@ -74,6 +76,7 @@ namespace WinterMP.Net.Messages
             PlayerId = reader.ReadByte();
             HostPlayerName = reader.ReadString();
             SessionFlags = reader.ReadByte();
+            ClothingAdmission = reader.ReadUInt64();
         }
     }
 

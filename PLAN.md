@@ -440,6 +440,22 @@ for current Candidate / Partial / Missing / Review decisions. Target milestone i
   log, warns when steady-state exceeds the M7 budget (64 kB/s/client).
 - **Crash containment:** all mod callbacks wrapped; an exception in one sync
   subsystem logs + disables that subsystem rather than killing the game.
+  The bounded [S09 LateUpdate slice](docs/S09-LATEUPDATE-CONTAINMENT.md) isolates
+  vehicle/trailer/Ventti callbacks with local retries/quarantine while preserving
+  the global fallback and session cleanup. The subsequent bounded
+  [vehicle Update slice](docs/S09-UPDATE-CONTAINMENT.md) applies independent
+  budgets to ten vehicle stream callbacks while keeping healthy Update siblings
+  running. The [Train FixedUpdate slice](docs/S09-FIXEDUPDATE-CONTAINMENT.md)
+  contains escaping train coordinator errors with that same local budget.
+  The [Train dispatch slice](docs/S09-TRAIN-DISPATCH-CONTAINMENT.md) contains
+  receive/preparation and snapshot-creation escapes without replaying packets
+  or abandoning later snapshot chunks after a train creation failure.
+  The [Train snapshot-send slice](docs/S09-TRAIN-SEND-CONTAINMENT.md) contains
+  per-message TrainState encoding/transport failures in snapshot request fanout,
+  preserving later chunks and diagnostics without retries or cached results.
+  Portable callback tests and net35 compilation are distinct from native
+  acceptance; nonselected Update, handlers, live broadcast/other send fanout and
+  native teardown boundaries remain open.
 - **Telemetry-in-logs:** structured log lines for every intent/transition,
   ring-buffered, dumped on error — feeds the launcher's bug-report zip.
 

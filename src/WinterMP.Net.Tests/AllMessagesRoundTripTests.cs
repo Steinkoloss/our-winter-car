@@ -75,12 +75,21 @@ namespace WinterMP.Net.Tests
             if (target is MotorOilRefillIntent mi) { mi.Epoch=mi.BottleId=1; mi.PlayerId=1; mi.Action=1; }
             if (target is AdvertJobState ad) { ad.Revision = 1; ad.Stage = 2; ad.Sheets = 30; ad.NextDay = 5; ad.Flags = 7; ad.CompletedMask = 3; ad.Scale = 1; ad.Salary = 17; ad.Delivered = 2; ad.Rotation = NetQuaternion.Identity; }
             if (target is AdvertSheetState ads) { ads.ItemId = 1; ads.Rotation = NetQuaternion.Identity; }
+            if (target is WoodstoveFuelUpdate wood) { wood.Shape = 2; wood.Rotation = NetQuaternion.Identity; }
+            // Keep every field exercised, but use the audited source and valid bounded state values.
+            if (target is SaunaTimerState sauna)
+            { sauna.SourceId = WinterMP.Net.Sync.SaunaTimerAuthority.SourceId; sauna.Status = SaunaTimerState.Accepted; sauna.Timer = 51; sauna.Time = 295; sauna.KnobAngle = 49; }
             if (target is AdvertPhoneIntent api) { api.Call = 1; api.PlayerId = 1; api.Phone = 0; api.Action = 0; }
             if (target is AdvertPhoneResult apr) { apr.Call = 1; apr.PlayerId = 1; apr.Phone = 0; apr.Status = 0; }
             if (target is AdvertIntent ai) { ai.ItemId = ai.Sequence = ai.ExpectedRevision = 1; ai.Box = 255; ai.PlayerId = 1; }
             if (target is BulbState bulb) { bulb.ItemId = bulb.Revision = 1; bulb.Wear = 95; bulb.Rotation = NetQuaternion.Identity; }
             if (target is TrainState train) { train.Phase = 0; train.Flags = 7; train.ColliderMask = 2047; train.Volume = .7f; train.Velocity = new NetVector3(20, 0, 0); train.Rotation = NetQuaternion.Identity; }
             if (target is CoffeeIntent ci) { ci.PlayerId = 1; ci.Action = CoffeeAction.OpenLid; }
+            if (target is VendorCoffeeIntent vi) { vi.PlayerId = 1; vi.Action = VendorCoffeeAction.Acquire; }
+            if (target is VendorCoffeeState vs) { vs.Lifecycle = VendorCoffeeLifecycle.Active; vs.Holder = 1; vs.CompletedActions = 3; vs.Rotation = NetQuaternion.Identity; }
+            if (target is VendorCoffeeResult vr) { vr.PlayerId = 1; vr.Action = VendorCoffeeAction.Drink; }
+            if (target is BeerCaseExtractIntent beerIntent) { beerIntent.CaseId = WinterMP.Net.Sync.BeerCasePolicy.CaseId(beerIntent.NativeId); beerIntent.ExpectedRemaining = 17; }
+            if (target is BeerCaseUpdate beerState) { beerState.CaseId = WinterMP.Net.Sync.BeerCasePolicy.CaseId(beerState.NativeId); beerState.Capacity = 37; beerState.Remaining = 19; }
             if (target is CoffeeState cs) { cs.Kind = 0; cs.Flags = 1; cs.Water = 1; cs.Ground = 12; cs.Coffee = .4f; cs.Caffeine = .6f; cs.BoilVolume = .3f; cs.Rotation = NetQuaternion.Identity; }
             if (target is CoffeeDrinkResult cd) { cd.PlayerId = 1; cd.Amount = .2f; cd.Caffeine = .7f; }
             if (target is SausageState sausage) { sausage.Kind = 1; sausage.Grilled = true; sausage.Condition = 40; sausage.Rotation = NetQuaternion.Identity; }
@@ -127,7 +136,8 @@ namespace WinterMP.Net.Tests
             }
             if (target is PlayerTransform player) { player.HasSweat = true; player.Sweat = 23.75f; }
             if (target is PlayerNeedsReport needs) needs.HasBodyTemp = true;
-            if (target is GuestSpawn spawn) spawn.Flags |= GuestSpawn.FlagHasSavedNeeds | GuestSpawn.FlagHasSavedBodyTemp;
+            if (target is GuestSpawn spawn) { spawn.Flags |= GuestSpawn.FlagHasSavedNeeds | GuestSpawn.FlagHasSavedBodyTemp; spawn.HasSavedClothing = true; spawn.WinterGarment = 2; }
+            if (target is PlayerClothingState clothing) clothing.WinterGarment = 2;
             if (target is HeaterState heater) { heater.Flags = 3; heater.Wear = 27.75f; heater.RearWindowFlags = 1; }
             if (target is BatteryState battery) { battery.Flags = 3; battery.Charge = 126.25f; battery.ChargeMax = 147.5f; }
             if (target is WheelPunctureRequest puncture) { puncture.VehicleId = 42; puncture.PlayerId = 1; puncture.Wheel = 0; puncture.Epoch = 1; }
@@ -153,6 +163,9 @@ namespace WinterMP.Net.Tests
 
         private static object MakeValue(Type t, int seed, int arrayLength = 2)
         {
+            if (t == typeof(WinterMP.Net.Sync.WoodstoveFuelSnapshot))
+                return new WinterMP.Net.Sync.WoodstoveFuelSnapshot(WinterMP.Net.Sync.WoodstoveFuelAuthority.CabinSourceId,
+                    71, 9, new WinterMP.Net.Sync.WoodstoveFuelValues(3, .18f, true), new uint[] { 51, 97 });
             var underlying = Nullable.GetUnderlyingType(t);
             if (underlying != null) return MakeValue(underlying, seed, arrayLength);
             if (t.IsEnum) { var values = Enum.GetValues(t); return values.GetValue(seed % values.Length)!; }

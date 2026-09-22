@@ -50,6 +50,7 @@ namespace WinterMP.GuestSaveProbe
             TickTaxiFixture();
             TickHouseholdFuses();
             TickTrailerFixture();
+            TickPaneAim();
             if (Time.unscaledTime < _gameAt + 15 || Time.unscaledTime < _nextPoll) return;
             if (!_headSavePrepared)
             {
@@ -116,6 +117,7 @@ namespace WinterMP.GuestSaveProbe
 
         private static void Execute(string[] args, List<string> rows)
         {
+            if (PaneCommand(args, rows)) return;
             if (AdvertPhoneCommand(args, rows)) return;
             if (OilRefillCommand(args, rows)) return;
             if (MotorOilCommand(args, rows)) return;
@@ -177,6 +179,7 @@ namespace WinterMP.GuestSaveProbe
             var session = SessionManager.Instance!;
             rows.Add("session|" + session.State + "|" + session.PlayerCount + "|" + session.LocalPlayerId);
             PersistenceSnapshot(rows);
+            if (PaneProbe) { PaneSnapshot(rows); return; }
             if (AdvertPhoneProbe) { AdvertPhoneSnapshot(rows); return; }
             if (MotorOilProbe) { MotorOilSnapshot(rows); return; }
             if (AdvertProbe) { AdvertSnapshot(rows); return; }

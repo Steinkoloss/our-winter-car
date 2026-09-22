@@ -1,10 +1,13 @@
-# Our Winter Car 0.1.33 — tester release
+# Our Winter Car — UNRELEASED LOCAL TEST PACKAGE
 
-Prepared 6 September 2026 for My Winter Car **v.260516-01**, Steam build
-**23268598**. Everyone in a session needs this same package (protocol **120**).
-This is a test release: two-player gameplay and long sessions still need validation.
+Local package: mod **0.1.33**, protocol **265**, channel **test**.
 
-## Changes since 0.1.32
+Target: My Winter Car **v.260516-01**, Steam build **23268598**. Everyone in a
+session needs the same package hashes. Core, Launcher and installer retain source
+version 0.1.33; this does not make the package identical to the older public kit.
+Nothing has been published, installed or launched by the package builder.
+
+## Existing implementation context (not fresh package gameplay evidence)
 
 - Shopping bags now have one shared identity and inventory controlled by the host.
   Competing grabs cannot leave both players holding separate copies. Opening a bag
@@ -24,36 +27,34 @@ This is a test release: two-player gameplay and long sessions still need validat
 
 ## Verification
 
-Release checks passed: **1,067 protocol/policy tests**, **18 launcher tests** and
-**11 catalog-tool tests**. Release builds compile against the installed game assemblies.
-Both launchers include .NET 8.0.30 and the same verified mod payload; the dependency
-audit reports no known vulnerabilities. Development testing also passed **66 isolated
-native game checks** covering bag opening, item creation, pickup ownership, guest save
-protection, part isolation and alternator actions.
+Read this attempt's `validation.json`, raw command receipts and `SHA256SUMS.txt`.
+They record actual build/test counts, payload hashes and optional artifact blockers;
+no historical test totals, runtime versions or vulnerability results are reused.
+Core/Net/FastBoot and the catalog are compared byte-for-byte with current Release
+outputs/source. The compatibility manifest hashes the four content files; its own
+hash is recorded externally to avoid a circular self-hash.
 
-These results do not establish that the packaged release has passed startup,
-installation or two-player gameplay testing. Check the kit's `validation.json` for
-the release-specific checks. The reported two-player shop sequence still needs to
-be repeated with this version.
+A payload-only kit is not a complete launcher/installer. The full kit requires
+`vendor/BepInEx_win_x64_5.4.23.5.zip`; optional Setup/AppImage/universal artifacts
+require their respective compilers. Missing dependencies stay BLOCKED/NOT_TESTED.
+Native discovery, ordinary input, different saves, fresh-player late join, native
+save/reload, Steam/two-PC and four-player soak remain **NOT_TESTED** for this package.
+Portable tests and hash verification do not establish installation or gameplay.
 
 ## Start here
 
 Read **TESTING.md** before the first session. Use a disposable host save or a backed-up
-copy. Close the game before installing. Upgrade every peer from 0.1.32 together;
-protocol 120 is incompatible with earlier packages. Start with the host picking up
+copy. Install only a complete matching launcher kit, with the game closed.
+Protocol265 is incompatible with earlier protocols. Start with the host picking up
 and opening a grocery bag, then reverse the roles, repeat purchases and reconnect.
-This prerelease is separate from
-stable updates, so the regular public updater may still offer an older stable version.
+Do not use the public updater to obtain this local build; there is no test-channel
+selector. Keep all peers on the exact same local payload.
 
 ## Known limits
 
-Opening bags containing native engine parts, including **fan belts and oil filters**,
-remains guarded while their part adapters are unfinished. Begin with ordinary groceries.
-Full guest engine behavior, other adjustments, non-box part creation and some
-world/economy interactions remain incomplete. Supported bolt and alternator controls
-still need real two-player acceptance testing.
-
-Ventti's new implementation, including car/house wagers, still needs runtime validation.
-See **TESTING.md** for focused checks and `docs/COVERAGE-ROADMAP.md` in the source for
-remaining work. The host saves; guests do not save. A successful build or unit test is
-not evidence of a completed two-player test.
+Unsupported native part products remain guarded. Supported fan-belt/oil-filter
+adapters do not establish all product coverage. Protocol261 beer-case extraction is
+native-UNBOUND portable authority/replication code, not native bottle extraction.
+Vendor coffee remains unbound. See **TESTING.md**, `docs/SYNC-SCOPE-AUDIT.md` and
+`docs/COVERAGE-ROADMAP.md` for specific implemented slices and remaining work.
+The host saves; guests do not save. No mechanic is promoted by a successful package.

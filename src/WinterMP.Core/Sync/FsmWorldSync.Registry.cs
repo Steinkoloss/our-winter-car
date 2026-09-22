@@ -12,6 +12,7 @@ namespace WinterMP.Core.Sync
         internal static bool ClassifyBuy(PlayMakerFSM fsm, out BuyProfile profile)
         {
             profile = default;
+            if (VendorCoffeePolicy.QuarantineBuy(ScenePath.Of(fsm.transform), fsm.FsmName)) return false;
             if (!SyncCatalog.TryMatchBuy(fsm, out var catalog) || catalog == null)
                 return false;
 
@@ -246,6 +247,7 @@ namespace WinterMP.Core.Sync
             string path = ScenePath.Of(fsm.transform);
             // Dedicated receipts own this cash boundary, including with an older local catalog.
             if (FleaSaleBinding.OwnsEnvelope(path, fsm.FsmName)) return false;
+            if (BeerCasePolicy.QuarantineControl(fsm.gameObject.name, fsm.FsmName)) return false;
             string identityPath = path;
             if (hostPayment == "firewood")
             {

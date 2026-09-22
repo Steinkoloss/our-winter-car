@@ -277,6 +277,20 @@ namespace WinterMP.Net.Messages
         MotorOilRefillIntent = 255,
         AdvertPhoneIntent = 256,
         AdvertPhoneResult = 257,
+        ScraperAction = 258,
+        PaneScrapeUpdate = 259,
+        WoodstoveFeedIntent = 260,
+        WoodstoveFuelUpdate = 261,
+        VendorCoffeeIntent = 262,
+        VendorCoffeeState = 263,
+        VendorCoffeeResult = 264,
+        BeerCaseExtractIntent = 265,
+        BeerCaseUpdate = 266,
+        ContainerFuelIntent = 267,
+        ContainerFuelResult = 268,
+        PissAreaIntent = 269,
+        SaunaTimerIntent = 270,
+        SaunaTimerState = 271,
 
         // Reserved ranges for future subsystems:
         //   63-79 vehicles (attachment, fuel/damage)

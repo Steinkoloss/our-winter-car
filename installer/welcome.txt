@@ -1,8 +1,11 @@
 Our Winter Car adds co-op multiplayer to My Winter Car.
 
-Tester release 0.1.32: targets My Winter Car v.260516-01 (Steam build 23268598).
-Use the same package on every PC. Back up your save and read TESTING.md first.
-Two-player gameplay validation is still in progress.
+UNRELEASED LOCAL TEST PACKAGE
+Local package: mod 0.1.33, protocol 265, channel test.
+Targets My Winter Car v.260516-01 (Steam build 23268598).
+Use the same package hashes on every PC. Back up your save and read TESTING.md first.
+Native input, save/reload, Steam/two-PC and four-player soak remain NOT_TESTED
+for this package. Consult validation.json; a build is not gameplay evidence.
 
 This installer will:
 1. Install the Our Winter Car launcher

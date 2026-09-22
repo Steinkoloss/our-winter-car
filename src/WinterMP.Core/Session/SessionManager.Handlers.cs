@@ -22,7 +22,7 @@ namespace WinterMP.Core.Session
             }
             if (_playersByPeer.TryGetValue(peer, out var existing))
             {
-                SendAcceptedHandshake(peer, existing.PlayerId);
+                SendAcceptedHandshake(peer, existing.PlayerId, existing.ClothingAdmission);
                 WinterMPPlugin.Log.LogDebug(
                     $"Re-acknowledged duplicate handshake from {existing.Name} ({peer}) as player {existing.PlayerId}.");
                 return;
@@ -57,6 +57,7 @@ namespace WinterMP.Core.Session
                 SteamId = peer.Value,
                 Name = request.PlayerName,
                 ReturningGuest = GuestProfileStore.TryGet(peer.Value, out _, out _),
+                ClothingAdmission = NewClothingAdmission(),
             };
 
             // Every (re)admission restarts the remote's per-subsystem intent counters (its
@@ -66,7 +67,7 @@ namespace WinterMP.Core.Session
             _passengerSeats.ForgetPlayer(player.PlayerId);
             Sync.WorldSyncManager.Instance?.OnPlayerAdmitted(player.PlayerId);
 
-            SendAcceptedHandshake(peer, player.PlayerId);
+            SendAcceptedHandshake(peer, player.PlayerId, player.ClothingAdmission);
 
             // Introduce existing players to the newcomer...
             foreach (var otherPlayer in _playersByPeer.Values)
@@ -76,6 +77,7 @@ namespace WinterMP.Core.Session
                     PlayerId = otherPlayer.PlayerId,
                     SteamId = otherPlayer.SteamId,
                     Name = otherPlayer.Name,
+                    ClothingAdmission = otherPlayer.ClothingAdmission,
                 }, Channel.ReliableOrdered);
             }
 
@@ -86,6 +88,7 @@ namespace WinterMP.Core.Session
                 PlayerId = player.PlayerId,
                 SteamId = player.SteamId,
                 Name = player.Name,
+                ClothingAdmission = player.ClothingAdmission,
             }, Channel.ReliableOrdered);
 
             AddChatLine(reconnecting
@@ -101,7 +104,7 @@ namespace WinterMP.Core.Session
             // at this point it is typically still in the main menu.
         }
 
-        private void SendAcceptedHandshake(PeerId peer, byte playerId)
+        private void SendAcceptedHandshake(PeerId peer, byte playerId, ulong clothingAdmission)
         {
             SendTo(peer, new HandshakeResponse
             {
@@ -109,6 +112,7 @@ namespace WinterMP.Core.Session
                 PlayerId = playerId,
                 HostPlayerName = LocalPlayerName,
                 SessionFlags = BuildSessionFlags(),
+                ClothingAdmission = clothingAdmission,
             }, Channel.ReliableOrdered);
         }
 
@@ -126,8 +130,7 @@ namespace WinterMP.Core.Session
             int messages = 0;
             foreach (var chunk in world.BuildWorldSnapshot())
             {
-                SendTo(peer, chunk, Channel.ReliableOrdered);
-                messages++;
+                if (TrySendSnapshotMessage(peer, chunk, Channel.ReliableOrdered)) messages++;
             }
 
             var time = world.BuildTimeSync();
@@ -165,8 +168,8 @@ namespace WinterMP.Core.Session
                 }
             }
 
-            // Heat sources ride the periodic HeatSourceState stream, not snapshot chunks;
-            // force a full re-broadcast so the joiner isn't cold until the 20 s keepalive.
+            // Cabin fuel has its own ordered epoch/high-water/resource admission;
+            // other heat sources retain HeatSourceState. Neither waits for keepalive.
             world.ForceHeatSourceBroadcast();
             // Gambling devices (slot machines) likewise ride their own periodic stream.
             world.ForceGamblingBroadcast();
@@ -242,6 +245,7 @@ namespace WinterMP.Core.Session
                     offer.Flags |= GuestSpawn.FlagHasSavedBodyTemp;
             }
 
+            PopulateGuestClothing(offer, guest);
             return offer;
         }
 
@@ -325,8 +329,7 @@ namespace WinterMP.Core.Session
             int messages = 0;
             foreach (var chunk in world.BuildResyncMessages(request.Flags))
             {
-                SendTo(peer, chunk, Channel.ReliableOrdered);
-                messages++;
+                if (TrySendSnapshotMessage(peer, chunk, Channel.ReliableOrdered)) messages++;
             }
 
             WinterMPPlugin.Log.LogInfo(
@@ -364,8 +367,7 @@ namespace WinterMP.Core.Session
                     VehicleClimate => Channel.ReliableOrdered,
                     _ => Channel.ReliableOrdered,
                 };
-                SendTo(peer, message, channel);
-                messages++;
+                if (TrySendSnapshotMessage(peer, message, channel)) messages++;
             }
 
             if (messages > 0)
@@ -384,6 +386,7 @@ namespace WinterMP.Core.Session
             }
 
             LocalPlayerId = response.PlayerId;
+            LocalClothingAdmission = response.ClothingAdmission;
             SetPermanentDeathEnabled((response.SessionFlags & SessionFlags.PermadeathEnabled) != 0);
             _playersByPeer[peer] = new RemotePlayer
             {

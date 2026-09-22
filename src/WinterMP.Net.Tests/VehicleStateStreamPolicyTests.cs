@@ -175,7 +175,7 @@ namespace WinterMP.Net.Tests
             var copy = VehicleStateStreamPolicy.Copy(original);
             Assert.NotSame(original, copy);
             byte[] wire = PacketCodec.Encode(original);
-            Assert.Equal(35, wire.Length); Assert.Equal(wire, PacketCodec.Encode(copy));
+            Assert.Equal(43, wire.Length); Assert.Equal(wire, PacketCodec.Encode(copy));
             Assert.Equal(wire, PacketCodec.Encode(PacketCodec.Decode(wire)));
             original.Gear = 0; original.FuelLevel = 0; original.Rpm = 0;
             Assert.Equal(4, copy.Gear); Assert.Equal(180, copy.FuelLevel); Assert.Equal(2500, copy.Rpm);

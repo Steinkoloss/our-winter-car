@@ -23,7 +23,7 @@ namespace WinterMP.Core.Sync
                 || !item.IsVehicle || item.Body == null || item.LocallyOwned || _items.IsLocalPlayerDriving(item))
                 return false;
 
-            return playerId != 0 && item.RemoteOwner == playerId;
+            return playerId != 0 && item.RemoteOwner == playerId && message.FuelRevision == item.FuelRevision;
         }
 
         /// <summary>Only the established guest simulator can propose climate state.</summary>
@@ -118,6 +118,7 @@ namespace WinterMP.Core.Sync
                 Gear = ReadGearByte(item),
             };
             CaptureHandoffTemperature(item, state);
+            CaptureContainerTank(item, state);
             CaptureHeatTelemetry(item, state);
             CaptureSpeedTelemetry(item, state);
             CaptureDifferentialSpeedTelemetry(item, state);
@@ -214,7 +215,7 @@ namespace WinterMP.Core.Sync
             item.RemoteHazard = message.HazardOn;
             item.RemoteDashDirty = true;
 
-            if (!item.LocallyOwned)
+            if (!item.LocallyOwned && !ReceiveContainerTank(item, message, session.IsHost))
                 ApplyRemoteFuel(item, message.FuelLevel);
 
             if (!item.LocallyOwned && electricsChanged)

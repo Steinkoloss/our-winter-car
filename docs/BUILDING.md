@@ -147,32 +147,64 @@ Release zips land in `dist/`:
 `OurWinterCar-Launcher-win-x64.zip` (full launcher) and `OurWinterCar-payload.zip`
 (attach to GitHub releases for in-launcher mod updates).
 
-### Versioned tester kit
+### Versioned tester kit — UNRELEASED LOCAL TEST PACKAGE
 
-The current test release is 0.1.33, protocol 120, targeting game build 23268598.
-On Linux, build and verify a separate kit without deploying into the game or publishing:
+Local package: mod **0.1.33**, protocol **265**, channel **test**.
+
+Target game build: 23268598. This is not the historical public 0.1.33 kit. Match
+protocol and payload hashes, not only mod version. On Linux, build and verify a
+separate attempt without deployment, native launch, Git operations or publication:
 
 ```bash
-python3 tools/build-test-release.py --appimage \
-  --inno-prefix /path/to/dedicated-inno-wine-prefix \
-  --cosmocc /path/to/cosmocc/bin/cosmocc
+python3 tools/build-test-release.py \
+  --run-dir "$RUN/package-attempt-01" \
+  --game-path "/path/to/read-only/My Winter Car" --payload-only
 ```
 
-The prefix must already contain `drive_c/inno/ISCC.exe` (see the Wine setup below).
-The default run rebuilds the plugins, runs both test suites and the evidence-tool tests,
-then publishes both standalone launchers. `--skip-build --skip-tests` reuses the versioned
-publish folders and requires passing TRX reports from that version’s `build/test-release/v0.1.33/test-results/` folder. It still verifies payload bytes,
-versions, archives and packaged documentation. Only reuse after confirming source/build
-consistency. Output is `dist/test-v0.1.33/`, separate from stable release artifacts.
+`RUN` is the actual assigned round evidence directory. Every attempt path must be
+new; existing paths/archives are refused, not overwritten. The builder always rebuilds
+Net/Core/FastBoot, runs Net/Launcher/Python tests, validates source/docs/protocol and
+uses the launcher's read-only `--verify-payload <directory>` entry point. No UI or
+installer is entered. All dotnet builds use `--no-restore`, `DeployToGame=false` and
+explicit `MwcGamePath`; missing cached build dependencies must be resolved separately.
+`--skip-build` and `--skip-tests` reuse is no longer accepted. Logs, command/exit-code
+receipts, source hashes and input assembly hashes stay under that fresh attempt;
+its `package/` contains docs, validation, checksums and the exact five-file payload ZIP.
+`OurWinterCar-local-test-kit.zip` wraps that directory for local handoff; `result.json`
+records its hash. Raw build/test receipts remain alongside it, not inside the mod payload.
 
-The kit includes source, release notes, a tester checklist, validation results and SHA-256
-checksums. Each payload manifest contains hashes for the mod files; the launcher verifies
-them and reads the protocol constant directly from the networking DLL without loading it.
+Independently recheck the generated outer/inner archives, docs, source hashes, raw
+command log hashes and read-only assembly inputs, then exercise the production CLI
+against deliberately invalid copies (protocol/version/hash/corrupt JSON/conflicting
+install flag) without entering installation or UI:
+
+```bash
+python3 tools/verify-test-release.py --attempt "$RUN/package-attempt-01" \
+  --evidence-dir "$RUN/package-audit-01" --game-path "/path/to/read-only/My Winter Car"
+```
+
+The audit directory must also be new. Temporary mutated payloads are scoped there
+and removed; `audit.json` and raw stdout/stderr preserve each assertion and command.
+
+Payload-only is an explicit partial deliverable, NOT an installable launcher kit.
+Omit `--payload-only` to build both self-contained launchers; this requires
+`vendor/BepInEx_win_x64_5.4.23.5.zip`, cached RID dependencies and a passing current
+dependency advisory query. Missing vendor/tool inputs fail closed with a receipt.
+Optional `--appimage`, `--inno-prefix` and `--cosmocc` keep their existing meanings;
+Inno requires `drive_c/inno/ISCC.exe` in the dedicated prefix. No optional installer
+is claimed unless built. Autonomous runs may not use native compiler prefixes outside
+the disposable test rig. No source archive is inferred from Git in this directory
+snapshot; `source-hashes.json` records the current source instead.
+
+The payload manifest hashes Core/Net/FastBoot/catalog; validation also hashes the
+compatibility JSON itself (no circular self-hash). The launcher reads the protocol
+constant directly from Net metadata without loading game assemblies. Archives reject
+game DLLs including ES2, developer probe binaries, secret paths and symlinks.
 `targetGameBuildIds` records the build used for compilation/binding checks;
 `testedGameBuildIds` stays empty until multiplayer testing is complete.
-The package builder records the actual number of evidence-tool tests and does not reuse
-runtime smoke results from earlier releases. Runtime and multiplayer checks must be
-reported separately for each new package.
+The builder records actual test counts, not earlier release totals. Native discovery,
+ordinary input, different saves, fresh-player late join, native save/reload, Steam/two-PC
+and four-player soak stay NOT_TESTED for this package unless separately proven.
 The package builder never commits, pushes, tags or uploads a release.
 
 ### Universal installer (one file, Windows + Linux)

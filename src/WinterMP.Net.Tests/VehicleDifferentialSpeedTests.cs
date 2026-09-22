@@ -19,7 +19,7 @@ namespace WinterMP.Net.Tests
         [InlineData(float.MaxValue)] [InlineData(float.MinValue)]
         public void ExactSignedFieldIsIndependentFromRpmAndBothRoadSpeedFields(float speed)
         {
-            var packet = PacketCodec.Encode(State(speed)); Assert.Equal(35, packet.Length); Assert.Equal(1, packet[25]);
+            var packet = PacketCodec.Encode(State(speed)); Assert.Equal(43, packet.Length); Assert.Equal(1, packet[25]);
             Assert.Equal(speed, BitConverter.ToSingle(packet, 26));
             var read = (VehicleState)PacketCodec.Decode(packet); var copy = VehicleStateStreamPolicy.Copy(read);
             Assert.True(copy.DifferentialSpeedAvailable); Assert.Equal(speed, copy.DifferentialSpeed);

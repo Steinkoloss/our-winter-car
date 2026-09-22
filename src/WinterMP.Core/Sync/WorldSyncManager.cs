@@ -24,8 +24,6 @@ namespace WinterMP.Core.Sync
         private const float ResyncCooldownSeconds = 15f;
         private const float ObjectRequestCooldownSeconds = 5f;
         private const int DespawnSnapshotChunk = WorldItemDespawnSnapshot.MaxItems;
-        private const int MaxSyncErrors = 8;
-        private const float SyncErrorBackoffSeconds = 1f;
 
         private const byte NoOwner = 255;
 
@@ -97,9 +95,6 @@ namespace WinterMP.Core.Sync
         private float _cargoTestDelay;
         private bool _selfTest;
         private bool _readyAnnounced;
-        private bool _worldSyncDisabled;
-        private int _syncErrorCount;
-        private float _syncErrorBackoffUntil;
         // TEMP spawn debugging: crumb each grocery-bag-like Use FSM once per name.
 
         internal bool ApplyingRemote { get; set; }
@@ -194,6 +189,10 @@ namespace WinterMP.Core.Sync
 
         private void OnDestroy()
         {
+            ResetLateUpdateErrors();
+            ResetVehicleUpdateErrors();
+            ResetFixedUpdateErrors();
+            ResetTrainMessageErrors();
             if (_syncReady) { _vehicles.ClearDamageState(); _vehicles.ClearVehicleStateStreams(); }
             _gambling.Clear();
             _poker.Clear();
@@ -207,209 +206,6 @@ namespace WinterMP.Core.Sync
             _wallet.Reset();
             _welfare.Clear();
             if (Instance == this) Instance = null;
-        }
-
-        private void Update()
-        {
-            if (_worldSyncDisabled || Time.unscaledTime < _syncErrorBackoffUntil) return;
-
-            try
-            {
-                UpdateWorldSync();
-            }
-            catch (Exception e)
-            {
-                HandleSyncError("Update", e);
-            }
-        }
-
-        private void FixedUpdate()
-        {
-            if (_syncReady && !_worldSyncDisabled && _wasSessionActive && IsGameLevel()) _train.FixedUpdate();
-        }
-
-        private void LateUpdate()
-        {
-            if (!_syncReady || _worldSyncDisabled || !_wasSessionActive || Time.unscaledTime < _syncErrorBackoffUntil)
-                return;
-
-            if (!IsGameLevel()) return;
-
-            try
-            {
-                _vehicles.LateUpdateRemoteVehicles(Time.unscaledTime);
-                _trailer.LateUpdate();
-                var session = SessionManager.Instance;
-                if (session != null) _ventti.LateUpdate(session);
-            }
-            catch (Exception e)
-            {
-                HandleSyncError("LateUpdate", e);
-            }
-        }
-
-        /// <summary>
-        /// One transient exception must not silently kill world sync for the rest
-        /// of the session (a despawn race did exactly that and broke all vehicle
-        /// sync). Back off briefly and only disable after repeated failures.
-        /// </summary>
-        private void HandleSyncError(string phase, Exception e)
-        {
-            _syncErrorCount++;
-            SyncEventLog.Record("error", $"{phase} #{_syncErrorCount}: {e}");
-
-            if (_syncErrorCount >= MaxSyncErrors)
-            {
-                _worldSyncDisabled = true;
-                WinterMPPlugin.Log.LogError($"WorldSync disabled after {_syncErrorCount} errors; last ({phase}): {e}");
-                SyncEventLog.DumpToFile();
-                return;
-            }
-
-            _syncErrorBackoffUntil = Time.unscaledTime + SyncErrorBackoffSeconds;
-            WinterMPPlugin.Log.LogWarning(
-                $"WorldSync {phase} error {_syncErrorCount}/{MaxSyncErrors} — retrying in {SyncErrorBackoffSeconds:0.#}s: {e}");
-        }
-
-        private void UpdateWorldSync()
-        {
-            WatchLevelChanges();
-
-            if (GuestSaveGuard.ProtectWorld && IsGameLevel())
-            {
-                EnsureSyncReady();
-                _vehicles.PrepareGuestDamageIsolation();
-                _vehicles.PrepareGuestEngineProtection();
-            }
-
-            var session = SessionManager.Instance;
-            bool sessionActive = session != null
-                && (session.State == SessionState.Hosting || session.State == SessionState.Connected);
-
-            if (!sessionActive)
-            {
-                if (_wasSessionActive) ReleaseEverything();
-                _wasSessionActive = false;
-                return;
-            }
-
-            if (!IsGameLevel())
-            {
-                _wasSessionActive = true;
-                return;
-            }
-
-            EnsureSyncReady();
-            _wasSessionActive = true;
-
-            _items.ProcessBags(session!);
-
-            UpdateWorldDiscovery();
-
-            if (Time.unscaledTime >= _nextPendingAt)
-            {
-                _nextPendingAt = Time.unscaledTime + PendingRetrySeconds;
-                _fsm.ProcessPending();
-            }
-
-            if (!session!.IsHost && !_snapshotRequested && _fsm.DoorCount > 0)
-            {
-                _snapshotRequested = true;
-                WinterMPPlugin.Log.LogInfo($"WorldSync: requesting join snapshot (id hash {IdHash:X8}).");
-                session.SendWorldMessage(new WorldSnapshotRequest { IdHash = IdHash }, Channel.ReliableOrdered);
-            }
-
-            if (session.IsHost && session.PlayerCount > 0 && Time.unscaledTime >= _nextTimeSyncAt)
-            {
-                _nextTimeSyncAt = Time.unscaledTime + TimeSyncIntervalSeconds;
-                var time = _timeWeather.BuildMessage();
-                if (time != null)
-                    session.SendWorldMessage(time, Channel.ReliableOrdered);
-            }
-
-            _wallet.UpdateBanking(session);
-
-            if (session.IsHost && session.PlayerCount > 0)
-            {
-                float now = Time.unscaledTime;
-                var wallet = _wallet.BuildMessage();
-                if (wallet != null && _wallet.ShouldBroadcast(wallet, now))
-                    session.SendWorldMessage(wallet, Channel.ReliableOrdered);
-
-                if (Time.unscaledTime >= _nextChecksumAt)
-                {
-                    _nextChecksumAt = Time.unscaledTime + ChecksumIntervalSeconds;
-                    var checksum = BuildStateChecksum();
-                    if (checksum != null)
-                        session.SendWorldMessage(checksum, Channel.ReliableOrdered);
-                }
-            }
-
-            _items.ProcessPendingSpawns(session!);
-            _items.ProcessMilk(session!);
-            _items.UpdateItems(session);
-            _items.UpdateAtf(session!);
-            _atf.Update(session!);
-            _npcTraffic.Update(session!);
-            _train.Update(session!);
-            _vehicles.UpdateVehicleStates(session!);
-            _vehicles.UpdateStarterDraws(session!);
-            _vehicles.UpdateStarterWear(session!);
-            _vehicles.UpdateVehicleCoolant(session!);
-            _vehicles.UpdateDrivetrainWearStates(session!);
-            _vehicles.UpdateWheelHealthStates(session!);
-            _vehicles.UpdateVehicleDamage(session!);
-            _vehicles.UpdateVehicleCondition(session!);
-            _vehicles.UpdateFuelTransfers(session!);
-            _vehicles.UpdateVehicleClimate(session!);
-            _clothing.Update(session!);
-            _heat.Update(session!);
-            _fluids.Update(session!);
-            _kilju.Update(session!);
-            _progress.Update(session!);
-            _jobSites.Update(session!);
-            _fsm.UpdateFirewoodBuyers(session!);
-            _mailOrders.Update(session!);
-            _inspection.Update(session!);
-            _police.Update(session!);
-            _homeStereo.Update(session!);
-            _rally.Update(session!);
-            _iceRace.Update(session!);
-            _iceRaceEvent.Update(session!);
-            _iceRaceResults.Update(session!);
-            _gambling.Update(session!);
-            _poker.Update(session!);
-            _ventti.Update(session!);
-            _utilityBills.Update(session!);
-            _lottery.Update(session!);
-            _lottoTickets?.Update(session!);
-            _repairShop.Update(session!);
-            _fleaSale.Update(session!);
-            _taxiJob.Update(session!);
-            _worldScalars.Update(session!);
-            _hockey.Update(session!);
-            _trailer.Update(session!, _items);
-            _woodDelivery.Update(session!);
-            _welfare.Update(session!);
-            _hitchhiker.Update(session!);
-            _wanted.Update(session!);
-            _jail.Update(session!);
-            _pursuit.Update(session!);
-            _rallyResults.Update(session!);
-            _jokkis.Update(session!);
-            _appliances.Update(session!);
-            _phone.Update(session!);
-            _pissAreas.Update(session!);
-            _carRadio.Update(session!);
-
-            if (_selfTest)
-                _fsm.RunDoorTest();
-
-            if (_cargoTestDelay > 0f)
-                _items.RunCargoTest(session!, _cargoTestDelay);
-
-            if (WinterMPPlugin.DevKeysEnabled.Value)
-                HandleDevKeys(session);
         }
 
         private static bool IsGameLevel()
@@ -438,6 +234,10 @@ namespace WinterMP.Core.Sync
 
             if (level == _lastLevel) return;
             _lastLevel = level;
+            ResetLateUpdateErrors();
+            ResetVehicleUpdateErrors();
+            ResetFixedUpdateErrors();
+            ResetTrainMessageErrors();
 
             if (!_syncReady) return;
 
@@ -536,6 +336,7 @@ namespace WinterMP.Core.Sync
                     {
                         if (!fsm.gameObject.activeInHierarchy || !fsm.enabled) continue;
                         if (!fsm.Fsm.Initialized || !fsm.Fsm.Started) continue;
+                        if (WinterMP.Net.Sync.VendorCoffeePolicy.QuarantineBuy(ScenePath.Of(fsm.transform), fsm.FsmName)) continue;
                         if (TrainSync.Owns(fsm.transform) || ItemWorldSync.IsCoffeeFsm(fsm) || ItemWorldSync.IsAdvertFsm(fsm) || ItemWorldSync.IsBagUse(fsm)) continue;
                         string fsmName = fsm.FsmName;
                         // The remaining branches accept only catalogued starter or
@@ -781,10 +582,11 @@ namespace WinterMP.Core.Sync
         {
             _nextItemScanAt = _nextNpcScanAt = 0f;
             _wallet.Reset();
-            if (!_syncReady) return;
+            if (!_syncReady) { ResetSyncErrors(); return; }
 
             _atf.Clear();
             _taxiJob.Clear();
+            _fluids.Clear();
             _items.ReleaseSession();
             _npcTraffic.ReleaseSession();
             _fsm.Clear();
@@ -821,10 +623,7 @@ namespace WinterMP.Core.Sync
             _carRadio.Clear();
             _nextObjectRequestAt.Clear();
             _snapshotRequested = false;
-            _worldSyncDisabled = false;
-            _syncErrorCount = 0;
-            _syncErrorBackoffUntil = 0f;
-            SyncEventLog.Clear();
+            ResetSyncErrors();
         }
 
         internal bool IsLocalPlayerDriving(SyncedItem item)

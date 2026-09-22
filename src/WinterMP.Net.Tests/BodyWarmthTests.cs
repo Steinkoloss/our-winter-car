@@ -30,7 +30,10 @@ namespace WinterMP.Net.Tests
         {
             var spawn = new GuestSpawn { Flags = GuestSpawn.FlagHasSavedNeeds | GuestSpawn.FlagHasSavedBodyTemp, BodyTemp = warmth };
             var bytes = PacketCodec.Encode(spawn);
-            Assert.Equal(95, bytes.Length); Assert.Equal(18, bytes[58]);
+            // v264 appends a 13-byte clothing recipient/availability payload;
+            // all v189 warmth offsets stay unchanged.
+            Assert.Equal(108, bytes.Length); Assert.Equal(18, bytes[58]);
+            Assert.All(bytes.Skip(95), value => Assert.Equal(0, value));
             Assert.Equal(warmth, BitConverter.ToSingle(bytes, 75));
             var copy = Assert.IsType<GuestSpawn>(PacketCodec.Decode(bytes));
             Assert.True(copy.HasSavedBodyTemp); Assert.Equal(warmth, copy.BodyTemp);

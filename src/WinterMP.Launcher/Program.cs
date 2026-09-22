@@ -9,6 +9,9 @@ namespace WinterMP.Launcher
         [STAThread]
         public static int Main(string[] args)
         {
+            if (CliPayloadVerifier.TryRun(args, out int verificationExitCode))
+                return verificationExitCode;
+
             // Headless install path (WinterMP-Setup.exe / automation / Linux scripts) must
             // run console-only and exit before any UI/windowing is initialized.
             if (CliInstallRunner.TryRun(args, out int exitCode))

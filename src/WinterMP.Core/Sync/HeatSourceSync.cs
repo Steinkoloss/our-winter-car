@@ -22,7 +22,7 @@ namespace WinterMP.Core.Sync
     /// All FSM/var lookups are best-effort and crash-contained — a save that lacks a
     /// given source (or a game patch that renames a var) simply skips it.
     /// </summary>
-    internal sealed class HeatSourceSync
+    internal sealed partial class HeatSourceSync
     {
         private const float ProbeIntervalSeconds = 5f;
         private const float HostTickSeconds = 1.5f;
@@ -91,6 +91,8 @@ namespace WinterMP.Core.Sync
 
         public void Clear()
         {
+            ClearCabin();
+            ClearSauna();
             _sources.Clear();
             _byId.Clear();
             _lastIntentSequences.Clear();
@@ -111,7 +113,13 @@ namespace WinterMP.Core.Sync
 
         public void Update(SessionManager session)
         {
-            if (session.PlayerCount == 0) return;
+            if (session.PlayerCount == 0)
+            {
+                // Retain and finish cabin reservations through last-guest disconnect.
+                // Other heat sources keep their existing no-peer behavior.
+                if (session.IsHost) { UpdateCabin(session); UpdateSauna(session); }
+                return;
+            }
 
             EnsureBuilt();
 
@@ -121,6 +129,8 @@ namespace WinterMP.Core.Sync
                 LocatePending();
             }
 
+            UpdateCabin(session);
+            UpdateSauna(session);
             if (!session.IsHost) return;
             if (Time.unscaledTime < _nextHostTickAt) return;
             _nextHostTickAt = Time.unscaledTime + HostTickSeconds;
@@ -139,6 +149,8 @@ namespace WinterMP.Core.Sync
         /// </summary>
         public void ForceBroadcast()
         {
+            _nextCabinState = 0f;
+            _nextSaunaState = 0f;
             _nextHostTickAt = 0f;
             _nextKeepAliveAt = 0f;
         }
@@ -147,6 +159,7 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteState(HeatSourceState message)
         {
+            if (message.SourceId == WinterMP.Net.Sync.WoodstoveFuelAuthority.CabinSourceId) return;
             var session = SessionManager.Instance;
             if (session == null || session.IsHost) return;
 
@@ -178,6 +191,8 @@ namespace WinterMP.Core.Sync
 
         public bool TryAcceptIntent(HeatSourceIntent intent)
         {
+            if (intent.SourceId == WinterMP.Net.Sync.WoodstoveFuelAuthority.CabinSourceId
+                && intent.Action == HeatSourceIntent.ActionFeedWood) return false;
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) return false;
 
@@ -217,6 +232,7 @@ namespace WinterMP.Core.Sync
 
         private void HostBroadcastIfChanged(SessionManager session, Source source, bool keepAlive)
         {
+            if (source.Id == WinterMP.Net.Sync.WoodstoveFuelAuthority.CabinSourceId) return;
             if (!source.AnyFsm) return;
 
             byte flags = 0, fuel = 0, heat = 0;
@@ -358,6 +374,8 @@ namespace WinterMP.Core.Sync
                 WinterMPPlugin.Log.LogInfo($"HeatSourceSync: located {source.Kind} '{source.ContainerPath}' (id {source.Id:X8}).");
             }
 
+            BindCabin(source);
+            BindSauna(source);
             InstallGuestHooks(source);
         }
 
@@ -371,7 +389,8 @@ namespace WinterMP.Core.Sync
 
             InstallHookOnce(ref source.HookedSetFire, source.SetFire, "Start fire 2", source, HeatSourceIntent.ActionLight);
             InstallHookOnce(ref source.HookedStove, source.StoveTrigger, "Steam", source, HeatSourceIntent.ActionSaunaThrow);
-            InstallHookOnce(ref source.HookedWood, source.WoodTrigger, "State 1", source, HeatSourceIntent.ActionFeedWood);
+            if (source.Id != WinterMP.Net.Sync.WoodstoveFuelAuthority.CabinSourceId)
+                InstallHookOnce(ref source.HookedWood, source.WoodTrigger, "State 1", source, HeatSourceIntent.ActionFeedWood);
         }
 
         private void InstallHookOnce(ref bool installed, PlayMakerFSM? fsm, string stateName, Source source, byte action)

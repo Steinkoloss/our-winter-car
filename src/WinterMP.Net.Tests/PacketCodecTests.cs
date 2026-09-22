@@ -92,6 +92,11 @@ namespace WinterMP.Net.Tests
                 if (message is TrainState train) train.Sequence = 1;
                 if (message is CoffeeIntent ci) { ci.ItemId = ci.Sequence = 1; ci.PlayerId = 1; ci.Action = CoffeeAction.OpenLid; }
                 if (message is CoffeeState cs) { cs.ItemId = cs.Revision = 1; }
+                if (message is VendorCoffeeIntent vi) { vi.MachineId = vi.CupId = vi.Epoch = vi.Generation = vi.ExpectedRevision = vi.Connection = vi.Sequence = 1; vi.PlayerId = 1; vi.Action = VendorCoffeeAction.Acquire; }
+                if (message is VendorCoffeeState vs) { vs.MachineId = vs.CupId = vs.Epoch = vs.Generation = vs.Revision = 1; vs.Lifecycle = VendorCoffeeLifecycle.Available; }
+                if (message is VendorCoffeeResult vr) { vr.MachineId = vr.CupId = vr.Epoch = vr.Generation = vr.Connection = vr.Sequence = 1; vr.Revision = 2; vr.PlayerId = 1; vr.Action = VendorCoffeeAction.Acquire; }
+                if (message is BeerCaseExtractIntent beerIntent) { beerIntent.NativeId = "beer-codec-fixture"; beerIntent.CaseId = WinterMP.Net.Sync.BeerCasePolicy.CaseId(beerIntent.NativeId); beerIntent.Epoch = beerIntent.Connection = beerIntent.Sequence = beerIntent.ExpectedRevision = 1; beerIntent.ExpectedRemaining = 3; beerIntent.PlayerId = 2; }
+                if (message is BeerCaseUpdate beerState) { beerState.NativeId = "beer-codec-fixture"; beerState.CaseId = WinterMP.Net.Sync.BeerCasePolicy.CaseId(beerState.NativeId); beerState.Epoch = beerState.Revision = 1; beerState.Capacity = 3; }
                 if (message is CoffeeDrinkResult cd) { cd.ItemId = cd.Sequence = 1; cd.Amount = .2f; }
                 if (message is SausageOpenIntent sausageOpen) { sausageOpen.PlayerId = 1; sausageOpen.PackageId = sausageOpen.SourceId = sausageOpen.Sequence = 1; }
                 if (message is SausageState sausage) { sausage.ItemId = sausage.Revision = 1; }
@@ -138,6 +143,10 @@ namespace WinterMP.Net.Tests
                 if (message is FleaSaleResult fleaResult) { fleaResult.PlayerId = 1; fleaResult.Action = FleaSaleIntent.PayRent; fleaResult.Result = FleaSaleResult.Accepted; }
             if (message is AtfRefillIntent atfIntent)
                 { atfIntent.VehicleId = 1; atfIntent.BottleId = 2; atfIntent.PlayerId = 1; }
+                if (message is WoodstoveFuelUpdate cabin) cabin.Epoch = 1;
+                // An empty sauna state is not a host admission; preserve the strict codec guard.
+                if (message is SaunaTimerState sauna)
+                { sauna.SourceId = WinterMP.Net.Sync.SaunaTimerAuthority.SourceId; sauna.Epoch = sauna.Revision = 1; }
                 var decoded = PacketCodec.Decode(PacketCodec.Encode(message));
                 Assert.Equal(id, decoded.Id);
             }

@@ -76,7 +76,7 @@ namespace WinterMP.Core.Sync
 
             if ((flags & WorldResyncRequest.FlagFsmStates) != 0)
             {
-                var train = _train.Snapshot(); if (train != null) yield return train;
+                var train = BuildTrainSnapshot(); if (train != null) yield return train;
                 var lotto = _lottery.BuildSnapshot();
                 if (lotto != null) yield return lotto;
                 foreach (var chunk in _fsm.BuildDoorSnapshotChunks())
@@ -106,6 +106,8 @@ namespace WinterMP.Core.Sync
                 foreach (var chunk in BuildItemDespawnSnapshots()) yield return chunk;
                 foreach (var meat in _items.BuildMeatStates()) yield return meat;
                 foreach (var coffee in _items.BuildCoffeeStates()) yield return coffee;
+                foreach (var vendorCoffee in _items.BuildVendorCoffeeStates()) yield return vendorCoffee;
+                foreach (var beerCase in _items.BuildBeerCaseStates()) yield return beerCase;
                 foreach (var sausage in _items.BuildSausageStates()) yield return sausage;
                 foreach (var milk in _items.BuildMilkStates()) yield return milk;
                 foreach (var atfBottle in _items.BuildAtfStates()) yield return atfBottle;
@@ -159,9 +161,11 @@ namespace WinterMP.Core.Sync
             var session = SessionManager.Instance;
             if (session == null || !session.IsHost) yield break;
 
-            if (netId == _train.NetId) { var train = _train.Snapshot(); if (train != null) yield return train; }
+            var train = BuildTrainSnapshot(netId); if (train != null) yield return train;
             var meat = _items.BuildMeatState(netId); if (meat != null) yield return meat;
             var coffee = _items.BuildCoffeeState(netId); if (coffee != null) yield return coffee;
+            var vendorCoffee = _items.BuildVendorCoffeeState(netId); if (vendorCoffee != null) yield return vendorCoffee;
+            var beerCase = _items.BuildBeerCaseState(netId); if (beerCase != null) yield return beerCase;
             var sausage = _items.BuildSausageState(netId); if (sausage != null) yield return sausage;
             var milk = _items.BuildMilkState(netId); if (milk != null) yield return milk;
             var atfBottle = _items.BuildAtfState(netId); if (atfBottle != null) yield return atfBottle;
@@ -263,6 +267,8 @@ namespace WinterMP.Core.Sync
 
             foreach (var meat in _items.BuildMeatStates()) yield return meat;
             foreach (var coffee in _items.BuildCoffeeStates()) yield return coffee;
+            foreach (var vendorCoffee in _items.BuildVendorCoffeeStates()) yield return vendorCoffee;
+            foreach (var beerCase in _items.BuildBeerCaseStates()) yield return beerCase;
             foreach (var sausage in _items.BuildSausageStates()) yield return sausage;
             foreach (var milk in _items.BuildMilkStates()) yield return milk;
             foreach (var atfBottle in _items.BuildAtfStates()) yield return atfBottle;
@@ -326,7 +332,7 @@ namespace WinterMP.Core.Sync
             if (fleaSale != null)
                 yield return fleaSale;
 
-            var trainState = _train.Snapshot(); if (trainState != null) yield return trainState;
+            var trainState = BuildTrainSnapshot(); if (trainState != null) yield return trainState;
             var trailer = _trailer.Snapshot();
             if (trailer != null) yield return trailer;
             var householdFuses = _items.BuildHouseholdFuseSnapshot();
@@ -434,6 +440,16 @@ namespace WinterMP.Core.Sync
             var iceRaceResults = _iceRaceResults.BuildSnapshot();
             if (iceRaceResults != null)
                 yield return iceRaceResults;
+        }
+
+        private TrainState? BuildTrainSnapshot(uint? netId = null)
+        {
+            if (_worldSyncDisabled || Time.unscaledTime < _syncErrorBackoffUntil
+                || !_trainSnapshotFailure.CanRun(Time.unscaledTime)) return null;
+            // Catch creation before yielding: an escaped MoveNext would abandon
+            // all subsequent world chunks. A later request captures fresh state.
+            try { return !netId.HasValue || netId.Value == _train.NetId ? _train.Snapshot() : null; }
+            catch (Exception e) { HandleSyncError("Snapshot.TrainSync", e, _trainSnapshotFailure); return null; }
         }
 
         private IEnumerable<WorldItemDespawnSnapshot> BuildItemDespawnSnapshots()

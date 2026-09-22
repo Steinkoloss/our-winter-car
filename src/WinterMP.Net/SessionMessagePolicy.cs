@@ -14,6 +14,16 @@ namespace WinterMP.Net
         public static bool IsSenderAllowed(MessageId messageId, bool receiverIsHost,
             bool senderIsAuthenticated, bool senderIsSelectedHost, bool receiverHandshakeComplete)
         {
+            if (messageId == MessageId.PissAreaIntent) return receiverIsHost && senderIsAuthenticated;
+            if (messageId == MessageId.SaunaTimerIntent) return receiverIsHost && senderIsAuthenticated;
+            if (messageId == MessageId.SaunaTimerState) return !receiverIsHost && senderIsSelectedHost && receiverHandshakeComplete;
+            if (messageId == MessageId.PissAreaState) return !receiverIsHost && senderIsSelectedHost && receiverHandshakeComplete;
+            if (messageId == MessageId.ContainerFuelIntent) return receiverIsHost && senderIsAuthenticated;
+            if (messageId == MessageId.ContainerFuelResult) return !receiverIsHost && senderIsSelectedHost && receiverHandshakeComplete;
+            if (messageId == MessageId.BeerCaseExtractIntent || messageId == MessageId.ScraperAction || messageId == MessageId.WoodstoveFeedIntent || messageId == MessageId.VendorCoffeeIntent)
+                return receiverIsHost && senderIsAuthenticated;
+            if (messageId == MessageId.BeerCaseUpdate || messageId == MessageId.PaneScrapeUpdate || messageId == MessageId.WoodstoveFuelUpdate || messageId == MessageId.VendorCoffeeState || messageId == MessageId.VendorCoffeeResult)
+                return !receiverIsHost && senderIsSelectedHost && receiverHandshakeComplete;
             if (receiverIsHost)
                 return messageId != MessageId.AdvertPhoneResult && messageId != MessageId.MotorOilFillerState && messageId != MessageId.MotorOilBottleState && messageId != MessageId.AdvertJobState && messageId != MessageId.AdvertSheetState && messageId != MessageId.TrainState && messageId != MessageId.CoffeeState && messageId != MessageId.CoffeeDrinkResult && messageId != MessageId.SausageState && messageId != MessageId.TractorTrailerState && messageId != MessageId.HouseholdFuseState && messageId != MessageId.HouseholdFuseResult && messageId != MessageId.TaxiFareState && messageId != MessageId.TaxiMeterState && messageId != MessageId.TaxiServiceState && messageId != MessageId.WiringInstallReceipt && messageId != MessageId.ApplianceState && messageId != MessageId.VehicleDamage && messageId != MessageId.WiringState && messageId != MessageId.BatteryState && messageId != MessageId.EngineBlockState && messageId != MessageId.GearboxState && messageId != MessageId.VehicleCoolantState && messageId != MessageId.HeaterState && messageId != MessageId.VehicleConditionReleaseAck
                     && messageId != MessageId.VehicleDrivetrainWearState

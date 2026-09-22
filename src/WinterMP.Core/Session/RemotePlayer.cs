@@ -24,6 +24,9 @@ namespace WinterMP.Core.Session
         public float Sweat;
         public ushort LastNeedsSequence;
         public bool HasNeedsReport;
+        public ulong ClothingAdmission;
+        internal WinterMP.Net.Messages.PlayerClothingState? ClothingState;
+        internal readonly WinterMP.Net.Sync.ClothingReportGate ClothingReports = new WinterMP.Net.Sync.ClothingReportGate();
 
         /// <summary>Round-trip time in milliseconds, measured by the ping loop.</summary>
         public int PingMs = -1;

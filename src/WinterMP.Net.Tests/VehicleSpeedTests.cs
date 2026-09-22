@@ -17,7 +17,7 @@ namespace WinterMP.Net.Tests
         [InlineData((ushort)0)] [InlineData((ushort)20)] [InlineData((ushort)21)] [InlineData(ushort.MaxValue)]
         public void MovementAndWheelSpeedRemainIndependentAcrossWireAndCopies(ushort movement)
         {
-            var packet = PacketCodec.Encode(State(movement)); Assert.Equal(35, packet.Length); Assert.Equal(1, packet[22]);
+            var packet = PacketCodec.Encode(State(movement)); Assert.Equal(43, packet.Length); Assert.Equal(1, packet[22]);
             var read = (VehicleState)PacketCodec.Decode(packet); var copy = VehicleStateStreamPolicy.Copy(read);
             Assert.True(copy.MovementSpeedAvailable); Assert.Equal(movement, copy.MovementSpeedTenthsKmh);
             Assert.Equal(1800, copy.SpeedTenthsKmh); Assert.Equal(-12.375f, copy.EngineTorque); Assert.Equal(3000, copy.Rpm);
@@ -98,7 +98,7 @@ namespace WinterMP.Net.Tests
         public void CoolingRpmDoesNotRequireMovementOrTorqueAvailability(ushort rpm)
         {
             var state = new VehicleState { VehicleId = 91, OwnerPlayerId = 1, Sequence = 10, Rpm = rpm };
-            var wire = PacketCodec.Encode(state); Assert.Equal(35, wire.Length);
+            var wire = PacketCodec.Encode(state); Assert.Equal(43, wire.Length);
             var copy = VehicleStateStreamPolicy.Copy((VehicleState)PacketCodec.Decode(wire));
             Assert.False(copy.MovementSpeedAvailable); Assert.False(copy.TorqueAvailable); Assert.Equal(rpm, copy.Rpm);
             Assert.True(VehicleWearSimulationPolicy.HasSample(copy, 91, 1, true));

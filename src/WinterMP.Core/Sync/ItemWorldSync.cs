@@ -110,6 +110,8 @@ namespace WinterMP.Core.Sync
 
         internal void Clear()
         {
+            ClearBeerCase();
+            _cabinItemIds.Clear(); _cabinBodies.Clear();
             ClearMilk();
             ClearBattery();
             ClearHeater();
@@ -127,6 +129,7 @@ namespace WinterMP.Core.Sync
             ClearTrophyFactories();
             ClearMeat();
             ClearCoffee();
+            ClearVendorCoffee();
             ClearSausages();
             ClearAtf();
             _vehicles?.ClearDamageState();
@@ -145,6 +148,7 @@ namespace WinterMP.Core.Sync
 
         internal void ReleaseSession()
         {
+            ClearBeerCase();
             ClearMilk();
             ClearBattery();
             ClearHeater();
@@ -195,6 +199,7 @@ namespace WinterMP.Core.Sync
             ClearTrophyFactories();
             ClearMeat();
             ClearCoffee();
+            ClearVendorCoffee();
             ClearSausages();
             ClearAtf();
             _pendingItemPoses.Clear();

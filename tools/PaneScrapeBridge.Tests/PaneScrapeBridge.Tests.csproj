@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <ProjectReference Include="../../src/WinterMP.Net/WinterMP.Net.csproj" />
+    <Compile Include="../../src/WinterMP.Core/Sync/PaneScrapeSync*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/WinterMP.Core/Sync/FsmHook.cs" Link="Core/FsmHook.cs" />
+    <Compile Include="../GuestSaveProbe/LiveBagProbe.PaneTrace.cs" Link="Probe/LiveBagProbe.PaneTrace.cs" />
+    <Compile Include="../../src/WinterMP.Core/Sync/PlayerMoveState.cs" Link="Core/PlayerMoveState.cs" />
+    <Compile Include="../../src/WinterMP.Core/Catalog/SyncCatalogJson.PaneScrape.cs" Link="Core/SyncCatalogJson.PaneScrape.cs" />
+  </ItemGroup>
+</Project>

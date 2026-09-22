@@ -4,26 +4,33 @@
 game's title. One player hosts with their savefile; friends join through Steam
 **Join Game**. Everyone shares the same world, money, and progress while connected.
 
-For **0.1.33 tester packages**, start with [TESTING.md](TESTING.md). This package
-targets My Winter Car **v.260516-01**, Steam build **23268598** (protocol **120**).
-Use the downloads supplied by your test organizer. The GitHub links below lead to
-public releases, which may still list an older version.
+## UNRELEASED LOCAL TEST PACKAGE
 
-**Local development coffee work (unreleased protocol250):** the household coffee
+Local package: mod **0.1.33**, protocol **265**, channel **test**.
+
+Start with [TESTING.md](TESTING.md). This package targets My Winter Car
+**v.260516-01**, Steam build **23268598**. Match package hashes, not just the unchanged
+mod version. Read `validation.json` for the artifacts actually built. A payload-only
+kit has no launcher or BepInEx installer; the setup instructions below apply only to
+a complete launcher kit. Public downloads/updates are NOT this local test package.
+Native discovery, ordinary input, different saves, fresh-player late join, native
+save/reload, Steam/two-PC and four-player soak are **NOT_TESTED** for this package.
+
+**Household coffee adapter (introduced in protocol250):** the household coffee
 pot, reusable cup and grounds packets now have a shared adapter. The host owns
 water, grounds, brewing and cup contents; the accepted drinker receives vanilla
 personal effects. Vendor/vending-machine coffee is still outside this coverage.
 Both players need the same build. Physical mouse/hand play and Steam/two-PC tests
-remain needed; this is not a new published tester package.
+remain needed; packaging does not rerun those gameplay checks.
 
 ## Riding as a passenger in development builds
 
-In unreleased protocol 249 builds, the taxi has two seats for friends: front right
+The taxi adapter introduced in protocol249 has two seats for friends: front right
 and rear left. Stand beside the matching door, look for **ENTER - Sit down**, then
 press Enter. Press Enter again to get up. The rear-right seat stays reserved for
 paying customers, and player seating is unavailable during the taxi tutorial.
 Sorbet and Corris still have three passenger seats. These additions are not in the
-older public/tester packages described below.
+older public packages linked below; their presence in source is not fresh input evidence.
 
 ## Requirements
 

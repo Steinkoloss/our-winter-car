@@ -5,6 +5,7 @@ using WinterMP.Core.Diagnostics;
 using WinterMP.Core.Session;
 using WinterMP.Net;
 using WinterMP.Net.Messages;
+using WinterMP.Net.Sync;
 
 namespace WinterMP.Core.Sync
 {
@@ -37,6 +38,7 @@ namespace WinterMP.Core.Sync
         private byte _lastSentStage;
         private byte _lastSentType;
         private byte _lastSentWinter;
+        private ulong _lastSentAdmission;
 
         private readonly Dictionary<byte, ClothingSnapshot> _remote = new Dictionary<byte, ClothingSnapshot>();
 
@@ -69,25 +71,28 @@ namespace WinterMP.Core.Sync
         public void Update(SessionManager session)
         {
             // Both host and guest only bother once another player is present.
-            if (session.PlayerCount == 0) return;
+            if (session.PlayerCount == 0 || Application.loadedLevelName != "GAME") return;
+            var player = PlayerSyncManager.Instance;
+            if (!session.IsHost && (session.State != SessionState.Connected || session.LocalClothingAdmission == 0
+                || player == null || !player.IsLocalSpawnReady)) return;
 
             if (Time.unscaledTime < _nextReportAt) return;
             _nextReportAt = Time.unscaledTime + ReportIntervalSeconds;
 
             Locate();
-            if (_clothingStage == null && _clothingType == null) return;
+            if (_clothingStage == null || _clothingType == null) return;
 
-            byte stage = ReadByte(_clothingStage);
-            byte type = ReadByte(_clothingType);
-            byte winter = ReadWinterGarment();
+            var clothing = new GuestProfile.ClothingSnapshot { Valid = true,
+                ClothingStage = _clothingStage.Value, ClothingType = _clothingType.Value, WinterGarment = ReadWinterGarment() };
+            if (!clothing.HasValidValues) return;
+            if (!session.IsHost && player != null) clothing = player.ResolveLocalClothing(clothing);
+            byte stage = (byte)clothing.ClothingStage;
+            byte type = (byte)clothing.ClothingType;
+            byte winter = (byte)clothing.WinterGarment;
 
-            if (_hasSent && stage == _lastSentStage && type == _lastSentType && winter == _lastSentWinter)
+            if (_hasSent && _lastSentAdmission == session.LocalClothingAdmission
+                && stage == _lastSentStage && type == _lastSentType && winter == _lastSentWinter)
                 return;
-
-            _hasSent = true;
-            _lastSentStage = stage;
-            _lastSentType = type;
-            _lastSentWinter = winter;
 
             session.SendWorldMessage(
                 new PlayerClothingState
@@ -96,12 +101,20 @@ namespace WinterMP.Core.Sync
                     ClothingStage = stage,
                     ClothingType = type,
                     WinterGarment = winter,
+                    Admission = session.LocalClothingAdmission,
+                    Sequence = session.NextClothingSequence(),
                 },
                 Channel.ReliableOrdered);
+            _hasSent = true;
+            _lastSentAdmission = session.LocalClothingAdmission;
+            _lastSentStage = stage;
+            _lastSentType = type;
+            _lastSentWinter = winter;
         }
 
         public void OnRemoteClothingState(PlayerClothingState message)
         {
+            if (!message.ValidValues) return;
             var session = SessionManager.Instance;
             if (session != null && message.PlayerId == session.LocalPlayerId)
                 return; // echo guard: never re-apply our own clothing as a remote
@@ -138,24 +151,42 @@ namespace WinterMP.Core.Sync
                     ClothingStage = _clothingStage != null ? ReadByte(_clothingStage) : _lastSentStage,
                     ClothingType = _clothingType != null ? ReadByte(_clothingType) : _lastSentType,
                     WinterGarment = _lastSentWinter,
+                    Admission = 0,
+                    Sequence = SessionManager.Instance != null ? SessionManager.Instance.NextClothingSequence() : 0,
                 };
             }
 
-            foreach (var kv in _remote)
+            var session = SessionManager.Instance;
+            if (session == null) yield break;
+            foreach (var player in session.Players)
             {
-                if (kv.Key == excludePlayerId) continue;
+                var state = player.ClothingState;
+                if (state == null || player.PlayerId == excludePlayerId) continue;
                 yield return new PlayerClothingState
                 {
-                    PlayerId = kv.Key,
-                    ClothingStage = kv.Value.Stage,
-                    ClothingType = kv.Value.Type,
-                    WinterGarment = kv.Value.Winter,
+                    PlayerId = player.PlayerId,
+                    ClothingStage = state.ClothingStage,
+                    ClothingType = state.ClothingType,
+                    WinterGarment = state.WinterGarment,
+                    Admission = state.Admission,
+                    Sequence = state.Sequence,
                 };
             }
         }
 
         public bool TryGetClothing(byte playerId, out byte stage, out byte type)
         {
+            // Session-owned accepted values survive scene rebinds; delayed duplicate
+            // packets need not be re-applied just to reconstruct an avatar.
+            var session = SessionManager.Instance;
+            if (session != null)
+                foreach (var player in session.Players)
+                    if (player.PlayerId == playerId && player.ClothingState != null)
+                    {
+                        stage = player.ClothingState.ClothingStage;
+                        type = player.ClothingState.ClothingType;
+                        return true;
+                    }
             if (_remote.TryGetValue(playerId, out var snapshot))
             {
                 stage = snapshot.Stage;

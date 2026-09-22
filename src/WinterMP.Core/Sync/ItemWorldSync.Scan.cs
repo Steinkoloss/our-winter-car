@@ -37,7 +37,7 @@ namespace WinterMP.Core.Sync
 
                 try
                 {
-                    if (!body.gameObject.activeInHierarchy || TrainSync.Owns(body.transform)) continue;
+                    if (!body.gameObject.activeInHierarchy || TrainSync.Owns(body.transform) || _cabinBodies.Contains(body)) continue;
                     if (TryScanCoffeePacket(body) || TryScanHouseholdHolder(body) || TryScanBag(body) || TryScanTrophy(body) || TryScanMeat(body) || TryScanSausage(body) || TryScanSausagePackage(body) || TryScanAtf(body) || TryScanPackage(body) || TryScanSupply(body) || TryScanBulb(body) || TryScanAdvert(body) || TryScanMotorOil(body) || TryScanNativePart(body) || _trackedBodies.ContainsKey(body)) continue;
 
                     bool isVehicle = SyncCatalog.IsVehicleRoot(body);

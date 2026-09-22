@@ -60,6 +60,32 @@ namespace WinterMP.Core.Session
             return false;
         }
 
+        public static bool RememberClothing(ulong steamId, GuestProfile.ClothingSnapshot clothing)
+        {
+            if (steamId == 0 || !clothing.Valid || !clothing.HasValidValues
+                || GuestSaveGuard.ProtectWorld || SessionManager.Instance == null || !SessionManager.Instance.IsHost)
+                return false;
+            EnsureLoaded();
+            if (!Profiles.TryGetValue(steamId, out var profile)) profile = new GuestProfile();
+            if (profile.Clothing.SameValues(clothing)) return false;
+            profile.Clothing = clothing;
+            Profiles[steamId] = profile;
+            TrySave();
+            return true;
+        }
+
+        public static bool TryGetClothing(ulong steamId, out GuestProfile.ClothingSnapshot clothing)
+        {
+            EnsureLoaded();
+            if (Profiles.TryGetValue(steamId, out var profile) && profile.Clothing.Valid && profile.Clothing.HasValidValues)
+            {
+                clothing = profile.Clothing;
+                return true;
+            }
+            clothing = default(GuestProfile.ClothingSnapshot);
+            return false;
+        }
+
         public static bool TryGetNeeds(ulong steamId, out NeedsSnapshot needs)
         {
             EnsureLoaded();
@@ -111,7 +137,7 @@ namespace WinterMP.Core.Session
             {
                 var lines = new List<string>
                 {
-                    "# wintermp-guests.json — guest spawn poses + needs (host only; do not edit while hosting)",
+                    "# wintermp-guests.json — guest spawn poses + needs + clothing (host only; do not edit while hosting)",
                     GuestProfile.Columns,
                 };
 

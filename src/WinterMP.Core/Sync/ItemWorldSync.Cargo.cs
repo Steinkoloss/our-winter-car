@@ -588,5 +588,7 @@ namespace WinterMP.Core.Sync
             _bridge.FindLocalPlayer();
             return _bridge.LocalPlayer != null && item.Body.transform.IsChildOf(_bridge.LocalPlayer);
         }
+
+        internal bool IsHeldForFuel(SyncedItem item) => IsPlayerHeldItem(item);
     }
 }

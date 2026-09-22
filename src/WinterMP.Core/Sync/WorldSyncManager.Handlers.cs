@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using WinterMP.Core.Session;
@@ -70,8 +71,20 @@ namespace WinterMP.Core.Sync
         public void OnFirewoodBuyer(FirewoodBuyerState message) { EnsureSyncReady(); _fsm.OnFirewoodBuyer(message); }
         public void OnMooseCorpse(MooseCorpseState message) { EnsureSyncReady(); _items.OnMooseCorpse(message); }
         public void OnMooseChop(MooseChopIntent message) { EnsureSyncReady(); _items.OnMooseChop(message); }
-        public void OnTrainState(TrainState message) { if (IsGameLevel()) { EnsureSyncReady(); _train.Receive(message); } }
+        public void OnTrainState(TrainState message)
+        {
+            if (!IsGameLevel() || _worldSyncDisabled || Time.unscaledTime < _syncErrorBackoffUntil
+                || !_trainReceiveFailure.CanRun(Time.unscaledTime)) return;
+            // Admit only the current state; never retain or replay a failed packet.
+            try { EnsureSyncReady(); _train.Receive(message); }
+            catch (Exception e) { HandleSyncError("Receive.TrainSync", e, _trainReceiveFailure); }
+        }
         public void OnCoffeeState(CoffeeState message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnCoffeeState(message); } }
+        public void OnVendorCoffeeState(VendorCoffeeState message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnVendorCoffeeState(message); } }
+        public void OnBeerCaseExtract(BeerCaseExtractIntent message, byte actor) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnBeerCaseExtract(message, actor); } }
+        public void OnBeerCaseUpdate(BeerCaseUpdate message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnBeerCaseUpdate(message); } }
+        public void OnVendorCoffeeIntent(VendorCoffeeIntent message, byte actor) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnVendorCoffeeIntent(message, actor); } }
+        public void OnVendorCoffeeResult(VendorCoffeeResult message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnVendorCoffeeResult(message); } }
         public void OnCoffeeIntent(CoffeeIntent message, byte actor) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnCoffeeIntent(message, actor); } }
         public void OnCoffeeDrink(CoffeeDrinkResult message) { if (IsGameLevel()) { EnsureSyncReady(); _items.OnCoffeeDrink(message); } }
         public void OnSausageState(SausageState message) { EnsureSyncReady(); _items.OnSausageState(message); }
@@ -144,6 +157,8 @@ namespace WinterMP.Core.Sync
         {
             _items.ForgetHouseholdFuseIntents(playerId);
             _items.ForgetCoffeePlayer(playerId);
+            _items.ForgetVendorCoffeePlayer(playerId);
+            _items.ForgetBeerCasePlayer(playerId);
             _items.ForgetAdvertPlayer(playerId);
             _phone.Adverts.Forget(playerId);
             _items.ForgetSausageIntents(playerId);
@@ -202,6 +217,14 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteClothingState(PlayerClothingState message) { EnsureSyncReady(); _clothing.OnRemoteClothingState(message); }
         public void OnRemoteHeatSourceState(HeatSourceState message) { EnsureSyncReady(); _heat.OnRemoteState(message); }
+        internal void OnCabinFuelIntent(WoodstoveFeedIntent message, byte actor)
+        { if (!IsGameLevel()) return; EnsureSyncReady(); _heat.OnCabinIntent(message, actor); }
+        internal void OnSaunaTimerIntent(SaunaTimerIntent message, byte actor)
+        { if (!IsGameLevel()) return; EnsureSyncReady(); _heat.OnSaunaIntent(message, actor); }
+        internal void OnSaunaTimerState(SaunaTimerState message)
+        { if (!IsGameLevel()) return; EnsureSyncReady(); _heat.OnSaunaState(message); }
+        internal void OnCabinFuelUpdate(WoodstoveFuelUpdate message)
+        { if (!IsGameLevel()) return; EnsureSyncReady(); _heat.OnCabinUpdate(message); }
         public bool OnHostHeatSourceIntent(HeatSourceIntent message)
         {
             EnsureSyncReady();
@@ -213,6 +236,10 @@ namespace WinterMP.Core.Sync
             return _fluids.TryAcceptGuestState(message, playerId);
         }
         public void OnRemoteFluidContainerState(FluidContainerState message) { EnsureSyncReady(); _fluids.OnRemoteState(message); }
+        public void OnContainerFuelIntent(ContainerFuelIntent message, byte actor)
+        { if (!IsGameLevel()) return; EnsureSyncReady(); _fluids.OnFuelIntent(message, actor); }
+        public void OnContainerFuelResult(ContainerFuelResult message)
+        { if (!IsGameLevel()) return; EnsureSyncReady(); _fluids.OnFuelResult(message); }
         public bool OnHostGuestBrewState(BrewState message, byte playerId)
         {
             EnsureSyncReady();
@@ -275,6 +302,7 @@ namespace WinterMP.Core.Sync
         public void OnRemoteApplianceState(ApplianceState message) { EnsureSyncReady(); _appliances.Apply(message); }
         public void OnRemotePhoneCallEvent(PhoneCallEvent message) { EnsureSyncReady(); _phone.Apply(message); }
         public void OnRemotePissAreaState(PissAreaState message) { EnsureSyncReady(); _pissAreas.Apply(message); }
+        public void OnPissAreaIntent(PissAreaIntent message, byte actor) { EnsureSyncReady(); _pissAreas.OnIntent(message, actor); }
         public void OnRemoteCarRadioState(CarRadioState message) { EnsureSyncReady(); _carRadio.Apply(message); }
         public void OnRemoteInspectionState(InspectionState message) { EnsureSyncReady(); _inspection.Apply(message); }
         public void OnRemotePoliceState(PoliceState message) { EnsureSyncReady(); _police.Apply(message); }

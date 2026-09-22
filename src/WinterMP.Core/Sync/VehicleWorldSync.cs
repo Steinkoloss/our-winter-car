@@ -157,6 +157,7 @@ namespace WinterMP.Core.Sync
                 var snapshot = VehicleStateStreamPolicy.Copy(accepted);
                 snapshot.OwnerPlayerId = ownerPlayerId;
                 snapshot.Sequence = VehicleState.SnapshotSequence;
+                CaptureContainerTank(item, snapshot);
                 return snapshot;
             }
 
@@ -185,6 +186,8 @@ namespace WinterMP.Core.Sync
                 Rpm = (ushort)Mathf.Clamp(revs, 0f, ushort.MaxValue),
                 SpeedTenthsKmh = (ushort)Mathf.Clamp(speedKmh * 10f, 0f, ushort.MaxValue),
                 FuelLevel = ReadFuelLevelByte(item),
+                FuelRevision = item.FuelRevision,
+                FuelLiters = item.FuelRevision != 0 && item.FuelTankLevelVar != null ? item.FuelTankLevelVar.Value : 0,
                 CoolantTemp = ReadCoolantTempByte(item),
                 Gear = ReadGearByte(item),
             };

@@ -188,7 +188,7 @@ BUILDING.md for the required two-player verification.
 | Section | Registers as | Example |
 |---------|----------------|---------|
 | `doors` | Door handles (house, car, sauna) | Open door / Close door; garage Open/Close |
-| `controls` | Buttons, knobs, interactables | SORBET hazard, beercase Remove bottle, Fleetari brochure Set job / On / Switch |
+| `controls` | Buttons, knobs, interactables | SORBET hazard, Fleetari brochure Set job / On / Switch; beer-case relative Remove bottle replay excluded (see docs/I10-BEER-CASE.md) |
 | `switchRules` | ON/OFF style toggles | Lights, radiators, fireplaces, TV |
 | `ignitions` | Key/ACC FSMs | `IGNITION` objects with ACC on / Motor OFF |
 | `starters` | Engine run/stall FSMs | SORBET/CORRIS Starter, CORRIS Pushstart |

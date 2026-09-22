@@ -30,6 +30,9 @@ namespace WinterMP.Core.Sync
         private readonly WiringInstallLedger _wireInstallLedger = new WiringInstallLedger();
         private WiringInstallClient? _wireInstallClient;
         private WiringInstallRequest? _wireInstalling;
+        private WiringState? _wireBefore;
+        private bool _wireMeshBefore, _wireTriggersBefore, _wireIgnitionBefore, _wireTriggerBefore;
+        private int _wireFinishCount;
         private float _wireDeadline, _nextWireBind, _nextWireNotice;
 
         private static GameObject WireObject(string path)
@@ -79,7 +82,7 @@ namespace WinterMP.Core.Sync
                 {
                     var end = b.Ends[i]; var finish = FsmHook.FindState(end, c["finishState"])!;
                     b.Finish[i] = finish; b.Originals[i] = finish.Actions;
-                    if (!FsmHook.EnsureRemoteEntry(end, c["finishState"]) || !FsmHook.EnsureRemoteEntry(end, c["resetState"]))
+                    if (!FsmHook.EnsureRemoteEntry(end, "Sound") || !FsmHook.EnsureRemoteEntry(end, c["resetState"]))
                         throw new InvalidOperationException("Cannot guard native wire installation.");
                     var actions = new List<FsmStateAction> { new FsmHookAction(() => OnWireFinish(b, end)) };
                     actions.AddRange(finish.Actions); finish.Actions = actions.ToArray();
@@ -132,7 +135,12 @@ namespace WinterMP.Core.Sync
 
         private void OnWireFinish(WireConnection b, PlayMakerFSM end)
         {
-            if (!b.Guest) return;
+            if (!b.Guest)
+            {
+                if (_wireInstalling != null && ++_wireFinishCount > 1)
+                    FsmHook.FireRemoteEntry(end, b.Rule.Connection!["resetState"]);
+                return;
+            }
             // A self-transition at the head prevents every native saved write and
             // broadcast in Finish assembly. The two-endpoint handshake stays native.
             FsmHook.FireRemoteEntry(end, b.Rule.Connection!["resetState"]); b.Reset = true;
@@ -150,6 +158,10 @@ namespace WinterMP.Core.Sync
         private bool GuestCanReachWire(SessionManager session, byte actor, WireConnection b)
         {
             if (b.Tool == null || !b.Tool.activeInHierarchy) return false;
+            // The binding survives pickup, but a replaced global, changed saved
+            // identity or removed Use FSM must not authorize the cached object.
+            try { if (FindWiringTool(b.Rule.Connection!["toolPath"]) != b.Tool) return false; }
+            catch (InvalidOperationException) { return false; }
             SyncedItem? tool = null;
             foreach (var item in _items.Values) if (item.Body != null && item.Body.gameObject == b.Tool) { tool = item; break; }
             if (tool == null || tool.LocallyOwned || (tool.RemoteOwner != WorldSyncIds.NoOwner && tool.RemoteOwner != actor)) return false;
@@ -174,17 +186,29 @@ namespace WinterMP.Core.Sync
                 if (receipt == null) return;
                 if (status == WiringInstallStatus.Pending && b != null)
                 {
+                    _wireBefore = state;
+                    _wireMeshBefore = b.Mesh.activeSelf; _wireTriggersBefore = b.Triggers.activeSelf;
+                    _wireIgnitionBefore = b.Ends[1].gameObject.activeSelf;
+                    _wireTriggerBefore = b.Data.FsmVariables.FindFsmBool("Trigger").Value;
+                    _wireFinishCount = 0;
                     _wireInstalling = WiringInstallLedger.Copy(request); _wireDeadline = Time.unscaledTime + 2;
-                    FsmHook.FireRemoteEntry(b.Ends[0], b.Rule.Connection!["finishState"]);
+                    // Cancel an incomplete local selection, then run both native
+                    // Sound/CLOSELOOP actions. Never jump over the handshake.
+                    foreach (var end in b.Ends) FsmHook.FireRemoteEntry(end, b.Rule.Connection!["resetState"]);
+                    FsmHook.FireRemoteEntry(b.Ends[0], "Sound");
+                    FsmHook.FireRemoteEntry(b.Ends[1], "Sound");
                 }
                 SendWireReceipt(session, receipt);
             }
             catch (Exception error)
             {
-                FailWireConnection(error);
-                var receipt = _wireInstallLedger.Complete(request, false);
-                if (receipt != null) SendWireReceipt(session, receipt);
-                _wireInstalling = null;
+                if (_wireInstalling != null) FinishWireInstall(session, false);
+                else
+                {
+                    var receipt = _wireInstallLedger.Complete(request, false);
+                    if (receipt != null) SendWireReceipt(session, receipt);
+                }
+                WinterMPPlugin.Log.LogWarning("Wire installation failed: " + error.Message);
             }
         }
 
@@ -224,15 +248,40 @@ namespace WinterMP.Core.Sync
                 }
                 else if (_wireInstalling != null)
                 {
-                    bool installed = b.Data.FsmVariables.FindFsmBool("Installed").Value;
+                    bool installed = _wireFinishCount == 1 && b.Data.FsmVariables.FindFsmBool("Installed").Value
+                        && b.Mesh.activeSelf && !b.Triggers.activeSelf;
                     if (installed || Time.unscaledTime >= _wireDeadline)
-                    {
-                        var receipt = _wireInstallLedger.Complete(_wireInstalling, installed); _wireInstalling = null;
-                        if (receipt != null) SendWireReceipt(session, receipt);
-                    }
+                        FinishWireInstall(session, installed);
                 }
             }
-            catch (Exception error) { FailWireConnection(error); }
+            catch (Exception error)
+            {
+                if (_wireInstalling != null) FinishWireInstall(session, false);
+                else FailWireConnection(error);
+            }
+        }
+
+        private void RestoreWireInstall()
+        {
+            var b = _wireConnection;
+            if (b == null || _wireBefore == null) return;
+            // Reset both selections before restoring the checkpoint so a late
+            // CLOSELOOP cannot turn a timed-out request into a saved installation.
+            foreach (var end in b.Ends) FsmHook.FireRemoteEntry(end, b.Rule.Connection!["resetState"]);
+            b.Data.FsmVariables.FindFsmBool("Installed").Value = (_wireBefore.Flags & WiringState.Installed) != 0;
+            b.Data.FsmVariables.FindFsmBool("Trigger").Value = _wireTriggerBefore;
+            b.Mesh.SetActive(_wireMeshBefore); b.Triggers.SetActive(_wireTriggersBefore);
+            b.Ends[1].gameObject.SetActive(_wireIgnitionBefore);
+        }
+
+        private void FinishWireInstall(SessionManager session, bool accepted)
+        {
+            var request = _wireInstalling;
+            if (request == null) return;
+            if (!accepted) RestoreWireInstall();
+            var receipt = _wireInstallLedger.Complete(request, accepted);
+            _wireInstalling = null; _wireBefore = null;
+            if (receipt != null) SendWireReceipt(session, receipt);
         }
 
         private void FailWireConnection(Exception error)
@@ -259,6 +308,7 @@ namespace WinterMP.Core.Sync
 
         private void ClearWireConnection()
         {
+            if (_wireInstalling != null) RestoreWireInstall();
             var b = _wireConnection; _wireConnection = null;
             if (b != null)
             {
@@ -275,7 +325,7 @@ namespace WinterMP.Core.Sync
                     foreach (var end in b.Ends) if (end != null) end.SendEvent(b.Rule.Connection!["resetEvent"]);
                 }
             }
-            _wireInstallLedger.Clear(); _wireInstallClient = null; _wireInstalling = null;
+            _wireInstallLedger.Clear(); _wireInstallClient = null; _wireInstalling = null; _wireBefore = null;
             _nextWireBind = _nextWireNotice = 0;
         }
     }

@@ -20,6 +20,7 @@ namespace WinterMP.Core.Sync
 
         private void AnnounceItemDespawn(uint itemId, string reason)
         {
+            if (_cabinItemIds.Contains(itemId)) return;
             if (!_items.TryGetValue(itemId, out var item) || item.DespawnSent) return;
 
             var session = SessionManager.Instance;
@@ -54,6 +55,7 @@ namespace WinterMP.Core.Sync
 
         public void OnRemoteItemDespawn(ItemDespawn message)
         {
+            if (_cabinItemIds.Contains(message.ItemId)) return;
             // Host-authorized removal may arrive before deferred materialization.
             RecordItemRetirement(message.ItemId);
 
@@ -87,6 +89,7 @@ namespace WinterMP.Core.Sync
         /// </summary>
         public bool TryAcceptGuestDespawn(ItemDespawn message, byte playerId)
         {
+            if (_cabinItemIds.Contains(message.ItemId)) return false;
             if (!_items.TryGetValue(message.ItemId, out var item) || item.Body == null
                 || !CanSyncItemMotion(item)
                 || (item.RemoteOwner != playerId && item.RemoteOwner != WorldSyncIds.NoOwner))

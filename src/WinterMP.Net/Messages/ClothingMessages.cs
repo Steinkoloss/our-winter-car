@@ -20,15 +20,21 @@ namespace WinterMP.Net.Messages
         /// <summary>Wire v79: worn winter garment (0 none, 1 jacket, 2 coverall) — the separate
         /// <c>ClothType</c> on EQUIPMENTS/winter jacket|coverall, so peers see the worn garment.</summary>
         public byte WinterGarment;
+        public ulong Admission;
+        public uint Sequence;
+        public bool ValidValues => WinterGarment <= 2;
 
         public MessageId Id => MessageId.PlayerClothingState;
 
         public void Write(NetWriter writer)
         {
+            if (!ValidValues) throw new ProtocolException("Invalid winter garment.");
             writer.WriteByte(PlayerId);
             writer.WriteByte(ClothingStage);
             writer.WriteByte(ClothingType);
             writer.WriteByte(WinterGarment);
+            writer.WriteUInt64(Admission);
+            writer.WriteUInt32(Sequence);
         }
 
         public void Read(NetReader reader)
@@ -37,6 +43,9 @@ namespace WinterMP.Net.Messages
             ClothingStage = reader.ReadByte();
             ClothingType = reader.ReadByte();
             WinterGarment = reader.ReadByte();
+            Admission = reader.ReadUInt64();
+            Sequence = reader.ReadUInt32();
+            if (!ValidValues) throw new ProtocolException("Invalid winter garment.");
         }
     }
 }

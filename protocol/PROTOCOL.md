@@ -1,6 +1,403 @@
 # WinterMP wire protocol
 
-Protocol version: **257** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+Protocol version: **265** (`ProtocolInfo.Version` in `src/WinterMP.Net/Protocol.cs`).
+
+### v265 — bounded electric sauna timer
+
+270 SaunaTimerIntent, channel 0, authenticated guest -> host: SourceId:u32,
+Epoch:u32, Actor:u8, Sequence:u32, ExpectedRevision:u32, Timer:f32,
+Eye:vec3, Direction:vec3. Exact home sauna source hash; no owner lease. Host
+checks fresh living actor, pose-bounded eye and first-hit knob contact within
+the native one-metre ray, current revision and one +/-10 knob step clamped
+1..120. Host-local scroll enters this same authority before native mutation.
+
+271 SaunaTimerState, channel 0, selected host -> guests: SourceId:u32, Epoch:u32,
+Revision:u32, Actor:u8, Sequence:u32, HighWater:u32, Status:u8 (0 observation,
+1 accepted, 2 rejected), Timer:f32, Time:f32, KnobAngle:f32. Absolute native knob,
+simulation timer and local mesh Y angle; not temperature/power/water/fuel state.
+Timer observations allow vanilla cold zero; requests do not. Time is 0..720.
+Epoch/revision are nonzero. Per-actor nonwrapping sequence high-water survives
+rejoin and is re-advertised; revision changes on observed timer-state changes.
+Reserve before all callbacks; stale, duplicate and reentrant requests never
+execute again. Partial native failures fault the seam without retry or success.
+Guests retain early state until binding, suppress timer writers and reconcile
+absolutely, never replaying a delta. Native SaunaTimeKnob save/load stays intact;
+no new save fields or Steam/native acceptance claim. Next free message ID: 272.
+See `docs/H08-SAUNA-SEAM.md` for static native bindings and portable limits.
+
+### v264 — bounded portable guest clothing persistence
+
+No new message IDs (next free remains 270). All additions are append-only and
+use reliable ordered channel 0. Existing owner-authoritative dressing reports
+and host relay/join snapshots remain; there is no native clothing command.
+
+* HandshakeResponse (2) appends `clothingAdmission:u64`. The host generates a
+  nonzero token for each guest admission, including reconnects using the same
+  player slot. Duplicate handshakes re-acknowledge the existing token.
+* PlayerSpawn (20) appends the same owner's `clothingAdmission:u64`. The host
+  owner uses token zero. Duplicate introductions do not reset clothing history.
+* GuestSpawn (24) retains its 95-byte prefix including ID and appends
+  `clothingPlayerId:u8, clothingAdmission:u64, hasSavedClothing:u8 (0/1),
+  clothingStage:u8, clothingType:u8, winterGarment:u8`: **108 bytes including ID**.
+  The triple must be zero if absent; a present winter garment is 0..2. The
+  receiving GAME-scene guest must be connected and match both assigned player
+  ID and current admission before accepting its one spawn offer. Other players'
+  outfits and old-admission offers cannot restore local state.
+* PlayerClothingState (32) appends `admission:u64, sequence:u32` after the existing
+  four bytes: **18 bytes including ID**. Stage/type retain the existing byte
+  domain 0..255; winter is 0 none, 1 jacket, 2 coverall. Sequences are positive,
+  nonwrapping and strictly increasing per admitted owner. Invalid, duplicate,
+  old-sequence, unknown-player and old-admission packets do not update accepted
+  state, persist, or relay. The host verifies sender/player identity; guests
+  accept only their selected admitted host. Snapshots carry the accepted owner's
+  sequence/token, not a newly generated guest report. The host's own snapshot
+  takes a new sequence from its local stream. Admission tokens are identity
+  freshness markers, not secrets or a substitute for authenticated transport.
+
+The historical CSV sidecar appends optional zero-based columns 18..20:
+`clothingStage,clothingType,winterGarment`. Only a complete range-valid integer
+triple asserts clothing (explicit 0,0,0 is known). Missing, partial, malformed,
+nonfinite or out-of-range triples are ignored; earlier pose/needs data survive.
+Legacy profiles remain readable. Clothing without needs pads columns 8..17 with
+empty cells; the current parser does not treat that padding as zero needs.
+The host saves only authenticated accepted guest reports under that guest's
+SteamID, guarded by host role and the existing guest-save guard.
+
+Restore updates a mod-owned local snapshot, NOT any native FsmInt, garment FSM,
+ES2 tag or personal save. After local spawn readiness and both native clothing
+bindings, the saved snapshot is reported through the normal owner path. The
+loaded native tuple is only a baseline: unchanged personal-save clothing cannot
+immediately erase the restored snapshot. A later owner-native tuple change
+supersedes it. This portable bridge does NOT claim restored native insulation,
+garment visuals, ordinary input, native persistence, live different-save join,
+Steam/two-PC or soak acceptance. See `docs/CLOTHING-PERSISTENCE.md`.
+
+### v263 — authenticated native yard-stain contributions (H15 WIP)
+
+New ID 269 `PissAreaIntent`; next sequential unused ID 270. Reliable ordered (0)
+only. An authenticated guest sends to the host; the host rejects state 109 from
+guests. Guests accept state 109 only from their selected, handshaken host.
+
+Payload order (little endian; excluding u16 ID):
+
+* 269: u32 world epoch, u32 observed host revision, u32 request sequence,
+  u64 admission token, u8 actor, u8 area (1..5), u8 native action
+  (1 Full power, 2 pumping/State 4), f32 scale contribution. Packet: 29 bytes.
+* 109 retains its original u16 sequence and five u8 scales, then appends
+  u32 world epoch, u32 revision, u8 admission count (0..254), followed by
+  count entries of u8 actor, u64 token, u32 accepted request high-water.
+  A one-admission packet is 31 bytes. Scale quantization remains truncation
+  of native localScale.x *20. The old u16 sequence is retained on the wire;
+  nonwrapping u32 revision now determines absolute-state ordering.
+
+Epochs are nonzero and change at world/session reset. Admissions name the exact
+connected RemotePlayer instance; reconnecting a reused player slot gets a new
+token, not its previous admission. Snapshots carry absolute presentation and
+admissions, never a contribution to replay. Guest epoch changes require reset;
+duplicate/old revisions cannot undo newer state. Sequence zero/wrap and
+duplicate/out-of-order requests are rejected without consuming high-water.
+
+The host verifies actor equality with transport identity, admission/epoch, a
+host-issued revision no older than one second, fresh live actor pose (0..0.6 s),
+no driving/passenger state, and native closest-area selection within 20 metres,
+including the four NOPISS exclusion points, plus the native world-up 100m roof
+ray on layer 27 at the guest's position (not the host's local RoofCheck flag).
+The action kind comes from the
+audited guest native callback; it is an input report, not host observation of a
+remote FSM. Contributions must be finite in (0,0.25], separated by at least
+0.1 seconds per actor. All five host scales must be finite/in-native-range and
+the selected scale must increase; initialization and native SAVEGAME are not
+interrupted. Reentry and native write failures do not consume accepted sequence.
+A result-send failure keeps the committed mutation/sequence and relies on the
+periodic absolute snapshot, never a second application of the intent.
+
+Static native evidence corrects an older description: these are the five indoor
+YARD room-stain meshes, not a player's personal Urine need or five snow colliders.
+Vanilla selects the closest object after its indoor PISS entry and grows native
+ChangeScale by Addition*deltaTime, where Addition=PissRate/3500; limits are
+3/5/7/4/4. Guest SetScale is intercepted before mutation; the native producer and
+personal need effects remain local. Host contributions add to the selected native
+transform; a pending host-local ChangeScale is advanced too, preventing late native
+SetScale from overwriting a guest result. Host-local native actions remain enabled.
+Scale1..5 are only LoadFloat/SaveFloat caches. Snapshots therefore read/apply
+transforms and leave the native load/save chain and HomePissStain1..5 tags alone.
+
+Evidence is production-linked portable doubles plus static assets and net35 build,
+not live native scheduling/contact, ordinary input, native save/reload, physical,
+Steam/two-PC or four-player acceptance. Current package metadata is still v262
+outside this implementation card's allowed paths: v263 is explicit WIP, not a
+package ready for deployment. See docs/H15-YARD-STAINS.md and the worker receipt.
+
+### v262 — finite gasoline-container to parked Sorbet tank transfer
+
+IDs 267 `ContainerFuelIntent`, 268 `ContainerFuelResult`; ID 269 was subsequently allocated by v263.
+Both use reliable ordered (0). Only authenticated peers may send intents to the
+host; only the selected host after handshake may send results to a guest.
+Payload order, little endian, excluding the u16 message ID:
+
+* 267: u32 source container ID, u32 destination vehicle ID, u8 player,
+  u32 sequence, f32 requested liters.
+* 268: u32 source container ID, u32 destination vehicle ID, u8 player,
+  u32 sequence, u32 host transfer revision, f32 accepted liters,
+  f32 absolute source liters, f32 absolute destination liters.
+
+The actor must match session transport authentication (host-local actor 0 uses the
+same gate). Nonzero sequences strictly increase per actor for the session; zero,
+duplicates, old sequences and wrap are refused. Rejections return no result and do
+not consume a sequence. Authority history clears at session/scene teardown, not on
+an ownership handover. Transfer revisions are host-global, nonzero, never wrap.
+Amounts must be finite and positive, fit entirely in both native capacities and
+be representable as an exactly conserved single-precision debit/credit; otherwise
+neither level changes. No partial over-capacity fill or invented fuel is allowed.
+
+Core binds only the tracked `EQUIPMENTS/gasoline(itemx)` source and
+`SORBET(190-200psi)` tank. Current source ownership, fresh accepted guest item pose
+and player pose (age 0..2 s), source/player <=3 m and tank/player/source <=8 m are
+required. The target must have no local/remote driver or simulator lease, no active
+ignition and speed <=0.5 m/s. Source uses the native saved `FluidTrigger::Data.Fluid`,
+not cap-trigger `FuelLevel` scratch; destination uses `FuelTankSorbett::Data.FuelLevel`.
+Local Alt+R while holding that tracked can requests 0.25 L into that specific tank.
+This is explicit mod input, not native post-pour delta inference; input and native
+binding remain NOT_TESTED outside portable doubles.
+
+State 54 appends u32 `FuelRevision` after Capacity (packet length 22 bytes).
+State 60 appends u32 `FuelRevision`, f32 `FuelLiters` after HandoffTemperature
+(packet length 43 bytes). FuelLiters must be finite/nonnegative, zero if revision
+is zero. Revision zero retains legacy normalized-byte fuel semantics. Revisioned
+tanks apply exact liters, never the lossy gauge byte. Driver reports must match
+the host tank revision; delayed lower-revision states cannot overwrite an accepted
+transfer. Copies, live publications and snapshots carry the revision and exact
+liters. Native future consumption by the current driver still uses that revision.
+Known gasoline cans publish native host levels only; guest scalar reports cannot
+mint fuel or undo the finite debit even after acknowledging its revision. Other
+fluid-container identities retain their previous scalar path. Accepted results
+apply absolute levels, including on the requesting guest, without replaying native
+pouring. Missing bindings defer the result; periodic snapshots remain in use.
+
+No new save keys, save simulation, mixtures, fire, detached engines, coolant or
+brake-fluid behavior. Native discovery/input, Steam/two-PC, different saves, late
+join/rejoin, native save/reload and four-player soak are NOT_TESTED. This is bounded
+I11/V10 portable implementation evidence, not full vehicle-operation acceptance.
+
+### v261 — one beer-case absolute-count transaction (portable; native binding unresolved)
+
+IDs 265 `BeerCaseExtractIntent` and 266 `BeerCaseUpdate`; next unused ID 267.
+Both use reliable ordered (0), including snapshots. Intents require an authenticated
+peer at the host. Updates require the selected host and completed guest handshake.
+The beercase::Use `Remove bottle` generic control is removed/quarantined; it must
+never be used as a relative result or fallback for this transaction.
+
+Payload order (little-endian, excluding the u16 message ID):
+
+* 265: u32 case ID; string exact native ID; u32 epoch, connection token, sequence,
+  expected revision; i32 expected remaining count; u8 player.
+* 266: u32 case ID; string exact native ID; u32 epoch, revision; i32 capacity,
+  absolute remaining count; u8 available (strict 0/1), player; u32 connection,
+  sequence. Snapshot correlation is player=255, connection=sequence=0. An accepted
+  extraction echoes the actor/connection/sequence; it is not a drink-effect grant.
+
+The native ID is an opaque, nonempty 1..128 printable non-space ASCII string, not
+a scene-path ordinal. Case ID is FNV-1a32(`beercase:` + native ID). Both must match
+the host binding exactly (hash equality alone is insufficient). A collision must
+fail discovery. Epoch/revision/connection/sequence are nonzero and never wrap;
+actors are 1..254. Host admission supplies monotonically increasing connection
+tokens per actor, retaining token high-water on disconnect. The request's token
+never authenticates its own sender. Capacity must be supplied by audited native
+data, in 1..65535 (a wire bound, NOT a claimed native pack size). Remaining is
+0..capacity; extraction expects a positive count and exact current revision/count.
+
+Both local-host and guest input enter the same serialized authority. Fresh living
+host-observed actor/contact (ages 0..0.6 seconds, unobstructed distance 0..1.5 m),
+exact case identity, availability, current count and connection are required;
+rigidbody/cargo ownership is deliberately irrelevant. Authenticated attempts spend
+their sequence before world checks, including busy/reentrant denials. Competing
+requests with the same base revision/count cannot both consume. Invalid requests
+produce no update and no canonical/native mutation. Host compare/extract must be
+atomic; false means no native mutation. The authority observes exactly one removed
+bottle before publishing the absolute result; uncertain/partial execution faults
+the binding without retry or predicted success. Read-only capture observes vanilla
+changes and clears action correlation for full/item-group/targeted recovery.
+
+Replicas pin identity/epoch/capacity and reject stale/duplicate revisions. Applying
+an absolute update never extracts, spawns, changes ownership or repeats drinking.
+No beer inventory, save key, bottle item manifest or persistence sidecar is added.
+Native installation, contact/input interception and view projection remain UNBOUND:
+the graph dump lacks capacity, bottle-array/action fields and save-key semantics.
+Portable source-linked ItemWorldSync tests are not native guest capability evidence.
+See `docs/I10-BEER-CASE.md`; I10 remains partial, including wood-carrier contents.
+
+### v260 — vendor coffee portable foundation; native adapter DISABLED
+
+New registry IDs 262 `VendorCoffeeIntent`, 263 `VendorCoffeeState`, 264
+`VendorCoffeeResult`. IDs 265–266 were subsequently allocated by v261. Household coffee 245–247 is unchanged.
+All three use reliable ordered (0), including full/item-group/targeted snapshots;
+bulk and unreliable channels are rejected. Intent: authenticated peer -> host.
+State/result: selected host -> handshaken guest. This is protocol/policy evidence,
+NOT a working native CoffeeAutomatic adapter or a native persistence claim.
+
+Payload order (little-endian, excluding the u16 message ID):
+
+* 262: u32 machine, cup, session epoch, serving generation, expected revision,
+  connection token, sequence; u8 player, action.
+* 263: u32 machine, cup, session epoch, serving generation, revision,
+  holder connection; u8 holder, completed-action mask, lifecycle; f32 contents;
+  Vector3 position (3 f32); Quaternion rotation (4 f32).
+* 264: u32 machine, cup, session epoch, serving generation, accepted revision,
+  connection token, sequence; u8 player, action; f32 consumed contents.
+
+Actions: Acquire=1, Purchase=2, Fill=3, Drink=4. Lifecycle: Available=1, Active=2,
+Retired=3 refers to a **network serving**, not destruction/persistence of the native
+cup. Completed-action bits 0..3 record acceptance once per serving. Contents are
+finite nonnegative native units, not household capacity/caffeine constants.
+Result consumed is positive only for Drink; other receipts carry zero. No personal
+effect event, factory name, wallet delta, native save key or guessed price is sent.
+
+The future audited adapter must supply collision-checked machine/cup identities,
+non-reused serving generations, a nonzero host-session epoch, and monotonically
+increasing per-player connection tokens assigned on authenticated admission.
+Zero identity/revision/sequence/token, actors outside 1..254, invalid enums/masks,
+non-finite contents, invalid pose, and nonempty/nonzero-holder inactive cups are
+refused. The host compares the request token to its own connection record, NOT to
+the token claimed on the wire. Sequence and revision counters never wrap; exhausted
+counters fail closed until a new authoritative session, not silent reuse.
+
+Both actors enter `VendorCoffeeAuthority.TryAccept`. Read-only preparation plus
+an atomic host commit is serialized for one machine/cup, including reentrant
+callbacks. Authentication, fresh living pose, range, exact identity/generation,
+expected revision, holder connection and completed-action mask are checked before
+preparation. Invalid, duplicate, stale, conflicting and no-effect plans produce no
+state/result or native commit. Valid envelopes spend their sequence even if denied
+later. A successful commit advances absolute state once and then emits a correlated
+receipt. Uncertain/throwing execution disables further acceptance; no retry fallback.
+
+Replicas pin their host epoch and cup identity, retain revision/generation/action
+high-water marks and retirement, and reject resurrected older servings. Snapshots
+never replay acquire/pay/drink. State must arrive before its result on channel 0.
+Only a matching live pending request in the drinker's connection can consume a
+Drink receipt once; expiry, disconnect or fresh rejoin removes pending effects.
+Rejoin reconstructs absolute state, not money operations or personal effects.
+
+`vendorCoffee` catalog schema 1 permits exactly the discovered INSPECTION machine
+and requires eight explicitly unresolved native fields. It has no enable switch:
+non-null invented fields, missing keys or drift disable that section, not household
+coffee. Core routes the dedicated messages and all snapshot seams through an inert
+`VendorCoffeeRuntime`. The exact INSPECTION button is quarantined from generic Buy
+registration even if its section is absent/malformed; other shop rules are untouched.
+No native FSM input interception, cup binding/materialization, actor geometry,
+connection bootstrap, player effect or save writer is installed. Vanilla local
+actions are NOT claimed suppressed or multiplayer-safe. See
+`docs/H10-VENDOR-COFFEE-FOUNDATION.md` for the missing-field and extraction contract.
+
+### v259 — fixed cabin firewood authority (portable/build candidate)
+
+New IDs 260 `WoodstoveFeedIntent` and 261 `WoodstoveFuelUpdate`, reliable ordered
+(0). IDs 262–264 were subsequently allocated by v260. Only authenticated guest -> host intents and the
+selected, handshaken host -> guest updates are admitted. Actor in an intent is
+compared with the peer-authenticated player ID. Local host contact is queued and
+uses the same `WoodstoveFuelAuthority.Decide` entry, not a native bypass.
+
+Wire payload order (little-endian; bool is one byte):
+
+* 260: u32 source, u32 epoch, u8 actor, u32 sequence, u32 resource.
+* 261: u32 epoch, u8 actor (255 untargeted), u32 answered sequence (0 admission),
+  u32 actor high-water, bool isDecision, u8 `WoodstoveFeedStatus`, bool hasSnapshot;
+  if hasSnapshot: u32 source, u32 revision, i32 absolute fuel, f32 observed heat,
+  bool native Hiillos/embers proxy, u16 retirement count, that many u32 retired IDs;
+  then u32 resource (0 no descriptor), u8 shape (1 native log root half,
+  2 native log child half), Vector3 position (3 f32), Quaternion rotation (4 f32).
+  The retirement array is sorted, unique, nonzero and bounded to 256 entries.
+
+Status values in order 0..14: Accepted, InvalidActor, StaleEpoch,
+ReplayedSequence, WrongSource, InvalidResource, ResourceConsumed,
+ActorUnavailable, OutOfRange, InvalidEquipment, InvalidContact,
+SourceUnavailable, NativeFailure, Busy, Pending.
+
+Only `CABIN/Cabin/woodstove/Fireplace` is bound. The host assigns nonzero random
+epoch and piece IDs, collision-checked against the item table. A piece descriptor
+is linked to an actual native firewood Collider by mesh/collider shape locally;
+neither a clone path nor a Unity instance ID is an identity on the wire. Live
+pieces use the existing authenticated ItemTransform route under this new ID.
+Generic ItemDespawn and legacy cabin HeatSourceIntent.FeedWood cannot spend it.
+Host scans split, unparented PART pieces within 20m of the stove, at most 256
+identities in one world. Broader logging/creation interactions remain out of scope.
+
+Host observations require alive/fresh actor pose (2s), distance <=3m, real native
+trigger contact, matching available resource and exclusive motion/release access,
+null native parent, exact PART/firewood(Clone), and WoodTrigger.Woods in 0..3.
+There is no axe/host-camera/host-hand prerequisite for an authorized guest feed.
+The adapter invokes the audited Destroy firewood state once with Collider assigned,
+checks WoodTrigger.Woods increased by one (never SetFire's read cache), reserves the
+piece, and waits for Unity destruction on a later frame. Pending/partial failure
+carries no success snapshot. Timeout (2s) or inconsistent state faults the authority
+until world reset; no possibly partial mutation is retried. Native depletion during
+the wait is observed in the final absolute snapshot, not overwritten with old fuel.
+
+Admission repeats the retained epoch, per-actor u32 attempt high-water and all
+consumed-resource tombstones, plus live piece descriptors. Invalid authenticated
+attempts retain sequence high-water; rejoin does not clear this ledger. Guests
+allocate above admission, never predict fuel/destruction, and accept revisioned
+absolute snapshots monotonically without losing matching acknowledgments when a
+new snapshot overtakes a result. Tombstones cannot disappear or materialize again.
+Implementation correction (round 000085, no wire/layout change): Busy attempts
+also retain authenticated current-epoch high-water. A duplicate Busy/replay denial
+does not cancel a guest attempt already confirmed Pending; the original final
+Accepted/NativeFailure still resolves it. Core holds a reentrancy guard through
+decision/admission publication so callbacks cannot feed another piece or interleave
+a nested outcome; rejected callback attempts remain in the same sequence ledger.
+See `docs/H07-FUEL-SEAM.md` for portable evidence and the still-open native gates.
+Legacy cabin HeatSourceState and generic SetFire state relays are excluded; sauna,
+other fireplaces and grills keep their previous paths. Only guest cabin feed and
+fuel-depletion writers are suppressed, with loaded-log visuals applied absolutely.
+
+There is no custom cold-save fuel/log persistence: native initialization and
+NoRainCabin temperature save behavior are untouched. Runtime destruction timing,
+two-peer replica materialization, ordinary input, native save/reload, Steam/two-PC
+and soak remain NOT_TESTED under the inherited native-launch prohibition. Portable
+adapter doubles and static signature checks are not native gameplay evidence.
+
+### v258 — shared scraper lease and one parked Corris windshield
+
+New IDs 258 `ScraperAction` and 259 `PaneScrapeUpdate`, reliable ordered (0).
+At v258 the next unused ID was 260. Only authenticated guest -> host actions and selected,
+handshaken host -> guest updates are admitted. Host local actions use the same
+authority. No vehicle-ownership grant or VehicleClimate intent is involved.
+
+Payload order (all integers little-endian, bool = one byte):
+
+* 258: u32 epoch, u8 actor, u32 sequence, u32 vehicleId, u8 pane,
+  u32 toolId, u8 operation, Vector3 eye, Vector3 unit direction (each 3 f32).
+  Operation: 0 pickup, 1 equip, 2 off, 3 drop, 4 keepalive, 5 stroke.
+  Pane 1 means only catalog CORRIS/BODY/Windshield/collider::Scrape.
+  No guest cutoff/result or equipped-truth field exists.
+* 259: u32 epoch, u32 vehicleId, u32 revision, f32 absolute cutoff,
+  u32 toolId, u8 holder (255 none), bool equipped, u8 actor (255 untargeted),
+  u32 answered sequence (0 snapshot), u32 actor high-water, bool isDecision,
+  u8 status (PaneScrapeStatus: Accepted=0 through NativeFailure=10).
+  Only an accepted isDecision stroke grants actor-local sound/body heat once.
+  Equipment acknowledgments and periodic current-state snapshots grant no effects.
+
+The host establishes an exclusive pickup lease using the discovered shared item
+and native first-hit pickup distance 1m, then accepts equip/off/drop transitions
+only for that holder. Keepalive cannot create or equip a lease. Host-observed
+alive actor pose must be at most .6s old; lease expires at .6s and is revoked on
+death/disconnect/drop. Off revokes equipped permission while retaining held pickup.
+Input eye is bounded to feet (height .2..2.1m, horizontal .6m, yaw deviation <=45°),
+and finite unit direction is raycast in host physics. Stroke requires first hit
+on exactly the .8m pane, outside actor and linear/angular parked speed <=.1.
+All authenticated valid-epoch attempts consume monotonically increasing u32
+sequence, including denials; no wrap. Host high-water survives peer rejoin and
+is sent in targeted snapshots to resynchronize restarted clients. A new world
+or host session uses a new nonzero epoch; no saved cutoff replay is introduced.
+
+Only the audited native glass FloatAdd/material actions execute on the host.
+The guest native additive SendEventByName is replaced before mutation. Accepted
+results carry the exact float, superseding climate byte writes for this pane;
+other panes/interior frost remain on the existing climate route. Vanilla roof
+startup, FREEZE and cold-load initialization remain native and are observed as
+new absolute revisions, never restored from custom persistence.
+
+Evidence limit: connected source/portable tests/net35 build are distinct from
+rendered native equipment/contact acceptance. See docs/V11-PANE-AUDIT.md.
 
 ### v257 — R20 battery boxes and persistent loose cells
 
@@ -653,6 +1050,16 @@ uninstallation and reopens endpoints when prerequisites permit; replaying an old
 accepted request cannot reconnect it. There is no invented manual wire-removal
 intent. Other circuits, shocks/fire effects and the complete steering-column fitting
 journey remain outside this connection's contract.
+
+The current source5 implementation correction enters both audited native Sound /
+CLOSELOOP endpoints on the host rather than jumping directly to Finish assembly.
+Pending work is not a new wire revision: updates and join snapshots retain the
+pre-request state until full native installation/presentation succeeds. Failed or
+timed-out execution restores that checkpoint before its Failed receipt; tool
+identity is checked again for each fresh intent. Payloads, status values, sequence
+and retry rules above are unchanged. This candidate's native verification is
+blocked at world loading; see `docs/V05-IGNITION-WIRE-TRANSACTION.md` for portable
+evidence and the explicitly unverified native/persistence gates.
 
 ### v238 — fuse boxes and persistent loose supplies
 
@@ -3385,16 +3792,16 @@ transforms to other guests and is authoritative for all world state.
 | Id | Message | Channel | Notes |
 |---|---|---|---|
 | 1 | HandshakeRequest | 0 | versions, catalog hash, player name |
-| 2 | HandshakeResponse | 0 | accepted + playerId + hostPlayerName + sessionFlags (bit 0 = host permadeath enabled), or refusal reason |
+| 2 | HandshakeResponse | 0 | accepted + playerId + hostPlayerName + sessionFlags (bit 0 = host permadeath enabled), or refusal reason; v264 appends clothingAdmission:u64 |
 | 3 | Ping | 0 | nonce + sender time |
 | 4 | Pong | 0 | echoes nonce |
 | 5 | Disconnect | 0 | human-readable reason |
 | 10 | Chat | 0 | senderPlayerId + text |
-| 20 | PlayerSpawn | 0 | playerId, steamId, name |
+| 20 | PlayerSpawn | 0 | playerId, steamId, name; v264 appends clothingAdmission:u64 |
 | 21 | PlayerDespawn | 0 | playerId, reason |
 | 22 | PlayerTransform | 1 | playerId:uint8, seq:uint16, pos:3×float32, rot:4×float32, moveState:uint8; **v188 appends** hasSweat:uint8 (0/1), sweat:float32 (finite 0–100 when available, zero otherwise). **39 bytes including ID.** Since v53, relays reject non-finite/out-of-map positions, non-unit rotations, and unknown move-state bits before storing, relaying, persisting, or using the pose as proximity proof. Sweat shares authenticated, known-player, wrap-aware pose acceptance; fresh seated reports supply the current climate producer as described above. |
 | 23 | PassengerState | 0 | playerId, vehicleId, seatIndex (0 front passenger, 1 rear right, 2 rear left, 255 none; taxi accepts only 0/2 in v249), seq (**appended v52**); re-broadcast every ~8 s while seated. The host accepts only an authenticated player's next sequence: an exit must carry vehicle id 0, while a new or changed seat claim must name an available discovered passenger anchor and be within 2 m of it from a fresh player pose. **v95:** keepalives for an already accepted exact seat verify the vehicle/seat still exists without rechecking world-space entry proximity (moving cars and delayed poses must not eject occupants). Duplicate/older requests are silently ignored; new rejected requests consume their sequence and clear canonical occupancy with a `SeatNone` broadcast to every peer, including the claimant, using the request sequence. A claimant applies a self-addressed correction only if it matches its latest request. Same-seat races still resolve by lowest player id; the winner's broadcast evicts any conflicting local/remote occupant, and the losing guest also receives a `SeatNone` with its last accepted sequence. Join snapshots contain only current accepted occupants. **v191:** death/respawn retire occupancy while retaining sequence history; dead players cannot claim or keep a seat, and observers ignore seat updates for dead players until respawn. |
-| 24 | GuestSpawn | 0 | host -> joining guest after snapshot: host pos/rot, last saved pos/rot, flags:uint8 (bit 0 last position, 1 saved needs, 2 dirtiness, 3 BAC, **v189 bit 4 body warmth**), hunger/fatigue/thirst/urine/bodyTemp/stress/drunk/dirtiness/PlayerAlco:float32. **95 bytes including ID.** BodyTemp is now native global PlayerTemp; explicit bit 4 requires bit 1, known values are finite including zero, and unknown warmth must be zero. Bit 0 is set only for returning guests known before connection. The last-position choice restores saved needs; absent globals defer known warmth until binding. New guests snap to the host as before. |
+| 24 | GuestSpawn | 0 | host -> joining guest after snapshot: host pos/rot, last saved pos/rot, flags:uint8 (bit 0 last position, 1 saved needs, 2 dirtiness, 3 BAC, v189 bit 4 body warmth), hunger/fatigue/thirst/urine/bodyTemp/stress/drunk/dirtiness/PlayerAlco:float32. The original 95-byte prefix is unchanged; v264 appends clothingPlayerId:u8, clothingAdmission:u64, hasSavedClothing:u8, clothingStage:u8, clothingType:u8, winterGarment:u8: **108 bytes including ID**. See v264 above for strict availability and local recipient admission. BodyTemp is native PlayerTemp; bit 4 requires bit 1, known values are finite including zero, unknown warmth is zero. Bit 0 is set only for returning guests known before connection. The last-position choice restores saved needs; absent globals defer known warmth until binding. New guests snap to the host as before. Clothing restores mod-owned state only, independently of position choice. |
 | 25 | PlayerNeedsReport | 0 | guest -> host every ~12 s: playerId:uint8, hunger/fatigue/thirst/urine/bodyTemp/stress/drunk:float32, seq:uint16, dirtiness:float32, HasDirtiness:uint8, PlayerAlco:float32, HasAlco:uint8, **v189 HasBodyTemp:uint8**. **44 bytes including ID.** BodyTemp now reads native PlayerTemp; its new availability is 0/1, known warmth is finite including zero, and unknown warmth is zero. Reports retain authentication, finite-value checks and wrap-aware ordering. Missing optional globals do not block other needs. The host persists 18-column CSV needs rows with independent optional dirtiness/BAC/warmth; legacy air-temperature samples are discarded as described above. |
 | 26 | SleepConsentRequest | 0 | host -> all guests when host enters a sleep/time-skip FSM state: requestId, initiatorPlayerId |
 | 27 | SleepConsentResponse | 0 | guest -> host: requestId, playerId, accepted (byte 0/1) — first answer from each requested, connected guest; any decline cancels immediately; 90 s timeout, host withdrawal or no remaining requested guests also cancels |
@@ -3402,7 +3809,7 @@ transforms to other guests and is authoritative for all world state.
 | 29 | PlayerDeathReport | 0 | any -> host: playerId, cause, seq — host rebroadcasts PlayerDeathEvent. Cause bytes are append-only (`DeathCause`): 0 unknown, 1-13 fatigue/hunger/thirst/urine/stress/run-over/drown/fire/electrocute/hypothermia/murder/train/accident, **14-21 appended v32**: sewage/carbon-monoxide/PTO/cutter-blade/jail/piss-TV/burn/smoking (the death FSM's remaining cause bools) |
 | 30 | PlayerDeathEvent | 0 | host -> all: playerId, cause, flags (bit 0 = permadeath group wipe) — hides avatars; wipe triggers local Systems/Death on every client (accident maps to the RUNOVER screen — State 3 has no crash transition; burn → FIRE; smoking → FATIGUE) **v191:** terminal passenger-seat retirement; permadeath clears all seats and marks all connected remote players dead. Seat claim history is preserved. |
 | 31 | PlayerRespawn | 0 | respawning player -> all: playerId, pos, rot, seq — non-permadeath only; avatar visible again **v191:** retires residual passenger occupancy before applying the respawn pose; seating requires a fresh claim. |
-| 32 | PlayerClothingState | 0 | any -> host -> other guests (v28): playerId, clothingStage (FsmInt `ClothingStage` on `PLAYER/BodyTemp`, warmth tier), clothingType (FsmInt `ClothingType` on the FPS-camera `Piss` FSM, outfit variant). Owner-authoritative: reported on change, host relays; drives remote-avatar visual (best-effort shirt tint) and informs local warmth math. Never written onto the owning player's own FSM. **Because it is change-only (no keepalive, not in the chunked snapshot), the host also sends a joining guest one per already-connected player right after GuestSpawn** — otherwise a joiner renders already-dressed players in default clothing until each next changes clothes | **v79: appends WinterGarment byte (0 none/1 jacket/2 coverall).**
+| 32 | PlayerClothingState | 0 | any -> host -> other guests: playerId:u8, clothingStage:u8, clothingType:u8, v79 winterGarment:u8 (0 none/1 jacket/2 coverall); v264 appends admission:u64, sequence:u32. **18 bytes including ID**. Owner-authoritative reports are authenticated, range-checked, strictly sequenced and persisted by the host. Never written onto the owning player's native FSM. The host also sends each other connected player's accepted clothing to a joiner after GuestSpawn, preserving that owner's token/sequence. Mod-owned resume data is not native warmth or garment rendering acceptance. |
 | 40 | FsmStateEnter | 0 | netId + state name; receiver replays via injected MP_* global transition (doors, ignitions, vehicle controls, car parts Install/Remove, shop Buy/CashRegister Purchase/Cashier/Add, Peräpörtti restaurant Cashier/State 1, inspection Pay, post-package Close box/Remove order, post-office Spawn, phone-order Spawn package, Fleetari Pending cost/State 3, service brochure Fleetari 2, engine run/stall on SORBET/CORRIS Starter FSMs, and **v51** home/yard/apartment shower tap plus valve ON/OFF controls). **v114:** part Bolted/Unbolted/Stop are derived from authoritative tightness, excluded from state replay/snapshots. |
 | 41 | FsmRawEvent | 0 | guest -> host: netId + whitelisted TIGHTEN/UNTIGHTEN intent on a ready fitted bolt; authenticated, fresh pose within 3 m; executed immediately on host, never queued or relayed to guests. Unsupported at-limit timing adjustments are rejected. Host bolt results use 44; v215 also accepts validated cylinder-head valve turns (loose or fitted), whose float results use 206. |
 | 42 | ItemTransform | 1 (vehicle/final: 0) | itemId, ownerPlayerId, seq, flags, pos, rot [, velocity when flags bit 3] — items *and* vehicles |
@@ -3459,7 +3866,8 @@ transforms to other guests and is authoritative for all world state.
 | 107 | WelfareState | 0 | host -> guests (**v68**, grown **v84**): seq, unemployDays (int), paidAmount (float), weekly (float), flags (bit0 claiming, bit1 evicted), rentDebt (float), rentPerWeek (float), asumistukiPerWeek (float — the last three appended v84). Host owns the whole `Systems/Expenses` record (Kela claim + weekly rent debit + housing benefit); guests apply the scalars, suppress their own Rent/Livingsupport FSMs for the session (their local weekly ticks are throwaway divergence — a guest plays in the host's world), and replay the terminal `Kick out` eviction state once when bit1 appears (furniture destruction + relocation happen everywhere). In the join snapshot. |
 | 106 | HitchhikerState | 0 | host -> guests (**v69**): seq, drunkStage (int), movingStage (int), money (int), flags (bit0 paid, bit1 KiljuMurderer, bit2 suicide, bit3 active). Host owns the hiker variant + stage; guests apply. Body pose streams over NpcTransform (ScriptedMover). In the join snapshot. |
 | 108 | PhoneCallEvent | 0 | host -> guests (**v76**): callId (ushort, monotonic), topic (string). Host decides an incoming call and broadcasts it; guests set the phone Topic + fire the matching ring event. Discrete one-shot (not in snapshot). |
-| 109 | PissAreaState | 0 | host -> guests (**v80**): seq, scale1-5 (byte, *20). Host owns the five persistent yard piss-stain scales; guests apply. In the join snapshot. |
+| 109 | PissAreaState | 0 | host -> guests (**v263**): original seq + five *20 bytes; appended epoch, revision and per-connected-player admissions/high-water. Absolute native stain transforms, including join snapshots. |
+| 269 | PissAreaIntent | 0 | authenticated guest -> host (**v263**): epoch, observed revision, sequence, admission, actor, area, native action kind and bounded contribution. |
 | 110 | NpcDeathReport | 0 | Guest → host: mover netId:u32, playerId:u8, sequence:u16. Authenticated fresh live reporter within 150 m. Since v228 the moose CarHit entry sends this before guest native destruction, retries for five seconds, and the host runs native death once. Independent MooseCorpseState (214) carries the surviving ragdoll; see v228. |
 | 120 | WorldSnapshotRequest | 0 | guest -> host once its first world scan completes; carries the guest's id hash (diagnostic only). Host accepts at most one request per guest every 10 s. |
 | 121 | WorldDoorSnapshot | 0 | host -> guest: (netId, stateName) pairs for doors/ignitions/controls/starters the host saw change; chunked (≤60/message) |
