@@ -192,6 +192,17 @@ self-trigger releases, and never commit unless asked.
 
 ---
 
+## 9b. Unattended loop
+
+Unattended/continuous work runs only through `tools/agent-loop/loop.sh` (see its
+README), never as a free-running agent session. If asked to "keep going" without a
+human, point the user there instead.
+
+Asked how the loop is doing or what it did? Run `tools/agent-loop/loop.sh status`
+and report from it. Details are in `.agent-loop/` (gitignored: `log.md`,
+`iter-*/impl.out`, `review-*.out`, `feedback-*.txt`, `PLAYTEST.md`, `STOP`), and
+loop commits carry an `Agent-Loop:` trailer.
+
 ## 10. When you're unsure
 
 - Architecture / sync behavior → `PLAN.md`.

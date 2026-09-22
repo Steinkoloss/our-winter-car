@@ -30,3 +30,6 @@ backups/
 # AI agent scratch (review findings/verdicts, etc.) — never commit
 .car-sync-*.json
 .claude/
+
+# unattended agent loop state (tools/agent-loop)
+.agent-loop/
