@@ -209,7 +209,7 @@ not whole-feature completion.
 | Yard piss stains | `Sync/PissAreaSync.cs` |
 | Kilju brew (held or lid-flip-claimed buckets) | `Sync/KiljuSync.cs` |
 | In-car radio tune/volume | `Sync/CarRadioSync.cs` |
-| Guest home-stove knobs / host cooking heat and triggers / smoke / cleanup | `Sync/ApplianceSync.cs`, `.Stoves.cs`, `.StoveBindings.cs`; catalog `stoves`, `Catalog/SyncCatalogJson.Stoves.cs`; `WinterMP.Net/Messages/StoveKnobIntent.cs`, `ApplianceMessages.cs`, `Sync/StovePolicy.cs`; `WinterMP.Net.Tests/StoveTests.cs`; `tools/GuestSaveProbe/LiveBagProbe.Cooking.cs`. v233: request 219 and extended state 99; both homes retain native ignition differences. Guest simulation pauses; controls, heat, fuse, grill/burn triggers, light, smoke and original fire hazards restore on cleanup. Existing meat state 210 supplies cooked output; sausage conversion and the complete house-fire lifecycle remain separate. [Validation and limits](BUILDING.md#guest-home-stove-cooking-2026-09-13-unreleased-v233). |
+| Guest home-stove knobs / host cooking heat and triggers / smoke / cleanup | `Sync/ApplianceSync.cs`, `.Stoves.cs`, `.StoveBindings.cs`; catalog `stoves`, `Catalog/SyncCatalogJson.Stoves.cs`; `WinterMP.Net/Messages/StoveKnobIntent.cs`, `ApplianceMessages.cs`, `Sync/StovePolicy.cs`; `WinterMP.Net.Tests/StoveTests.cs`; `tools/GuestSaveProbe/LiveBagProbe.Cooking.cs`. v233: request 219 and extended state 99; both homes retain native ignition differences. Guest simulation pauses; controls, heat, fuse, grill/burn triggers, light, smoke and original fire hazards restore on cleanup. Existing meat state 210 supplies cooked output; sausage conversion and the complete house-fire lifecycle remain separate. [Validation and limits](https://github.com/Steinkoloss/our-winter-car/blob/snapshot/hermes-2026-09-14/docs/BUILDING.md#guest-home-stove-cooking-2026-09-13-unreleased-v233). |
 | Incoming phone calls | `Sync/PhoneSync.cs` |
 | Advert-job outgoing call / native phones / shared charges and enrolment | `Sync/AdvertPhoneSync.cs`, `AdvertPhoneBinding.cs`, `TaxiServiceBinding.Guest.cs` (idle carphone handoff); `Catalog/SyncCatalogJson.Adverts.cs` (`advertPhone`); `WinterMP.Net/Sync/AdvertCallLedger.cs`, `Messages/AdvertPhoneMessages.cs`; `WinterMP.Net.Tests/AdvertPhoneTests.cs`; `tools/GuestSaveProbe/LiveBagProbe.AdvertPhone.cs` (v256) |
 | Wanted level + guest crime reports | `Sync/WantedSync.cs` |
@@ -249,6 +249,7 @@ not whole-feature completion.
 | Message types | `WinterMP.Net/Messages/*.cs` |
 | Registry | `WinterMP.Net/Messages/MessageRegistry.cs` |
 | Spec (must match code) | `protocol/PROTOCOL.md` |
+| Per-version history / newer message layouts | `protocol/CHANGELOG.md` |
 | Tests | `WinterMP.Net.Tests/` — especially `WorldMessagesTests.cs`, `PacketCodecTests.cs` |
 
 ## UI & dev tooling

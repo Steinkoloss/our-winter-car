@@ -30,6 +30,7 @@
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.FleaSale.cs" Link="Catalog\SyncCatalogJson.FleaSale.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.UtilityPayments.cs" Link="Catalog\SyncCatalogJson.UtilityPayments.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.cs" Link="Catalog\SyncCatalogJson.cs" />
+    <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogData.cs" Link="Catalog\SyncCatalogData.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Gambling.cs" Link="Catalog\SyncCatalogJson.Gambling.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.Factories.cs" Link="Catalog\SyncCatalogJson.Factories.cs" />
     <Compile Include="..\WinterMP.Core\Catalog\SyncCatalogJson.ShoppingBags.cs" Link="Catalog\SyncCatalogJson.ShoppingBags.cs" />

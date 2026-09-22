@@ -40,8 +40,8 @@ the source of truth for the wire format.
 | `src/WinterMP.FastBoot` | Dev plugin: save-safe fast boot (ES2 load skip + menu accelerator). `net35`. | **no** |
 | `src/WinterMP.Launcher` | .NET 8 Avalonia desktop app (Windows + Linux): install/repair, save backups, host/join. | yes |
 | `src/WinterMP.Launcher.Tests` | xUnit tests for launcher policies (FastBoot safe profile). Runs in CI. | yes |
-| `catalog/` | Generated per-game-build sync catalogs (FSM descriptors). | — |
-| `protocol/PROTOCOL.md` | Wire protocol spec — keep in lockstep with code. | — |
+| `catalog/` | Generated per-game-build sync catalogs (FSM descriptors). `README.md` = rules, `BINDINGS.md` = per-system FSM notes. | — |
+| `protocol/PROTOCOL.md` | Wire protocol spec — keep in lockstep with code. `CHANGELOG.md` holds per-version history and newer message layouts. | — |
 | `docs/BUILDING.md` | Build, deploy, dev-loop instructions. | — |
 | `docs/PLAYERS.md` | Player-facing install/host/join guide. | — |
 | `docs/CODEMAP.md` | **Where to edit what** — subsystem → file routing. | — |
@@ -104,6 +104,10 @@ mod versions. Get this wrong and players silently desync or fail to connect.
   *together with* a version bump. No silent format drift.
 - When you change anything on the wire, **update `protocol/PROTOCOL.md` in the
   same change.** The doc and the code must never disagree.
+- **One bump per release, not per feature.** If `ProtocolInfo.Version` is
+  already above the version in the latest `vX.Y.Z` tag, the unreleased build
+  has its bump: extend that version's `protocol/CHANGELOG.md` entry instead of
+  bumping again. (v120→v257 happened in nine unreleased days; don't repeat it.)
 - Respect the channel model: reliable-ordered (0) for events/economy/handshake,
   unreliable-sequenced (1) for transforms, reliable-bulk (2) for snapshots.
 
@@ -135,6 +139,16 @@ This codebase grows by accretion. Fight entropy actively:
 - **One-off scripts:** throwaway helpers belong in `tools/` with a clear name,
   not scattered at the repo root. If a script is genuinely single-use, delete it
   when done.
+- **Docs describe the current state, not a diary.** No dated progress
+  paragraphs, per-version status updates or test-run journals in `PLAN.md`,
+  `BUILDING.md`, the roadmap or the catalog README. Test results go in the
+  commit message. Rough caps: `PLAN.md` ~800 lines, `BUILDING.md` ~300.
+  (2026-09-22 cleanup removed ~16k lines of journals from these files.)
+- **Don't sit on uncommitted work.** Ask the user to commit after each finished
+  slice. Days of uncommitted changes are one `git clean` away from gone.
+- **Delete test scratch.** Each `build/<name>-audit` / `-smoke` game copy is
+  ~1.5 GB. Remove it when the run is done; keep only `build/local2p` and
+  `build/release-tools`.
 
 ---
 
