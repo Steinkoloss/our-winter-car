@@ -10,7 +10,11 @@ git switch -c wip/loop-2026-09-22        # loop refuses to run elsewhere
 tools/agent-loop/loop.sh gates           # check the gates pass on the current tree
 tools/agent-loop/loop.sh                 # run
 tools/agent-loop/loop.sh status          # what happened / what's going on (read-only)
+tools/agent-loop/menu.sh                 # terminal menu: status/start/halt/playtest notes/log (desktop shortcut)
 ```
+
+One run per checkout (lock in `.git/agent-loop/lock`). Don't edit files or switch
+branches in this checkout while it runs; its gates would count your edits as the agent's.
 
 It stops by itself when:
 

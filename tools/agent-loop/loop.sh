@@ -172,7 +172,7 @@ case "${1:-run}" in
     [ -s "$STATE/playtest-notes.md" ] || die "write what you tested and what broke into $STATE/playtest-notes.md first"
     echo 0 > "$COUNTER"; rm -f "$STATE/PLAYTEST.md"; log "playtest acknowledged; notes will steer the next slices"; exit 0 ;;
   status)  # read-only summary for humans and chat agents
-    running=no; pgrep -f "agent-loop/loop.sh( run)?$" >/dev/null && running=yes
+    running=no; flock -n "$PRIVATE/lock" true 2>/dev/null || running=yes
     echo "branch: $BRANCH   loop process running: $running   slices since playtest: $(since)/$PLAYTEST_EVERY"
     for f in STOP HALT PLAYTEST.md; do [ -f "$STATE/$f" ] && { echo; echo "== $STATE/$f"; cat "$STATE/$f"; }; done
     echo; echo "== last log lines ($STATE/log.md)"; tail -n 15 "$STATE/log.md" 2>/dev/null || echo "(no runs yet)"
@@ -187,6 +187,8 @@ case "${1:-run}" in
   *) echo "usage: $0 [run|status|gates|playtested]"; exit 2 ;;
 esac
 
+exec 9>"$PRIVATE/lock"
+flock -n 9 || die "another loop run is already active in this checkout" 2
 [[ "$BRANCH" == wip/* ]] || die "run only on a wip/* branch (git switch -c wip/loop-$(date +%F))" 2
 [ -z "$(git status --porcelain)" ] || die "working tree not clean" 2
 rm -f "$STATE/STOP" "$STATE/HALT"
